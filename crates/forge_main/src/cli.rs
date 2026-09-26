@@ -85,7 +85,8 @@ pub enum TopLevelCommand {
     /// Run a single task non-interactively and exit.
     ///
     /// Exits 0 when the task completed, 1 on error, 2 when the tool-failure
-    /// limit was hit, and 3 when the per-turn request limit was hit.
+    /// limit was hit, 3 when the per-turn request limit was hit, and 4 when
+    /// `--max-duration-secs` expired.
     Exec {
         /// The task for the agent to perform.
         #[arg(allow_hyphen_values = true)]
@@ -95,6 +96,16 @@ pub enum TopLevelCommand {
         /// last line of stdout.
         #[arg(long)]
         json: bool,
+
+        /// Maximum wall-clock time, in seconds, the task may run before it is
+        /// stopped and reported as having hit its time budget (exit code 4).
+        ///
+        /// Unset by default, which is the same as no limit: a one-shot
+        /// unattended run (R-HACK-1) must have a way to bound how long it can
+        /// take, but nothing here may change behaviour for a caller that never
+        /// asked for a budget.
+        #[arg(long)]
+        max_duration_secs: Option<u64>,
     },
 
     /// Manage agents.
@@ -2065,7 +2076,7 @@ mod harness_exec_cli_tests {
     fn test_exec_parses_task_and_json_flag() {
         let fixture = Cli::parse_from(["forge", "exec", "--json", "fix the bug"]);
         let actual = match fixture.subcommands {
-            Some(TopLevelCommand::Exec { task, json }) => Some((task, json)),
+            Some(TopLevelCommand::Exec { task, json, .. }) => Some((task, json)),
             _ => None,
         };
         let expected = Some(("fix the bug".to_string(), true));
@@ -2083,5 +2094,26 @@ mod harness_exec_cli_tests {
     fn test_exec_is_not_interactive() {
         let fixture = Cli::parse_from(["forge", "exec", "fix the bug"]);
         assert!(!fixture.is_interactive());
+    }
+
+    #[test]
+    fn test_exec_max_duration_secs_defaults_to_unset() {
+        let fixture = Cli::parse_from(["forge", "exec", "fix the bug"]);
+        let actual = match fixture.subcommands {
+            Some(TopLevelCommand::Exec { max_duration_secs, .. }) => max_duration_secs,
+            _ => panic!("Expected Exec command"),
+        };
+        assert_eq!(actual, None);
+    }
+
+    #[test]
+    fn test_exec_parses_max_duration_secs() {
+        let fixture =
+            Cli::parse_from(["forge", "exec", "--max-duration-secs", "30", "fix the bug"]);
+        let actual = match fixture.subcommands {
+            Some(TopLevelCommand::Exec { max_duration_secs, .. }) => max_duration_secs,
+            _ => panic!("Expected Exec command"),
+        };
+        assert_eq!(actual, Some(30));
     }
 }
