@@ -318,6 +318,7 @@ mod tests {
             Ok(ChatCompletionMessage::default()
                 .content(Content::part("world!"))
                 .usage(Usage {
+                    reasoning_tokens: Default::default(),
                     prompt_tokens: TokenCount::Actual(10),
                     completion_tokens: TokenCount::Actual(5),
                     total_tokens: TokenCount::Actual(15),
@@ -338,6 +339,7 @@ mod tests {
             tool_calls: vec![],
             thought_signature: None,
             usage: Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(10),    // From final chunk
                 completion_tokens: TokenCount::Actual(5), // From final chunk
                 total_tokens: TokenCount::Actual(15),     // From final chunk
@@ -362,6 +364,7 @@ mod tests {
             Ok(ChatCompletionMessage::default()
                 .content(Content::part("Hello "))
                 .usage(Usage {
+                    reasoning_tokens: Default::default(),
                     prompt_tokens: TokenCount::Actual(100),
                     completion_tokens: TokenCount::Actual(5),
                     total_tokens: TokenCount::Actual(105),
@@ -371,6 +374,7 @@ mod tests {
             Ok(ChatCompletionMessage::default()
                 .content(Content::part("world!"))
                 .usage(Usage {
+                    reasoning_tokens: Default::default(),
                     prompt_tokens: TokenCount::Actual(100),
                     completion_tokens: TokenCount::Actual(10),
                     total_tokens: TokenCount::Actual(110),
@@ -392,6 +396,7 @@ mod tests {
             tool_calls: vec![],
             thought_signature: None,
             usage: Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(100), // From last chunk, NOT 200
                 completion_tokens: TokenCount::Actual(10), // From last chunk
                 total_tokens: TokenCount::Actual(110),  // From last chunk, NOT 215
@@ -416,6 +421,7 @@ mod tests {
             Ok(ChatCompletionMessage::default()
                 .content(Content::part("Hello world!"))
                 .usage(Usage {
+                    reasoning_tokens: Default::default(),
                     prompt_tokens: TokenCount::Actual(100),
                     completion_tokens: TokenCount::Actual(10),
                     total_tokens: TokenCount::Actual(110),
@@ -424,6 +430,7 @@ mod tests {
                 })),
             // Cost-only event (0 tokens but has cost)
             Ok(ChatCompletionMessage::default().usage(Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(0),
                 completion_tokens: TokenCount::Actual(0),
                 total_tokens: TokenCount::Actual(0),
@@ -445,6 +452,7 @@ mod tests {
             tool_calls: vec![],
             thought_signature: None,
             usage: Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(100),
                 completion_tokens: TokenCount::Actual(10),
                 total_tokens: TokenCount::Actual(110),
@@ -467,6 +475,7 @@ mod tests {
         let messages = vec![
             // Cost-only event arrives first
             Ok(ChatCompletionMessage::default().usage(Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(0),
                 completion_tokens: TokenCount::Actual(0),
                 total_tokens: TokenCount::Actual(0),
@@ -477,6 +486,7 @@ mod tests {
             Ok(ChatCompletionMessage::default()
                 .content(Content::part("Hello world!"))
                 .usage(Usage {
+                    reasoning_tokens: Default::default(),
                     prompt_tokens: TokenCount::Actual(100),
                     completion_tokens: TokenCount::Actual(10),
                     total_tokens: TokenCount::Actual(110),
@@ -498,6 +508,7 @@ mod tests {
             tool_calls: vec![],
             thought_signature: None,
             usage: Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(100),
                 completion_tokens: TokenCount::Actual(10),
                 total_tokens: TokenCount::Actual(110),
@@ -522,6 +533,7 @@ mod tests {
         let messages = vec![
             // MessageStart with input token usage AND output_tokens=1
             Ok(ChatCompletionMessage::default().usage(Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(1000),
                 completion_tokens: TokenCount::Actual(1),
                 total_tokens: TokenCount::Actual(1001),
@@ -534,6 +546,7 @@ mod tests {
             // MessageDelta with cumulative output token usage
             Ok(ChatCompletionMessage::default()
                 .usage(Usage {
+                    reasoning_tokens: Default::default(),
                     prompt_tokens: TokenCount::Actual(0),
                     completion_tokens: TokenCount::Actual(50),
                     total_tokens: TokenCount::Actual(50),
@@ -562,6 +575,7 @@ mod tests {
             tool_calls: vec![],
             thought_signature: None,
             usage: Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(1000),
                 completion_tokens: TokenCount::Actual(50), // max(1, 50) = 50, NOT 1+50=51
                 total_tokens: TokenCount::Actual(1001),
@@ -585,6 +599,7 @@ mod tests {
         let messages = vec![
             // MessageStart with input token usage
             Ok(ChatCompletionMessage::default().usage(Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(1000),
                 completion_tokens: TokenCount::Actual(0),
                 total_tokens: TokenCount::Actual(1000),
@@ -597,6 +612,7 @@ mod tests {
             // MessageDelta with output token usage
             Ok(ChatCompletionMessage::default()
                 .usage(Usage {
+                    reasoning_tokens: Default::default(),
                     prompt_tokens: TokenCount::Actual(0),
                     completion_tokens: TokenCount::Actual(50),
                     total_tokens: TokenCount::Actual(50),
@@ -619,6 +635,7 @@ mod tests {
             tool_calls: vec![],
             thought_signature: None,
             usage: Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(1000), // From MessageStart
                 completion_tokens: TokenCount::Actual(50), // From MessageDelta
                 total_tokens: TokenCount::Actual(1000),  // max(1000, 50) = 1000
@@ -930,6 +947,7 @@ mod tests {
             Ok(ChatCompletionMessage::default().content(Content::part(" ignored content"))),
             // Final message with the actual usage - this is always sent last
             Ok(ChatCompletionMessage::default().usage(Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(5),
                 completion_tokens: TokenCount::Actual(15),
                 total_tokens: TokenCount::Actual(20),
@@ -947,6 +965,7 @@ mod tests {
         // Expected: Should contain the XML tool call and final usage from last
         // message
         let expected_final_usage = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(5),
             completion_tokens: TokenCount::Actual(15),
             total_tokens: TokenCount::Actual(20),
@@ -972,6 +991,7 @@ mod tests {
             Ok(ChatCompletionMessage::default()
                 .content(Content::part(" and more content"))
                 .usage(Usage {
+                    reasoning_tokens: Default::default(),
                     prompt_tokens: TokenCount::Actual(5),
                     completion_tokens: TokenCount::Actual(15),
                     total_tokens: TokenCount::Actual(20),
@@ -993,6 +1013,7 @@ mod tests {
                                  * disabled */
             thought_signature: None,
             usage: Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(5),
                 completion_tokens: TokenCount::Actual(15),
                 total_tokens: TokenCount::Actual(20),
@@ -1017,6 +1038,7 @@ mod tests {
             Ok(ChatCompletionMessage::default().content(Content::part(" processing"))),
             Ok(ChatCompletionMessage::default().content(Content::part(" complete"))),
             Ok(ChatCompletionMessage::default().usage(Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(5),
                 completion_tokens: TokenCount::Actual(15),
                 total_tokens: TokenCount::Actual(20),
@@ -1038,6 +1060,7 @@ mod tests {
             tool_calls: vec![],
             thought_signature: None,
             usage: Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(5),
                 completion_tokens: TokenCount::Actual(15),
                 total_tokens: TokenCount::Actual(20),
@@ -1167,6 +1190,7 @@ mod tests {
             Ok(ChatCompletionMessage::default()
                 .content(Content::part("This too should be ignored"))),
             Ok(ChatCompletionMessage::default().usage(Usage {
+                reasoning_tokens: Default::default(),
                 prompt_tokens: TokenCount::Actual(5),
                 completion_tokens: TokenCount::Actual(20),
                 total_tokens: TokenCount::Actual(25),
