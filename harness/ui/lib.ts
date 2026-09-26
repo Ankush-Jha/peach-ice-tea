@@ -146,6 +146,36 @@ export function summarizeBundle(rootId: string, dir: string): BundleSummary | nu
   };
 }
 
+/** Counts behind the Overview tab: how much of the backlog is done, and how many decisions
+ *  are on record. Read live from the docs on every request, so it can never drift stale. */
+export interface ProjectStats {
+  tasksDone: number;
+  tasksTotal: number;
+  decisions: number;
+}
+
+/** Tallies `- [x]`/`- [ ]` lines in TASKS.md and `## D-NNN` headings in DECISIONS.md. `null` fields
+ *  when a doc is missing, rather than reporting zero (fail open, principle 5). */
+export function projectStats(harness: string): ProjectStats {
+  const tasks = readIfText(path.join(harness, "docs", "harness", "TASKS.md"));
+  const decisions = readIfText(path.join(harness, "docs", "harness", "DECISIONS.md"));
+  const done = tasks ? [...tasks.matchAll(/^-\s\[x\]/gm)].length : 0;
+  const open = tasks ? [...tasks.matchAll(/^-\s\[\s\]/gm)].length : 0;
+  return {
+    tasksDone: done,
+    tasksTotal: done + open,
+    decisions: decisions ? [...decisions.matchAll(/^##\s+D-\d+/gm)].length : 0,
+  };
+}
+
+function readIfText(file: string): string | null {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
 /** Splits appended telemetry text into complete events plus the unfinished tail. */
 export function splitTelemetry(buffered: string): { events: any[]; rest: string } {
   const lines = buffered.split("\n");
