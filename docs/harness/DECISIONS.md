@@ -480,3 +480,16 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   `finish`/`seal`, so an externally killed run leaves no bundle. `run.ts` now relies on the telemetry
   default whenever `--evidence-dir` is available, so the suite exercises it: `forge-cheat` is 3/3 with a
   complete bundle on the time-budget path.
+
+## D-035 — TH.8 report: sources per number, and discrepancies shown rather than reconciled (2026-09-25)
+- **Sources:** token totals and call counts come from `exec.json` (the execution layer: provider usage, subagents
+  folded in, billed retry usage included). Per-call distributions, retries by class, tools, compactions, integrity
+  events and the timeline come from `telemetry.jsonl`. The diff comes from `diff.patch`. Nothing is re-run and
+  nothing is estimated, except fields named `_estimated`.
+- **Missing ≠ zero.** Every absent or unparseable input becomes "not available" plus a note naming the file.
+- **Discrepancies are reported, not smoothed.** When a time budget cuts a request off mid-retry, those retries
+  reach telemetry but never the metrics, because the orchestrator future is dropped. The report shows both
+  counts and a note. Making the two agree at the source would need a counter outside the dropped future; it
+  is recorded here as known and not done, since the report already states both.
+- Retry reasons are classed as `http_NNN`, `empty_completion`, `transport` or `other`. The organizer
+  `report.schema.json` adapter waits on publication (D-020).
