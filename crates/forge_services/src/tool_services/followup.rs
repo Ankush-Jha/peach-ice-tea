@@ -25,6 +25,11 @@ impl<F: UserInfra> FollowUpService for ForgeFollowup<F> {
         options: Vec<String>,
         multiple: Option<bool>,
     ) -> anyhow::Result<Option<String>> {
+        // harness: R-HACK-1 — an unattended run has nobody to ask; answer
+        // instead of blocking on a prompt until the judging window closes.
+        if let Some(answer) = forge_harness::runtime::unattended_followup_answer(&question) {
+            return Ok(Some(answer));
+        }
         let inquire = &self.infra;
         let result = match (options.is_empty(), multiple.unwrap_or_default()) {
             (true, _) => inquire.prompt_question(&question).await?,
