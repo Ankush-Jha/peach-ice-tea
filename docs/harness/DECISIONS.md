@@ -748,3 +748,41 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Flaky upstream test, not touched:** `peach_main info::tests::test_format_path_for_display_no_home` failed
   once in a full parallel run and passed 4/4 in isolation and on the next full run (2944/2944). It is likely
   sensitive to shared environment state under parallelism, as with D-031's note.
+
+## D-049 — Any model may be used; models are chosen per role, from evidence (2026-09-26)
+- **Context:** the team lifted the single-model constraint ("we can use any model now"). D-017, D-027, D-036 and
+  D-044 pinned the judged run to Gemini because HACKATHON.md §6/§31 fixed the model; that premise no longer holds.
+  Money is unchanged: the Gemini key is free tier at 20 requests/day per model (D-040), which cannot complete one
+  run (D-032 needed 31), and the OpenRouter key has **$0 credit**, so only `:free` models are callable there.
+- **Probe (2026-09-26, free, one tool-call request each):**
+
+  | Model (OpenRouter) | Result | Latency |
+  |---|---|---|
+  | `nvidia/nemotron-3-ultra-550b-a55b:free` (1M ctx) | correct `read` call | 1.9 s |
+  | `cohere/north-mini-code:free` (256k ctx) | correct `read` call | 1.0 s |
+  | `qwen/qwen3.8-27b:free`, `poolside/laguna-s-2.1:free` | 429 upstream rate limit | – |
+  | `thinkingmachines/inkling:free` | 403: allow-listed apps only; not spoofed | – |
+
+  For comparison, NIM DeepSeek took 126–310 s per call (D-046).
+- **Decision:**
+  1. **Roles, not one model.** Each role gets the model whose strength fits it: the main `peach` agent gets the
+     strongest reasoning/tool-use model; `sage` (read-only exploration) and compaction summaries get a fast,
+     cheap, long-context model; the relevance scorer (T3.9) gets the cheapest model that answers reliably.
+     Peach already carries provider+model per agent and a compaction model, so this is mostly configuration;
+     the runtime part is MM.3.
+  2. **The default model is picked by a bake-off on the TH.7 suite (MM.2), not by reputation.** Until then the
+     wrapper takes `--profile`, and the Gemini profile stays available unchanged.
+  3. **Principle 6 becomes satisfiable at no cost:** the second model family for every pending `[A/B]` is a
+     free OpenRouter model. Flags whose A/B holds on both families flip to default on.
+- **Budget:** superseded by D-050 the same day.
+
+## D-050 — Token cost is not the constraint; pick models on merit (2026-09-26)
+- **Team direction:** "We are not bearing the cost of the token … just open the field." D-025/D-025a's ₹100 cap and
+  the "free models only" line in D-049 are withdrawn. Nothing about the model or provider is assumed to be given in
+  advance; the harness must be good on whatever model it is pointed at, and we pick the best per role.
+- **Checked live:** the OpenRouter key reaches paid frontier models (`anthropic/claude-opus-5.5`, `openai/gpt-6-sol`,
+  `google/gemini-3.8-flash` each answered a 16-token request), despite reporting $0 own credit. The key's **$50 limit**
+  is the only hard ceiling, so spend is still recorded from the execution layer, as a running total, not rationed.
+- **Consequences:** `[A/B]` tasks get real A/Bs at k = 3 on two families (principle 6 is now met normally, not
+  waived); the bake-off (MM.2) includes frontier models; the per-role routing (MM.3) is judged on success first,
+  then cost.

@@ -62,9 +62,9 @@ normal Claude Code attribution.
 - Never push to the `upstream` remote; never force-push `main`.
 - API keys only from environment variables; never write them to files, logs or reports.
 - Redact secrets (see `R-SAFE-3`) before any transcript leaves the process.
-- Eval spend: **₹100 total for the whole project** (~USD 1.15), not per run (D-025). Estimate
-  before any live call, record actual tokens from the response, and prefer the mock model.
-  No A/B sweeps are affordable; `[A/B]` tasks ship behind default-off flags, unticked.
+- Eval spend: token cost is **not** the project's constraint (D-050); choose models on merit and run
+  real A/Bs (k = 3). The one hard ceiling is the OpenRouter key's own $50 limit: record actual
+  tokens from the response and keep a running total in `DECISIONS.md`.
 - Don't call Peach Ice Tea Services APIs or depend on the proprietary Jev scorer.
 - If an upstream test fails before your change, record it in `DECISIONS.md` and don't
   "fix" it by weakening the test.

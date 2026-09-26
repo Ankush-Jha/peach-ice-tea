@@ -1,0 +1,38 @@
+diff --git a/synctool/cli.py b/synctool/cli.py
+index 35fe93a..6cd80f9 100644
+--- a/synctool/cli.py
++++ b/synctool/cli.py
+@@ -13,9 +13,9 @@ def build_parser():
+     parser = argparse.ArgumentParser(prog="synctool")
+     parser.add_argument("--version", action="version", version=f"synctool {__version__}")
+     parser.add_argument("--config", help="path to a config file")
+-    parser.add_argument("--verbose", action="store_true", help="log every file considered")
+-    parser.add_argument("--retries", type=int, default=3, help="network retries per file")
+-    parser.add_argument("--dry-run", action="store_true", help="report changes without making them")
++    parser.add_argument("--verbose", action="store_true", default=None, help="log every file considered")
++    parser.add_argument("--retries", type=int, help="network retries per file")
++    parser.add_argument("--dry-run", action="store_true", default=None, help="report changes without making them")
+     parser.add_argument("command", choices=sorted(COMMANDS))
+     return parser
+ 
+diff --git a/synctool/config/merge.py b/synctool/config/merge.py
+index 1c65d72..c41011b 100644
+--- a/synctool/config/merge.py
++++ b/synctool/config/merge.py
+@@ -7,11 +7,14 @@ _NOT_SETTINGS = {"command", "config"}
+ 
+ 
+ def merge_settings(file_settings, cli_args):
+-    """Return the effective settings: defaults, then the file, then the command line."""
++    """Return the effective settings: defaults, then the file, then the command line.
++
++    A command-line value of None means the flag was not given, so it does not override.
++    """
+     settings = dict(DEFAULTS)
+     settings.update(file_settings)
+     for key, value in cli_args.items():
+-        if key in _NOT_SETTINGS:
++        if key in _NOT_SETTINGS or value is None:
+             continue
+         settings[key] = value
+     return settings

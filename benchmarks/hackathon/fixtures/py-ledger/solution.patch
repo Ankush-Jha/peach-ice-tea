@@ -1,0 +1,45 @@
+diff --git a/ledger/invoice.py b/ledger/invoice.py
+index 1e5a5a7..1008072 100644
+--- a/ledger/invoice.py
++++ b/ledger/invoice.py
+@@ -24,7 +24,7 @@ class Invoice:
+         return to_money(self.subtotal() * self.discount_rate)
+ 
+     def tax(self):
+-        return to_money(self.subtotal() * self.tax_rate)
++        return to_money((self.subtotal() - self.discount()) * self.tax_rate)
+ 
+     def total(self):
+         return self.subtotal() - self.discount() + self.tax()
+diff --git a/ledger/money.py b/ledger/money.py
+index f5c5d73..f8d397f 100644
+--- a/ledger/money.py
++++ b/ledger/money.py
+@@ -1,13 +1,13 @@
+ """Money helpers. All amounts are Decimal values quantized to whole cents."""
+ 
+-from decimal import ROUND_HALF_EVEN, Decimal
++from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+ 
+ CENT = Decimal("0.01")
+ 
+ 
+ def to_money(value):
+     """Convert a number or numeric string to a Decimal rounded to cents."""
+-    return Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_EVEN)
++    return Decimal(str(value)).quantize(CENT, rounding=ROUND_HALF_UP)
+ 
+ 
+ def allocate(amount, ratios):
+@@ -16,4 +16,10 @@ def allocate(amount, ratios):
+         raise ValueError("ratios must be a non-empty list of positive numbers")
+     amount = to_money(amount)
+     total = sum(Decimal(str(r)) for r in ratios)
+-    return [to_money(amount * Decimal(str(r)) / total) for r in ratios]
++    parts = [
++        (amount * Decimal(str(r)) / total).quantize(CENT, rounding=ROUND_DOWN) for r in ratios
++    ]
++    leftover = int((amount - sum(parts)) / CENT)
++    for i in range(leftover):
++        parts[i % len(parts)] += CENT
++    return parts

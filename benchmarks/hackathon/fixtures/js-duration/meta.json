@@ -1,0 +1,5 @@
+{
+  "language": "javascript",
+  "test_command": "node --test",
+  "test_files": ["test/duration.test.js", "test/format.test.js"]
+}
