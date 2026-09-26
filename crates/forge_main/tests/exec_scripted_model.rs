@@ -127,6 +127,16 @@ struct Run {
 /// Runs `forge exec` in `project` against `model`, with an isolated
 /// `FORGE_CONFIG`. `agent_md` installs a custom agent and selects it.
 fn run_exec(project: &Path, model: &ScriptedModel, agent_md: Option<(&str, &str)>) -> Run {
+    run_exec_with_env(project, model, agent_md, &[])
+}
+
+/// [`run_exec`] with extra environment variables for the forge process.
+fn run_exec_with_env(
+    project: &Path,
+    model: &ScriptedModel,
+    agent_md: Option<(&str, &str)>,
+    extra_env: &[(&str, &str)],
+) -> Run {
     let config = tempfile::tempdir().unwrap();
     let telemetry = config.path().join("telemetry.jsonl");
     std::fs::write(
@@ -161,6 +171,7 @@ model_id = "scripted-model"
         std::fs::write(config.path().join("agents").join(format!("{id}.md")), markdown).unwrap();
         command.args(["--agent", id]);
     }
+    command.envs(extra_env.iter().copied());
     let mut child = command
         .args(["exec", "fix add", "--json", "--max-duration-secs", "45", "--telemetry"])
         .arg(&telemetry)
@@ -374,4 +385,41 @@ fn test_retries_are_metered_and_the_telemetry_stream_is_complete() {
     assert_eq!(tool["success"], true);
     assert_eq!(tool["origin_call_id"], model_calls[0]["call_id"]);
     assert_eq!(model_calls[0]["tool_call_ids"], serde_json::json!([tool["call_id"]]));
+}
+
+#[test]
+fn test_a_compaction_is_reported_in_telemetry() {
+    let project = project_with_a_test();
+    let echo = |text: &'static str| {
+        Turn::Tool("shell", serde_json::json!({"command": format!("echo {text}"), "description": "echo"}))
+    };
+    let model = ScriptedModel::start(vec![
+        echo("one"),
+        echo("two"),
+        echo("three"),
+        echo("four"),
+        Turn::Text("Done."),
+    ]);
+
+    let run = run_exec_with_env(
+        project.path(),
+        &model,
+        None,
+        &[("FORGE_COMPACT__MESSAGE_THRESHOLD", "6"), ("FORGE_COMPACT__RETENTION_WINDOW", "2")],
+    );
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let compactions: Vec<&serde_json::Value> = run
+        .telemetry
+        .iter()
+        .filter(|event| event["type"] == "context_compaction")
+        .collect();
+    assert!(!compactions.is_empty(), "telemetry: {:?}", run.telemetry);
+    assert_eq!(
+        compactions.len() as u64,
+        run.report["metrics"]["compactions"]["count"].as_u64().unwrap(),
+        "one event per compaction the metrics counted"
+    );
+    let first = compactions[0];
+    assert!(first["messages_after"].as_u64() < first["messages_before"].as_u64(), "{first}");
 }
