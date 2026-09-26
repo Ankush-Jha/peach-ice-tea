@@ -7,4 +7,7 @@
 
 pub mod identity;
 pub mod integrity;
+pub mod redact;
 pub mod runtime;
+pub mod scorer;
+pub mod telemetry;
