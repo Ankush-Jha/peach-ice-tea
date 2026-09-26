@@ -18,6 +18,7 @@ peach_app.workspace = true
 peach_api.workspace = true
 peach_domain.workspace = true
 peach_config.workspace = true
+peach_harness.workspace = true
 peach_walker.workspace = true
 peach_display.workspace = true
 peach_tracker.workspace = true
