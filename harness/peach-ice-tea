@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Peach Ice Tea — the evaluation entry point (HACKATHON.md §32; D-021, D-023).
+#
+# Runs one frozen, unattended task with the harness's evaluation profile and writes the
+# evidence bundle judges review (prompt, transcript, telemetry, integrity, diff, tests,
+# report, manifest). Always the `gemini` profile: the judged model is fixed (D-017), and
+# development profiles (deepseek, nvidia-deepseek) cannot be selected here (D-036).
+#
+# Usage:
+#   harness/peach-ice-tea --evidence-dir DIR [--test-command CMD] [--max-duration-secs N]
+#                         (--prompt-file FILE | PROMPT)
+#
+# Environment:
+#   GEMINI_API_KEY          required; read from the environment only, never written by this script.
+#   PEACH_ICE_TEA_BIN       peach binary (default: target/release/peach, else target/debug/peach).
+#
+# Exit codes are peach exec's: 0 completed, 1 error, 2 tool-failure limit, 3 request limit,
+# 4 time budget, 5 interrupted. The last line of stdout is the JSON outcome.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROFILE_DIR="$REPO/configuration/profiles/gemini"
+# Unset by the organizers until they publish runtime limits (ALIGNMENT §4 Q4); D-029 requires one.
+MAX_DURATION_SECS=1800
+EVIDENCE_DIR=""
+TEST_COMMAND=""
+PROMPT=""
+
+usage() {
+  sed -n '9,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  exit "${1:-2}"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --evidence-dir) EVIDENCE_DIR="${2:?--evidence-dir needs a value}"; shift 2 ;;
+    --test-command) TEST_COMMAND="${2:?--test-command needs a value}"; shift 2 ;;
+    --max-duration-secs) MAX_DURATION_SECS="${2:?--max-duration-secs needs a value}"; shift 2 ;;
+    --prompt-file) PROMPT="$(cat "${2:?--prompt-file needs a value}")"; shift 2 ;;
+    -h|--help) usage 0 ;;
+    --) shift; PROMPT="$*"; break ;;
+    -*) echo "peach-ice-tea: unknown option $1" >&2; usage ;;
+    *) PROMPT="$*"; break ;;
+  esac
+done
+
+[[ -n "$EVIDENCE_DIR" ]] || { echo "peach-ice-tea: --evidence-dir is required" >&2; usage; }
+[[ -n "$PROMPT" ]] || { echo "peach-ice-tea: a prompt (or --prompt-file) is required" >&2; usage; }
+[[ -n "${GEMINI_API_KEY:-}" ]] || { echo "peach-ice-tea: GEMINI_API_KEY is not set" >&2; exit 1; }
+
+if [[ -n "${PEACH_ICE_TEA_BIN:-}" ]]; then
+  BIN="$PEACH_ICE_TEA_BIN"
+elif [[ -x "$REPO/target/release/peach" ]]; then
+  BIN="$REPO/target/release/peach"
+elif [[ -x "$REPO/target/debug/peach" ]]; then
+  BIN="$REPO/target/debug/peach"
+else
+  echo "peach-ice-tea: no peach binary; run harness/build.sh first" >&2
+  exit 1
+fi
+
+# peach migrates the key from the environment into <PEACH_CONFIG>/.credentials.json (D-015).
+# Keep that directory outside the evidence bundle, and remove it when the run ends (D-043).
+CONFIG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/peach-ice-tea-config.XXXXXX")"
+cleanup() { rm -rf "$CONFIG_DIR"; }
+trap cleanup EXIT
+cp "$PROFILE_DIR/peach.toml" "$CONFIG_DIR/.peach.toml"
+export PEACH_CONFIG="$CONFIG_DIR"
+while IFS='=' read -r key value; do
+  [[ -z "$key" || "$key" == \#* || "$key" == PROFILE_* ]] && continue
+  export "$key=$value"
+done < "$PROFILE_DIR/profile.env"
+# Only the evaluation key may reach peach.
+unset DEEPSEEK_API_KEY NVIDIA_API_KEY OPENROUTER_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY
+
+ARGS=(exec --json --evidence-dir "$EVIDENCE_DIR" --max-duration-secs "$MAX_DURATION_SECS")
+[[ -n "$TEST_COMMAND" ]] && ARGS+=(--test-command "$TEST_COMMAND")
+
+# Not `exec`: the cleanup trap must run after peach exits. SIGTERM/SIGINT are forwarded so
+# peach can still write its bundle (exit 5, D-038).
+"$BIN" "${ARGS[@]}" "$PROMPT" </dev/null &
+PEACH_PID=$!
+trap 'kill -TERM "$PEACH_PID" 2>/dev/null' TERM INT
+set +e
+wait "$PEACH_PID"
+STATUS=$?
+# A forwarded signal interrupts the first wait; wait again for peach's own exit code.
+if kill -0 "$PEACH_PID" 2>/dev/null; then
+  wait "$PEACH_PID"
+  STATUS=$?
+fi
+exit "$STATUS"
