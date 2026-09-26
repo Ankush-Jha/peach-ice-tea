@@ -1,7 +1,8 @@
 # Role-routed profile (D-049, MM.3): each role runs on the model whose strength suits it.
 #   forge (main agent: plans, edits, verifies)  -> strongest reasoning/tool-use model
 #   sage  (read-only research subagent)         -> fast, cheap, long-context code model
-#   compaction summaries                         -> the same fast model (same provider, forge's `compact.model`)
+# Compaction is not routed: forge's compaction is template-based and calls no model, so `compact.model`
+# is carried in config but never used (D-052). The relevance scorer role waits on T3.9 (no LlmScorer yet).
 # Free models while the OpenRouter account has no credit (D-050); swap the ids when it does.
 [session]
 provider_id = "open_router"
@@ -10,6 +11,3 @@ model_id = "nvidia/nemotron-3-ultra-550b-a55b:free"
 [roles.sage]
 provider_id = "open_router"
 model_id = "cohere/north-mini-code:free"
-
-[compact]
-model = "cohere/north-mini-code:free"
