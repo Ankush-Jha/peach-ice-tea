@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use forge_domain::{Conversation, ConversationId, MessageEntry, ThreadEventRepository, events_between, replay_view};
+use forge_domain::{
+    Conversation, ConversationId, MessageEntry, ThreadEvent, ThreadEventRepository, events_between, replay_view,
+};
 use tokio::sync::Mutex;
 
 /// Appends, on every save, the events that turn the conversation's logged
@@ -15,9 +17,12 @@ use tokio::sync::Mutex;
 /// ways that would look like a rewrite. The view is cached per conversation
 /// and rebuilt from the log on a miss, so a resumed conversation continues
 /// its log instead of starting a new one.
+///
+/// Scratchpad notes (R-CTX-10, D-087) are not in the context; each new one is
+/// appended as a `Note` event, tracked by the highest note id logged.
 pub struct EventLogWriter<R> {
     repository: Arc<R>,
-    views: Mutex<HashMap<ConversationId, Vec<MessageEntry>>>,
+    views: Mutex<HashMap<ConversationId, (Vec<MessageEntry>, u64)>>,
 }
 
 impl<R> EventLogWriter<R> {
@@ -39,18 +44,30 @@ impl<R: ThreadEventRepository> EventLogWriter<R> {
             return Ok(());
         };
         let mut views = self.views.lock().await;
-        let before = match views.get(&conversation.id) {
-            Some(view) => view.clone(),
+        let (before, notes_logged) = match views.get(&conversation.id) {
+            Some(logged) => logged.clone(),
             None => {
-                let stored = self.repository.list_events(&conversation.id).await?;
-                replay_view(&stored.into_iter().map(|s| s.event).collect::<Vec<_>>())
+                let stored: Vec<ThreadEvent> =
+                    self.repository.list_events(&conversation.id).await?.into_iter().map(|s| s.event).collect();
+                let notes_logged = stored
+                    .iter()
+                    .filter_map(|event| match event {
+                        ThreadEvent::Note { id, .. } => Some(*id),
+                        _ => None,
+                    })
+                    .max()
+                    .unwrap_or(0);
+                (replay_view(&stored), notes_logged)
             }
         };
-        let events = events_between(&before, &context.messages);
+        let mut events = events_between(&before, &context.messages);
+        let new_notes = conversation.metrics.notes.items.iter().filter(|note| note.id > notes_logged);
+        events.extend(new_notes.map(|note| ThreadEvent::Note { id: note.id, text: note.text.clone() }));
         if !events.is_empty() {
             self.repository.append_events(&conversation.id, events).await?;
         }
-        views.insert(conversation.id, context.messages.clone());
+        let notes_logged = conversation.metrics.notes.written.max(notes_logged);
+        views.insert(conversation.id, (context.messages.clone(), notes_logged));
         Ok(())
     }
 }
@@ -120,6 +137,26 @@ mod tests {
         EventLogWriter::new(repository.clone()).record(&with_messages(&conversation, &["old 1", "old 2"])).await.unwrap();
 
         assert_eq!(kinds(&repository, &conversation.id).await, vec!["message", "message"]);
+    }
+
+    #[tokio::test]
+    async fn test_each_note_is_logged_once_even_across_a_resume() {
+        let (repository, conversation) = fixture();
+        let mut noted = with_messages(&conversation, &["a"]);
+        noted.metrics.notes.add("root cause: off-by-one").unwrap();
+        EventLogWriter::new(repository.clone()).record(&noted).await.unwrap();
+        noted.metrics.notes.add("tests: python3 -m unittest").unwrap();
+
+        // A new process, which must not log note 1 again.
+        EventLogWriter::new(repository.clone()).record(&noted).await.unwrap();
+
+        let actual: Vec<ThreadEvent> =
+            repository.list_events(&conversation.id).await.unwrap().into_iter().map(|s| s.event).skip(1).collect();
+        let expected = vec![
+            ThreadEvent::Note { id: 1, text: "root cause: off-by-one".to_string() },
+            ThreadEvent::Note { id: 2, text: "tests: python3 -m unittest".to_string() },
+        ];
+        assert_eq!(actual, expected);
     }
 
     #[tokio::test]

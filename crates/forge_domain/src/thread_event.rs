@@ -39,6 +39,15 @@ pub enum ThreadEvent {
         /// The view's messages after compacting.
         view: Vec<MessageEntry>,
     },
+    /// The model wrote a scratchpad note (R-CTX-10, D-087). Notes live on the
+    /// conversation's metrics, not in the view, so this changes neither
+    /// history nor view; it keeps every note, including ones later evicted.
+    Note {
+        /// The note's id, from 1 in the order written.
+        id: u64,
+        /// The note as kept.
+        text: String,
+    },
 }
 
 impl ThreadEvent {
@@ -48,6 +57,7 @@ impl ThreadEvent {
             ThreadEvent::Message { .. } => "message",
             ThreadEvent::Revise { .. } => "revise",
             ThreadEvent::Compaction { .. } => "compaction",
+            ThreadEvent::Note { .. } => "note",
         }
     }
 }
@@ -75,7 +85,7 @@ pub fn replay_history(events: &[ThreadEvent]) -> Vec<MessageEntry> {
         .iter()
         .filter_map(|event| match event {
             ThreadEvent::Message { entry } => Some((**entry).clone()),
-            ThreadEvent::Revise { .. } | ThreadEvent::Compaction { .. } => None,
+            ThreadEvent::Revise { .. } | ThreadEvent::Compaction { .. } | ThreadEvent::Note { .. } => None,
         })
         .collect()
 }
@@ -95,6 +105,7 @@ pub fn replay_view(events: &[ThreadEvent]) -> Vec<MessageEntry> {
                 }
             }
             ThreadEvent::Compaction { view: after, .. } => view = after.clone(),
+            ThreadEvent::Note { .. } => {}
         }
         view
     })
