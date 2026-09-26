@@ -1,5 +1,10 @@
 {
   "language": "javascript",
   "test_command": "node --test",
-  "test_files": ["test/duration.test.js", "test/format.test.js"]
+  "test_files": [
+    "test/duration.test.js",
+    "test/format.test.js",
+    "integration/jobs.test.js"
+  ],
+  "integration_command": "node --test \"integration/**/*.test.js\""
 }

@@ -26,7 +26,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       → detection, classification, gate (2 nudges, voluntary stops only), `test_run` + `recovery` events, final
       harness run into `tests.json`, hints for environment/compile/timeout failures (D-037). Known gap: shell-made
       edits don't arm the gate. Gate/hints ship on in exec without an A/B (C2), switchable off.
-- [ ] **TH.7** `R-HACK-8` local hackathon-shaped evaluation suite and runner (replaces T0.5 as primary suite).
+- [x] **TH.7** `R-HACK-8` local hackathon-shaped evaluation suite and runner (replaces T0.5 as primary suite).
+      → 6 fixtures (3 harder, D-049) with issue, unit and — for the harder three — integration tests (D-057); run.ts, ab.ts, bakeoff.ts.
 - [x] **TH.8** `R-HACK-4` standard report generator (`forge report`).
       → `forge_harness::report`, golden from `fixtures/evidence_min`; generated in every bundle (D-035).
       Organizer `report.schema.json` adapter waits on publication (D-020).
