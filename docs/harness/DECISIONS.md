@@ -644,3 +644,25 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   against the real binary: `write {filePath, contents}` fails without the flag, and with it the file is
   written and two rename events are recorded.
 - **A/B design:** TH.7 suite, Gemini, k = 3. Ship if tool errors fall and success is not lower.
+
+## D-044 — TH.9 submission layout; the entry point is Gemini-only and key-hygienic (2026-09-25)
+- **Layout (§32):**
+  - `harness/`: `peach-ice-tea` (the entry point), `build.sh` and `check-layout.sh`;
+  - `telemetry/` and `reporting/`: READMEs describing our internal stream and report, plus where the
+    organizers' files will be vendored byte-for-byte;
+  - `configuration/`: the prompt template, profiles and a flag table;
+  - `documentation/`: `ARCHITECTURE.md` (the §25 answers, each tied to a code path, a telemetry field and a
+    D-number) and upstream's README, moved here with `git mv` (PLAN C11). The workspace stays in `crates/`
+    (D-021).
+- **`harness/peach-ice-tea`:**
+  - It is hard-wired to `configuration/profiles/gemini` (D-017/D-036), so the judged entry point cannot run
+    another model.
+  - It always passes `--json`, `--evidence-dir` and `--max-duration-secs` (default 1800, D-029), and strips
+    every other provider key.
+  - Forge migrates the key into `<FORGE_CONFIG>/.credentials.json`, so the wrapper keeps that directory
+    outside the bundle and deletes it on exit.
+  - It forwards SIGTERM/SIGINT so forge can still exit 5 with its bundle.
+  - Smoke-tested against the real binary with an invalid key: exit 1 at once, a complete 10-file bundle,
+    the config dir removed, no key in the evidence.
+- **Not done:** `telemetry/internal/*.schema.json` is not generated (`forge_harness` has no `schemars`).
+  "ARCHITECTURE grounded in real telemetry" stays partial until a live run completes.
