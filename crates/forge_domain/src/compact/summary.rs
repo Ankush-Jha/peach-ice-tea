@@ -407,6 +407,9 @@ fn extract_tool_info(call: &ToolCallFull, current_todos: &[Todo]) -> Option<Summ
                 Some(SummaryTool::TodoWrite { changes })
             }
             ToolCatalog::TodoRead(_) => Some(SummaryTool::TodoRead),
+            // harness: D-087 — notes are re-shown verbatim by the notes hook,
+            // so a summary line for them would only duplicate it.
+            ToolCatalog::WriteNote(_) => None,
             ToolCatalog::Task(input) => Some(SummaryTool::Task { agent_id: input.agent_id }),
         };
     }

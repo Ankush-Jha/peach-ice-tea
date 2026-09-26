@@ -19,6 +19,7 @@ tools:
   - skill
   - todo_write
   - todo_read
+  - write_note
   - mcp_*
 user_prompt: |-
   <{{event.name}}>{{event.value}}</{{event.name}}>

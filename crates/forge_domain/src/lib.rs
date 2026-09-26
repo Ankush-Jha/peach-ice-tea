@@ -37,6 +37,7 @@ mod repo;
 mod result_stream_ext;
 mod exec_report;
 pub mod provider_quota;
+mod scratchpad;
 mod session_metrics;
 mod task_metrics;
 mod shell;
@@ -60,6 +61,8 @@ mod workspace;
 mod xml;
 
 pub use agent::*;
+// harness: R-CTX-10 (D-087)
+pub use scratchpad::*;
 pub use attachment::*;
 pub use chat_request::*;
 pub use chat_response::*;

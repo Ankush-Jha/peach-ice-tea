@@ -10,7 +10,7 @@ use crate::apply_tunable_parameters::ApplyTunableParameters;
 use crate::changed_files::ChangedFiles;
 use crate::dto::ToolsOverview;
 use crate::hooks::{
-    CompactionHandler, DoomLoopDetector, PendingTodosHandler, TelemetryHandler,
+    CompactionHandler, DoomLoopDetector, NotesHandler, PendingTodosHandler, TelemetryHandler,
     TitleGenerationHandler, TracingHandler, VerifyGateHandler, RuntimeVerifyGateHandler,
 };
 use crate::init_conversation_metrics::InitConversationMetrics;
@@ -109,7 +109,7 @@ impl<S: Services + EnvironmentInfra<Config = forge_config::ForgeConfig>> ForgeAp
         let tool_definitions: Vec<ToolDefinition> =
             tool_resolver.resolve(&agent).into_iter().cloned().collect();
         // harness: D-039 — drop worked examples from tool descriptions, which
-        // are re-sent with every request. Off unless the flag is set.
+        // are re-sent with every request. On unless the flag is `0` (D-085).
         let tool_definitions = if forge_harness::tool_docs::enabled() {
             tool_definitions
                 .into_iter()
@@ -202,7 +202,11 @@ impl<S: Services + EnvironmentInfra<Config = forge_config::ForgeConfig>> ForgeAp
                     .clone()
                     .and(telemetry_handler.clone())
                     .and(CompactionHandler::new(agent.clone(), environment.clone()))
-                    .and(telemetry_handler.compaction_observer()),
+                    .and(telemetry_handler.compaction_observer())
+                    // harness: R-CTX-10 (D-087) — after compaction, so the
+                    // notes come back on the very next request. Inert
+                    // without notes, which only exist with the flag on.
+                    .and(NotesHandler::new()),
             )
             .on_toolcall_start(tracing_handler.clone().and(telemetry_handler.clone()))
             .on_toolcall_end(tracing_handler.and(telemetry_handler))

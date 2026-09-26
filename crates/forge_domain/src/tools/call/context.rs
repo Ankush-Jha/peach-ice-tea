@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use derive_setters::Setters;
 
-use crate::{ArcSender, ChatResponse, Metrics, TitleFormat, Todo, TodoItem};
+use crate::{ArcSender, ChatResponse, Metrics, ScratchNote, TitleFormat, Todo, TodoItem};
 
 /// Provides additional context for tool calls.
 #[derive(Debug, Clone, Setters)]
@@ -81,6 +81,32 @@ impl ToolCallContext {
     /// validation fails.
     pub fn update_todos(&self, changes: Vec<TodoItem>) -> anyhow::Result<Vec<Todo>> {
         self.try_with_metrics(|metrics| metrics.apply_todo_changes(changes))
+    }
+
+    /// Keeps `text` as a scratchpad note (R-CTX-10).
+    ///
+    /// Returns the note as kept, the note evicted to make room if any, and
+    /// how many notes are now kept.
+    ///
+    /// # Arguments
+    /// * `text` - The note, already redacted.
+    ///
+    /// # Errors
+    /// Returns an error if the metrics lock cannot be acquired or the note is
+    /// blank.
+    pub fn append_note(&self, text: &str) -> anyhow::Result<(ScratchNote, Option<ScratchNote>, usize)> {
+        self.try_with_metrics(|metrics| {
+            let (note, evicted) = metrics.notes.add(text)?;
+            Ok((note, evicted, metrics.notes.items.len()))
+        })
+    }
+
+    /// Returns the scratchpad notes currently kept, oldest first.
+    ///
+    /// # Errors
+    /// Returns an error if the metrics lock cannot be acquired.
+    pub fn get_notes(&self) -> anyhow::Result<Vec<ScratchNote>> {
+        self.with_metrics(|metrics| metrics.notes.items.clone())
     }
 }
 

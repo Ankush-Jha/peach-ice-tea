@@ -47,8 +47,8 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
       → unblocked by the NIM pool (D-085). Done: compact tool docs — shipped on (2 families). Running: TH.10 on Kimi.
 - [x] **BR.2** Tier 3.1 failure-attribution tag on `recovery` events (+ emit `offload_read`/`rerun`/`reread` as events).
       → D-086. Telemetry schema 0.2.0; report tallies recoveries by cause. Observability only, no A/B needed.
-- [ ] **BR.3** Tier 3.2 `write_note` scratchpad tool kept outside `Context.messages` (`R-CTX-10`).
-      → not started (Tier 3). Note D-067's concern does not apply: notes live in the event log, not the repo.
+- [x] **BR.3** Tier 3.2 `write_note` scratchpad tool kept outside `Context.messages` (`R-CTX-10`).
+      → D-087; flagged off, A/B tracked as T3.14. D-067's concern does not apply: notes live in metrics and the event log, not the repo.
 - [ ] **BR.4** Tier 3.3 remove 6 dead schema structs from `catalog.rs`.
       → not started (Tier 3, cleanup only).
 
@@ -191,6 +191,8 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
       commands (after T2.2), and recall-when-needed (after T3.3). Closes the gap in `RECON.md` §5.
       → deferred: its checks need real runs that use subagents, background jobs (T2.2) and recall (flagged, D-066); T0.7's
         subagent check moved here (D-078).
+- [ ] **T3.14** `R-CTX-10` scratchpad notes (`write_note`) outside the context, re-shown after compaction. **[A/B]**
+      → built behind `FORGE_HARNESS_WRITE_NOTE=1` (D-087). A/B pending: it needs runs long enough to compact, like T3.10.
 
 ## M4 — Safety
 - [ ] **T4.1** `R-SAFE-1` ask-by-default policy + TUI approval prompt + `--yolo`.

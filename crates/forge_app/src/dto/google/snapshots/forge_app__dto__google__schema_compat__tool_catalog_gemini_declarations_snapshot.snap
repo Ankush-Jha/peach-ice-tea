@@ -476,6 +476,21 @@ expression: declarations
   }
 }
 {
+  "name": "write_note",
+  "parameters": {
+    "properties": {
+      "note": {
+        "description": "The note: one fact worth keeping for the rest of the task, at most\n500 characters.",
+        "type": "string"
+      }
+    },
+    "required": [
+      "note"
+    ],
+    "type": "object"
+  }
+}
+{
   "name": "task",
   "parameters": {
     "description": "Input structure for the Task tool - delegates work to specialized agents",

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub use crate::file_operation::FileOperation;
-use crate::{TaskMetrics, Todo, TodoItem, TodoStatus};
+use crate::{Notes, TaskMetrics, Todo, TodoItem, TodoStatus};
 
 #[derive(Debug, Clone, Default, Setters, Serialize, Deserialize)]
 #[setters(into, strip_option)]
@@ -34,6 +34,11 @@ pub struct Metrics {
     // spans several user turns accumulates across all of them.
     #[serde(default)]
     pub task: TaskMetrics,
+
+    // harness: R-CTX-10 (D-087) — the model's scratchpad notes, kept here
+    // rather than in the context so compaction cannot touch them.
+    #[serde(default, skip_serializing_if = "Notes::is_empty")]
+    pub notes: Notes,
 }
 
 impl Metrics {
