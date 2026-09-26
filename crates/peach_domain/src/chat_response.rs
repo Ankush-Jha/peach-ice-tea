@@ -102,6 +102,13 @@ pub enum InterruptionReason {
     MaxRequestPerTurnLimitReached {
         limit: u64,
     },
+    /// harness: R-LOOP-5 — a tool call repeated with identical arguments
+    /// enough times that it was withheld and the run is pausing for
+    /// human review before continuing.
+    DoomLoopEscalation {
+        tool_name: ToolName,
+        occurrences: u64,
+    },
 }
 
 #[derive(Clone)]

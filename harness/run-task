@@ -10,7 +10,7 @@
 # - The agent works in REPO, the repository to fix, never in this harness repository.
 #
 # Environment: AI_API_KEY (required), PROFILE, MODEL, PROMPT, REPO, EVIDENCE_DIR,
-# TEST_COMMAND, MAX_DURATION_SECS. Exit code is peach exec's (0 completed ... 5 interrupted).
+# TEST_COMMAND, MAX_DURATION_SECS. Exit code is peach exec's (0 completed ... 6 doom-loop escalation).
 set -euo pipefail
 
 HARNESS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

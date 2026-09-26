@@ -810,3 +810,46 @@ async fn test_without_the_flag_every_call_runs_alone() {
     }
 }
 
+
+#[tokio::test]
+async fn test_doom_loop_escalation_runs_twice_skips_then_pauses_the_run() {
+    // harness: R-LOOP-5 (D-082). Four identical calls with the ladder on: the
+    // first two run (the second with a warning), the third is withheld, the
+    // fourth is withheld and pauses the run.
+    let tool_call = ToolCallFull::new("fs_read").arguments(ToolCallArguments::from(json!({"path": "loop.txt"})));
+    let tool_result = ToolResult::new("fs_read").output(Ok(ToolOutput::text("Same content")));
+    let mut ctx = TestContext::default()
+        .mock_tool_call_responses(vec![
+            (tool_call.clone(), tool_result.clone()),
+            (tool_call.clone(), tool_result.clone()),
+            (tool_call.clone(), tool_result.clone()),
+            (tool_call.clone(), tool_result.clone()),
+        ])
+        .mock_assistant_responses(vec![
+            ChatCompletionMessage::assistant("Call 1").add_tool_call(tool_call.clone()),
+            ChatCompletionMessage::assistant("Call 2").add_tool_call(tool_call.clone()),
+            ChatCompletionMessage::assistant("Call 3").add_tool_call(tool_call.clone()),
+            ChatCompletionMessage::assistant("Call 4").add_tool_call(tool_call.clone()),
+            ChatCompletionMessage::assistant("Done").finish_reason(FinishReason::Stop),
+        ]);
+    ctx.doom_loop_escalation = true;
+
+    ctx.run("Test doom loop escalation").await.unwrap();
+
+    let responses: Vec<_> = ctx.output.chat_responses.iter().filter_map(|r| r.as_ref().ok()).collect();
+    let ends: Vec<String> = responses
+        .iter()
+        .filter_map(|response| match response {
+            ChatResponse::ToolCallEnd(result) => Some(format!("{:?}", result.output)),
+            _ => None,
+        })
+        .collect();
+    let executed = ends.iter().filter(|text| !text.contains("NOT executed")).count();
+    let warned = ends.iter().filter(|text| text.contains("It ran again this time")).count();
+    let paused = responses
+        .iter()
+        .any(|response| matches!(response, ChatResponse::Interrupt { reason: peach_domain::InterruptionReason::DoomLoopEscalation { occurrences: 4, .. } }));
+
+    assert_eq!((ends.len(), executed, warned), (4, 2, 1), "results: {ends:?}");
+    assert!(paused, "the fourth identical call did not pause the run");
+}

@@ -1,0 +1,1 @@
+[SYSTEM WARNING] The exact same `{{tool_name}}` call (identical arguments) has been made {{occurrences}} times in a row. It was NOT executed. This run is pausing here for a human to review before continuing — do not repeat this call; if the run resumes, try a materially different approach.

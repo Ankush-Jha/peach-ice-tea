@@ -16,7 +16,7 @@
 #   PEACH_ICE_TEA_BIN       peach binary (default: target/release/peach, else target/debug/peach).
 #
 # Exit codes are peach exec's: 0 completed, 1 error, 2 tool-failure limit, 3 request limit,
-# 4 time budget, 5 interrupted. The last line of stdout is the JSON outcome.
+# 4 time budget, 5 interrupted, 6 doom-loop escalation. The last line of stdout is the JSON outcome.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

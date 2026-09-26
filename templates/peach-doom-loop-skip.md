@@ -1,0 +1,1 @@
+[SYSTEM WARNING] The exact same `{{tool_name}}` call (identical arguments) has been made {{occurrences}} times in a row. It was NOT executed this time — repeating a call that already produced the same result wastes the task budget without new progress. Change your approach: different arguments, a different tool, or explain what you are trying to accomplish.

@@ -138,6 +138,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [ ] **T2.6** `R-TOOL-3` pre-dispatch correction layer + correction counters. **[A/B]**
       → built behind `PEACH_HARNESS_TOOL_CORRECTION=1` (default off): unambiguous key renames, `recovery` events,
       real-binary test (D-042). Unticked pending A/B.
+- [ ] **T2.7** `R-LOOP-5` enforced doom-loop escalation ladder (warn → skip → pause). **[A/B]**
+      → built behind `PEACH_HARNESS_DOOM_LOOP_ESCALATION` (default off): unit, orchestrator and exec tests (D-082). A/B pending.
 
 ## M3 — Context engine
 - [x] **T3.1** `R-CTX-1` migrations + `thread_events` + `artifacts` + repository + replay test.
