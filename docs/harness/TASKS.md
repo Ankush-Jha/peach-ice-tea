@@ -34,7 +34,7 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [x] **TH.9** `R-HACK-9` submission layout, README, `documentation/ARCHITECTURE.md`, prompt template; `harness/peach-ice-tea` entry command and the `peach-ice-tea` harness identity constant (D-023).
       → wrapper (gemini-only, evidence always, budget, key hygiene), build/check scripts, §32 tree, README, ARCHITECTURE
       answering §25 with code paths + telemetry fields (D-044). "Grounded in real telemetry" remains partial until a
-      completed live run.
+      completed live run. Root `Makefile` (setup/run/test/check/clean, `AI_API_KEY`) verified from a clean clone (D-070).
 
 ## MM — Any model (D-049)
 - [x] **MM.1** Model profiles: `openrouter-nemotron` (main) and `openrouter-routed` (main + cheap `sage`/compaction);

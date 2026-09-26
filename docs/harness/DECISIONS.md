@@ -1218,3 +1218,39 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   a model prescribed by the committee at evaluation time without source changes. See that file for the
   interpretation of "launch then supply the issue" (stdin + a `PROMPT=` override into the existing one-shot
   `peach exec` path) and how `AI_API_KEY` maps onto whichever profile variable is currently selected.
+
+## D-070 — The root Makefile: the organisers' `setup`/`run`/`test`/`clean` contract over the existing entry point (2026-09-27)
+- **Built (MAKEFILE_EVAL.md):** a root `Makefile` plus `harness/run-task`. No new execution mode: `make run`
+  feeds the existing one-shot `harness/peach-ice-tea` → `peach exec` path.
+  - `setup`: installs Rust with rustup and `protoc` with Homebrew when they are missing (otherwise it names the
+    apt package and stops); release build via `harness/build.sh`; `npm ci`; the layout check.
+  - `run`: the task comes from `PROMPT=` or stdin (piped, or typed and ended with Ctrl-D); both are the literal
+    reading of "launch, then supply the issue".
+  - `test`: the local hackathon suite, live.
+  - `check`: offline checks with no key and no model: runner unit tests, reference solutions, peach's own
+    integrity guard, and the layout check.
+  - `clean`: `cargo clean` plus evidence and run reports.
+- **`AI_API_KEY`:** exported as the variable the selected profile names (`PROFILE_KEY_VAR`), then unset, so it
+  reaches peach only under that name. It is exported rather than passed as an argument, so it never appears in
+  a process list. The wrapper strips every other provider key. A prescribed model is `MODEL=` (or `PROFILE=`),
+  never a source change. `.env.example` holds the one empty variable.
+- **Open question, handled defensively and flagged (like MAKEFILE_EVAL's stdin question):** which repository does
+  the task apply to? `peach exec` works in its current directory, but `make run` runs inside the harness clone.
+  `REPO=` names the target; it defaults to where `make` was invoked, so `make -f <harness>/Makefile run` works from
+  inside the target. `make run` **refuses to run on the harness repository itself**, with the exact command to
+  use instead, rather than silently letting the agent edit the harness. If the organisers' flow is different, it
+  is a one-variable change.
+- **`make test` spends model requests** (the suite is a live run); `make check` exists so a keyless evaluator
+  still has something meaningful to run.
+- **Verified from a clean clone** (HEAD plus exactly this commit's files, fresh `target/` and `node_modules`):
+  - `make setup`: exit 0 (release build 5 min 42 s, 102 npm packages, layout ok).
+  - `make run` from the harness directory is refused with the redirect message.
+  - `make run REPO=<py-bugfix copy> TEST_COMMAND=… < issue.md`, with the issue on stdin: **`completed`, exit 0,
+    64 s, 5 LLM calls** (66,960 input / 870 output tokens, 21,600 cached) on `nvidia/nemotron-3-ultra-550b-a55b:free`.
+    The fixture's tests pass, integrity is clean (2 checked), the harness's own final run passed 4/0, the bundle
+    is complete (11 files), the key string appears nowhere in the evidence, and no leftover credentials directory
+    remains.
+  - `make check`: 7/7 runner tests, 6/6 reference, 6/6 peach-cheat, layout ok. `make clean` removes `target/` and
+    `evidence/`.
+  - The run is also **D-046 reproduced on the current default model through the evaluator path**, at zero
+    spend (free tier).

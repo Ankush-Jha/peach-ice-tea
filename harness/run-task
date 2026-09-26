@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# `make run` (MAKEFILE_EVAL.md, D-070): one task, one-shot, through harness/peach-ice-tea.
+#
+# - The credential is AI_API_KEY (fixed by the organizers). It is handed to the selected
+#   profile as the provider variable that profile expects, so the provider can change
+#   without touching source: `make run PROFILE=gemini` uses AI_API_KEY as GEMINI_API_KEY.
+# - The task comes from PROMPT (if set) or from stdin: piped (`make run < issue.md`) or
+#   typed and ended with Ctrl-D.
+# - The agent works in REPO, the repository to fix, never in this harness repository.
+#
+# Environment: AI_API_KEY (required), PROFILE, MODEL, PROMPT, REPO, EVIDENCE_DIR,
+# TEST_COMMAND, MAX_DURATION_SECS. Exit code is peach exec's (0 completed ... 5 interrupted).
+set -euo pipefail
+
+HARNESS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROFILE="${PROFILE:-openrouter}"
+PROFILE_DIR="$HARNESS/configuration/profiles/$PROFILE"
+
+fail() { echo "make run: $*" >&2; exit 1; }
+
+[[ -f "$PROFILE_DIR/profile.env" ]] || fail "no profile '$PROFILE' (see configuration/profiles/)"
+[[ -n "${AI_API_KEY:-}" ]] || fail "AI_API_KEY is not set: export AI_API_KEY=<key> first"
+KEY_VAR="$(sed -n 's/^PROFILE_KEY_VAR=//p' "$PROFILE_DIR/profile.env")"
+[[ -n "$KEY_VAR" ]] || fail "profile '$PROFILE' names no PROFILE_KEY_VAR"
+
+REPO="$(cd "${REPO:-$PWD}" 2>/dev/null && pwd)" || fail "REPO does not exist: ${REPO:-$PWD}"
+if [[ "$REPO" == "$HARNESS" ]]; then
+  fail "the task needs a repository to work on, and this is the harness itself.
+  Run from the repository to fix:   make -f $HARNESS/Makefile run
+  or name it:                       make run REPO=/path/to/repository"
+fi
+
+TASK_FILE="$(mktemp "${TMPDIR:-/tmp}/peach-ice-tea-task.XXXXXX")"
+trap 'rm -f "$TASK_FILE"' EXIT
+if [[ -n "${PROMPT:-}" ]]; then
+  printf '%s\n' "$PROMPT" > "$TASK_FILE"
+else
+  if [[ -t 0 ]]; then
+    echo "Enter the task for $REPO, then press Ctrl-D:" >&2
+  fi
+  cat > "$TASK_FILE"
+fi
+[[ -s "$TASK_FILE" ]] && grep -q '[^[:space:]]' "$TASK_FILE" || fail "empty task: give PROMPT=... or text on stdin"
+
+EVIDENCE_DIR="${EVIDENCE_DIR:-$HARNESS/evidence/$(date -u +%Y%m%dT%H%M%SZ)}"
+ARGS=(--profile "$PROFILE" --evidence-dir "$EVIDENCE_DIR" --prompt-file "$TASK_FILE")
+[[ -n "${MODEL:-}" ]] && ARGS+=(--model "$MODEL")
+[[ -n "${TEST_COMMAND:-}" ]] && ARGS+=(--test-command "$TEST_COMMAND")
+[[ -n "${MAX_DURATION_SECS:-}" ]] && ARGS+=(--max-duration-secs "$MAX_DURATION_SECS")
+
+echo "make run: profile $PROFILE, repository $REPO, evidence $EVIDENCE_DIR" >&2
+cd "$REPO"
+# The key reaches peach only as the profile's own variable (exported, never an argument,
+# so it is not visible in the process list); the wrapper strips every other provider key.
+export "$KEY_VAR=$AI_API_KEY"
+unset AI_API_KEY
+set +e
+"$HARNESS/harness/peach-ice-tea" "${ARGS[@]}" </dev/null
+status=$?
+set -e
+echo "make run: exit $status; evidence in $EVIDENCE_DIR (report.md is the summary)" >&2
+exit $status
