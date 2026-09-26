@@ -45,8 +45,8 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
 - [ ] **BR.1** Tier 2 A/Bs, one per flag on the default model, k ≥ 2, ship or revert each:
       compact tool docs (D-039; strongest prior, −17.6% input on DeepSeek), T1.2, T1.4, T1.5, T2.1, T2.6, T3.10, T2.7, TH.10.
       → unblocked by the NIM pool (D-085). Done: compact tool docs — shipped on (2 families). Running: TH.10 on Kimi.
-- [ ] **BR.2** Tier 3.1 failure-attribution tag on `recovery` events (+ emit `offload_read`/`rerun`/`reread` as events).
-      → not started (Tier 3; after BR.1 per the brief's order).
+- [x] **BR.2** Tier 3.1 failure-attribution tag on `recovery` events (+ emit `offload_read`/`rerun`/`reread` as events).
+      → D-086. Telemetry schema 0.2.0; report tallies recoveries by cause. Observability only, no A/B needed.
 - [ ] **BR.3** Tier 3.2 `write_note` scratchpad tool kept outside `Context.messages` (`R-CTX-10`).
       → not started (Tier 3). Note D-067's concern does not apply: notes live in the event log, not the repo.
 - [ ] **BR.4** Tier 3.3 remove 6 dead schema structs from `catalog.rs`.

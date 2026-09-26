@@ -210,11 +210,14 @@ impl<
                 // T1.3 (R-EVAL-2): `offload_read` if this is one of our own
                 // truncation dump files, `reread_same_range` if this exact
                 // range on this path was already the most recent read.
-                context.with_metrics(|metrics| {
+                let fired = context.with_metrics(|metrics| {
                     metrics
                         .task
                         .record_read(&normalized_path, output.info.start_line, output.info.end_line)
                 })?;
+                for counter in fired {
+                    emit_counter_recovery(counter, &normalized_path);
+                }
 
                 (input, output).into()
             }
@@ -322,7 +325,9 @@ impl<
                     .unwrap_or_else(|| self.services.get_environment().cwd.display().to_string());
                 let normalized_cwd = self.normalize_path(cwd);
                 // `rerun_same_command` within the last five LLM calls (T1.3).
-                context.with_metrics(|metrics| metrics.task.record_shell_command(&input.command))?;
+                if context.with_metrics(|metrics| metrics.task.record_shell_command(&input.command))? {
+                    emit_counter_recovery("rerun_same_command", &input.command);
+                }
                 let output = self
                     .services
                     .execute(
@@ -452,6 +457,27 @@ impl<
             None => output,
         })
     }
+}
+
+/// Emits one of the D-060 recovery counters as a telemetry event too, with
+/// whose failure it answered (D-086): reading an offloaded dump recovers
+/// output the harness withheld; re-reading the same range or re-running the
+/// same command is the model repeating itself.
+fn emit_counter_recovery(counter: &'static str, trigger: &str) {
+    use peach_harness::telemetry::event::FailureAttribution;
+    let attribution = match counter {
+        "offload_read" => FailureAttribution::Harness,
+        _ => FailureAttribution::Model,
+    };
+    peach_harness::telemetry::emit(peach_harness::telemetry::TelemetryEvent::Recovery(
+        peach_harness::telemetry::event::Recovery {
+            action: counter.to_string(),
+            trigger: trigger.to_string(),
+            outcome: None,
+            origin_call_id: None,
+            attribution: Some(attribution),
+        },
+    ));
 }
 
 #[cfg(test)]

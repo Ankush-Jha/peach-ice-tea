@@ -22,6 +22,7 @@ expression: json
   },
   "error_recovery": {
     "model_failover_count": 0,
+    "recoveries_by_attribution": {},
     "refused_integrity_actions": 1,
     "retries_by_reason": {
       "empty_completion": 1,

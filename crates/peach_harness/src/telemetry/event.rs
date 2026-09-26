@@ -386,6 +386,34 @@ pub struct Recovery {
     /// recovery, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_call_id: Option<String>,
+    /// Whose failure this recovery answered (D-086), when the emitter can
+    /// tell. Added in schema 0.2.0; absent in older logs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribution: Option<FailureAttribution>,
+}
+
+/// Whose failure a recovery answered: the model's (a misnamed argument, a
+/// redundant re-read), the harness's (output it withheld, a model it chose
+/// that failed), the environment's (a missing toolchain), or unclear.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureAttribution {
+    Model,
+    Harness,
+    Environment,
+    Ambiguous,
+}
+
+impl FailureAttribution {
+    /// The serialised name, for tallies.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FailureAttribution::Model => "model",
+            FailureAttribution::Harness => "harness",
+            FailureAttribution::Environment => "environment",
+            FailureAttribution::Ambiguous => "ambiguous",
+        }
+    }
 }
 
 /// A test command was executed.
@@ -542,6 +570,7 @@ mod tests {
             trigger: "tool_error".to_string(),
             outcome: None,
             origin_call_id: Some("call-3".to_string()),
+            attribution: None,
         };
 
         assert_eq!(serde_json::to_value(&error).unwrap()["origin_call_id"], "call-3");

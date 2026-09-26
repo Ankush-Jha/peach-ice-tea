@@ -97,8 +97,22 @@ pub fn record_shell(command: &str, exit_code: Option<i32>, output: &str, duratio
         trigger: classification.class.as_str().to_string(),
         outcome: None,
         origin_call_id: None,
+        attribution: Some(attribution_of(classification.class)),
     }));
     Some(hint)
+}
+
+/// Whose failure a hinted test run was (D-086): a missing runner is the
+/// environment's; code that does not compile is the model's; a timeout could
+/// be either (an infinite loop, or a slow machine).
+fn attribution_of(class: FailureClass) -> event::FailureAttribution {
+    match class {
+        FailureClass::Environment => event::FailureAttribution::Environment,
+        FailureClass::Compile | FailureClass::TestAssertion => event::FailureAttribution::Model,
+        FailureClass::Timeout | FailureClass::Passed | FailureClass::Unknown => {
+            event::FailureAttribution::Ambiguous
+        }
+    }
 }
 
 /// One plain sentence naming what kind of failure this was, when that is
@@ -341,6 +355,21 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn test_hinted_failures_are_attributed_to_whoever_caused_them() {
+        let actual: Vec<_> = [FailureClass::Environment, FailureClass::Compile, FailureClass::Timeout]
+            .into_iter()
+            .map(attribution_of)
+            .collect();
+
+        let expected = vec![
+            event::FailureAttribution::Environment,
+            event::FailureAttribution::Model,
+            event::FailureAttribution::Ambiguous,
+        ];
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn test_the_gate_nudges_twice_then_gives_up_once() {

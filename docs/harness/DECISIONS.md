@@ -1658,3 +1658,28 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
   **The graded model is checked next:** the team asked for a Gemini arm because the D-081 run spent its 20
   requests partly on `todo_write`. That runs when Gemini's daily quota resets, and a regression there reverts this.
 - **Runner fix:** `ab.ts` counted `--suite all` as one fixture in its summary line (cosmetic; every fixture ran).
+
+## D-086 — Brief Tier 3.1: each recovery event says whose failure it answered (2026-09-27)
+- **Why:** a report that says "3 recoveries" does not say whether the harness should change or the model is
+  weak. The A/B and bake-off reports need that split to put a regression on the right side.
+- **What:** `Recovery` gains an optional `attribution` (`model` / `harness` / `environment` / `ambiguous`),
+  omitted when unknown, so older logs still parse. The telemetry schema moves to **0.2.0**. Each emitter tags its
+  own events:
+
+  | Action | Attribution | Why |
+  |---|---|---|
+  | `model_failover`, `subagent_model_failed` | harness | the harness chose the model that failed |
+  | `tool_argument_renamed` | model | the model misnamed an argument |
+  | `recovery_hint` for an environment failure | environment | a runner or module is missing |
+  | `recovery_hint` for a compile failure | model | its code does not build |
+  | `recovery_hint` for a timeout | ambiguous | an infinite loop, or a slow machine |
+  | `offload_read` | harness | recovering output the harness withheld |
+  | `reread_same_range`, `rerun_same_command` | model | the model repeating itself |
+
+- **The D-060 counters are now events too.** `record_read` and `record_shell_command` return which counter fired,
+  and `tool_executor` emits it. Before this, the counters existed only as totals in `exec.json`, with no position
+  in the timeline. Redaction still applies (the sink redacts free text, so a shell command's secrets never reach
+  disk).
+- **Report:** `error_recovery.recoveries_by_attribution` shows the tally, and the markdown gains a
+  "Recoveries by cause" line. The scripted-model failover test checks the tally (`{"harness": 1}`).
+- No change to what the model sees, so no A/B is needed.

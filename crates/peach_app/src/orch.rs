@@ -487,6 +487,7 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
                                 trigger: format!("{model_id}: {reason}; continuing on {next}"),
                                 outcome: None,
                                 origin_call_id: None,
+                                attribution: Some(peach_harness::telemetry::event::FailureAttribution::Harness),
                             },
                         ));
                         model_id = next.clone();

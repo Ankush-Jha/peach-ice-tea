@@ -317,16 +317,24 @@ impl TaskMetrics {
     /// `recovery.reread_same_range` fires when `path` was already the most
     /// recently read range for this exact `(start_line, end_line)`, with no
     /// `record_write` for `path` in between.
-    pub fn record_read(&mut self, path: &str, start_line: u64, end_line: u64) {
+    ///
+    /// Returns the names of the recovery counters this read incremented
+    /// (`offload_read`, `reread_same_range`), so the caller can emit them as
+    /// events too (D-086).
+    pub fn record_read(&mut self, path: &str, start_line: u64, end_line: u64) -> Vec<&'static str> {
+        let mut fired = Vec::new();
         if self.dump_files.contains(path) && self.dump_files_read.insert(path.to_string()) {
             self.recovery.offload_read += 1;
+            fired.push("offload_read");
         }
 
         let range = (start_line, end_line);
         if self.recent_reads.get(path) == Some(&range) {
             self.recovery.reread_same_range += 1;
+            fired.push("reread_same_range");
         }
         self.recent_reads.insert(path.to_string(), range);
+        fired
     }
 
     /// Clears the recorded read range for `path`, so a write breaks the
@@ -341,19 +349,22 @@ impl TaskMetrics {
     /// calls. Uses `llm_calls` as the turn index, per R-EVAL-2, and prunes
     /// the history to that window on every call so it stays bounded for the
     /// whole task regardless of how many shell calls it makes.
-    pub fn record_shell_command(&mut self, command: &str) {
+    ///
+    /// Returns whether this counted as `rerun_same_command` (D-086).
+    pub fn record_shell_command(&mut self, command: &str) -> bool {
         let now = self.llm_calls;
         self.recent_shell_commands
             .retain(|(call, _)| now.saturating_sub(*call) < Self::RERUN_WINDOW_CALLS);
 
-        if self
+        let rerun = self
             .recent_shell_commands
             .iter()
-            .any(|(_, cmd)| cmd == command)
-        {
+            .any(|(_, cmd)| cmd == command);
+        if rerun {
             self.recovery.rerun_same_command += 1;
         }
         self.recent_shell_commands.push_back((now, command.to_string()));
+        rerun
     }
 
     /// Folds a subagent's costs into this task's totals.
@@ -762,6 +773,22 @@ mod tests {
         actual.record_read("/tmp/peach_shell_stdout_abc.txt", 1, 2000);
 
         assert_eq!(actual.recovery.offload_read, 1);
+    }
+
+    #[test]
+    fn test_each_counter_reports_that_it_fired_so_it_can_become_an_event() {
+        let mut fixture = TaskMetrics::default();
+        fixture.record_dump_file("/tmp/peach_shell_stdout_abc.txt");
+
+        let actual = (
+            fixture.record_read("/tmp/peach_shell_stdout_abc.txt", 1, 20),
+            fixture.record_read("/tmp/peach_shell_stdout_abc.txt", 1, 20),
+            fixture.record_shell_command("cargo test"),
+            fixture.record_shell_command("cargo test"),
+        );
+
+        let expected = (vec!["offload_read"], vec!["reread_same_range"], false, true);
+        assert_eq!(actual, expected);
     }
 
     #[test]

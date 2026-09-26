@@ -21,7 +21,7 @@ pub const HARNESS_VERSION: &str = env!("CARGO_PKG_VERSION");
 ///
 /// Independent of `HARNESS_VERSION`: the harness can change without the event
 /// contract changing, and a consumer cares about the contract.
-pub const TELEMETRY_SCHEMA_VERSION: &str = "0.1.0";
+pub const TELEMETRY_SCHEMA_VERSION: &str = "0.2.0";
 
 /// Version of the internal report schema.
 pub const REPORT_SCHEMA_VERSION: &str = "0.1.0";
