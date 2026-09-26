@@ -162,3 +162,35 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Decision:** record both here and in `RECON.md`; do not fix under T0.0, whose scope is restoring invocation.
   `R-EVAL-3`/`R-EVAL-4` must not assume either feature exists. A silently-skipped validation is the more
   dangerous of the two and should be made a hard error when the harness is next touched (T0.4).
+
+## D-015 — Live validation of the T0.0 repair; three findings (2026-09-21)
+- **Context:** first live run against OpenRouter with a real key. The request reached the provider and
+  returned `402 Payment Required` ("requested up to 20480 tokens, but can only afford 2662"), so the model
+  never responded. Everything up to the model call was exercised, which was enough to confirm three things
+  that had been asserted from code reading only.
+- **Confirmed — `FORGE_DEBUG_REQUESTS` works (D-012).** A 52 KB `context.json` was written. Forge also
+  printed "Forge no longer reads API keys from environment variables" and then "Migrated 1 provider from
+  environment variables": the env var is honoured via a one-time migration into stored credentials, not by
+  being read per-request. Documented in `DEV.md`.
+- **Confirmed — the file is the OpenAI wire shape (D-013).** Top-level `messages`, `tools`, `model`, with
+  `.messages[].role`. The evals' `jq` filters will match through OpenRouter, which is why both A/B arms
+  route through it rather than the native `anthropic` provider.
+- **Confirmed — `-p` exits 0 regardless of outcome (D-010).** A hard 402 with no model response still
+  exited 0. Third independent confirmation; T0.3 must map outcome to exit code.
+
+## D-016 — Eval assertions break silently once a task triggers compaction (2026-09-21)
+- **Context:** `context.json` is JSONL — one appended request body per provider call — but every eval runs
+  `jq -e 'FILTER' context.json`. Verified empirically: with two documents, `jq -e` reflects **only the last**
+  one (a filter true for the first and false for the last exits 1).
+- **Why it usually works:** each request re-sends the whole conversation, so the final document is a superset
+  of the earlier ones.
+- **Why it breaks:** compaction rewrites that history. Once a task is long enough to trigger it, the final
+  request body carries a summary in place of the early turns, and every assertion about an early tool call —
+  "did it use `patch`", "did it avoid `cat`" — silently evaluates false. The eval fails for its length, not
+  its behaviour, and nothing distinguishes that from a real regression.
+- **Decision:** do not paper over it in T0.0. Record it, and make migrating eval assertions to
+  `FORGE_AUTO_DUMP=json` part of T0.4 — `Conversation`/`Context` is a single JSON document, provider-agnostic,
+  and carries tool *results* and the final assistant message as well, none of which the request log can.
+- **Consequences:** short evals are trustworthy today. Long ones are not, which makes this a prerequisite for
+  T3.12's long-horizon suite (≥ 60-turn tasks — guaranteed to compact) rather than an optional cleanup.
+  Until it is done, treat a failure on a long eval as unexplained until checked by hand.
