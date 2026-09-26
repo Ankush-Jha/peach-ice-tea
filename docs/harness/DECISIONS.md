@@ -666,3 +666,55 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
     the config dir removed, no key in the evidence.
 - **Not done:** `telemetry/internal/*.schema.json` is not generated (`peach_harness` has no `schemars`).
   "ARCHITECTURE grounded in real telemetry" stays partial until a live run completes.
+
+## D-043 — DeepSeek on NVIDIA NIM as a development provider; the credentials peach writes to disk (2026-09-25)
+- **Context:** the team supplied an NVIDIA NIM key "for now, for DeepSeek". The key was pasted into the chat
+  session, so the team should treat it as exposed and rotate it after use. It is used only through the
+  `NVIDIA_API_KEY` environment variable and appears in no file, commit or report of ours.
+- **Probe (free tier):** the key reaches `deepseek-ai/deepseek-v4.1-flash`, one of 82 NIM models. One
+  352-token call confirmed that tool calls work (`finish_reason: tool_calls`), that reasoning arrives as
+  `reasoning_content`, and that usage is **OpenAI-shaped** (`prompt_tokens_details.cached_tokens`), unlike
+  DeepSeek's own API (D-036). It took **125 s**; free-tier NIM queues.
+- **Profile:** `configuration/profiles/nvidia-deepseek` (role `development`; the model is registered with a
+  conservative 128k context). `run.ts` strips `NVIDIA_API_KEY` from other profiles' environments.
+- **Finding — keys on disk:** peach migrates env keys into `<PEACH_CONFIG>/.credentials.json` (D-015). The
+  runner's per-fixture config dirs were left behind, so every profile run left a copy of the key in the
+  system temp dir. It never reached a bundle, report or commit, but it broke the guardrail. `run.ts` now
+  deletes that file after each peach run (by a resolved path), and the TH.9 wrapper deletes its whole
+  config dir on exit (D-044). Existing copies were deleted.
+- **My mistake while cleaning up:** the "skip the in-use run" guard compared paths by string prefix and missed
+  on a doubled `/`, so the running NIM run's credentials were deleted too. Its second request failed with
+  "Provider NVIDIA is not available". That showed peach re-reads credentials per request. The harness itself
+  behaved correctly (error recorded, integrity checked, final tests run, full bundle), and the run was
+  repeated. Lesson recorded: match paths by resolved path, never by string prefix, and never touch a running
+  run's files.
+
+## D-045 — Shell edits arm the verify gate; no title request in unattended runs (2026-09-25)
+- **Shell edits (closes D-037's gap):** `integrity::shell_guard::mutated_paths` now exposes the conservative
+  screen the protected-file guard already used (write redirects, `rm/mv/cp/tee/truncate`, `sed -i`,
+  `git rm`, `git checkout --`, ...). A successful non-test shell command that writes a path inside the
+  repository (not `/dev/null` or `/tmp`) arms the gate, exactly like a tool edit. `check_command` keeps its
+  behaviour and its tests.
+- **Title generation:** the Start hook spawned a model call for a conversation title that `exec`'s evidence
+  never shows. On a 20-request/day free tier (D-040) that is 5% of the quota per run, and it was the one
+  model call neither the metrics nor telemetry saw. It is now skipped when the run is unattended.
+  Interactive use is unchanged. This does not change the agent's own work, so it needs no A/B.
+
+## D-046 — First completed live run: DeepSeek V4.1 Flash on NVIDIA NIM fixed `py-bugfix` (2026-09-25)
+- **Run:** `run.ts --agent peach --profile nvidia-deepseek --suite py-bugfix --max-requests 30
+  --max-duration-secs 3600`, with compacted tool docs. **Outcome: exit 0, `completed`.** The fixture's tests
+  pass (runner), peach's integrity check and the runner's independent one are both clean, and the harness's
+  own final run is `passed` 4/0. 4 LLM calls; 44,649 input / 479 output tokens (16 reasoning); 0 cached;
+  0 retries; 734 s wall time, almost all of it NIM free-tier queueing (126–310 s per call). The agent read
+  2 files, patched `stats.py` (−5/+1), ran the test suite green and stopped, so the verify gate had no reason
+  to act. Cost: NVIDIA free-tier credits, no money. A development model (D-043), not the judged one.
+- **Telemetry checked end to end on real traffic:** every `tool_call.origin_call_id` names the `model_call`
+  that listed it in `tool_call_ids`, every requested call has a `tool_call` event, `seq` is monotonic, and
+  `test_run` shows both origins (`agent` then `harness_final`). The report needed no reconciliation: every
+  number matches `exec.json`, and the manifest has no notes.
+- **Bug it exposed, fixed:** `model_call.context_tokens_estimated` read **3,435 against 10,429** provider input
+  tokens. It counted messages only; the tool definitions sent with every request were missing.
+  `request_tokens_estimated` in the telemetry hook now adds them. Upstream's `Context::token_count_approx`
+  is deliberately untouched, because it drives compaction thresholds.
+- **Still open for the judged model:** the same run on Gemini needs the paid key (D-040). This run gives
+  the first real evidence that the whole pipeline works, but not Gemini-specific evidence.

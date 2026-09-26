@@ -124,6 +124,20 @@ fn actual(count: TokenCount) -> Option<u64> {
     }
 }
 
+/// Local estimate of what one request carries: the messages *and* the tool
+/// definitions sent alongside them. Upstream's `Context::token_count_approx`
+/// counts messages only, which suits its purpose (compaction thresholds, left
+/// unchanged) but made this field read ~3x below the provider's own count on
+/// a real run (D-046). Same 4-characters-per-token heuristic.
+fn request_tokens_estimated(context: &peach_domain::Context) -> u64 {
+    let tool_chars: usize = context
+        .tools
+        .iter()
+        .map(|tool| serde_json::to_string(tool).map_or(0, |json| json.chars().count()))
+        .sum();
+    (context.token_count_approx() + tool_chars.div_ceil(4)) as u64
+}
+
 /// The tool result as the model saw it, flattened to text.
 fn output_text(output: &ToolOutput) -> String {
     output
@@ -231,7 +245,7 @@ impl EventHandle<EventData<RequestPayload>> for TelemetryHandler {
         let (context_tokens_estimated, context_messages) = conversation
             .context
             .as_ref()
-            .map(|context| (Some(context.token_count_approx() as u64), context.messages.len()))
+            .map(|context| (Some(request_tokens_estimated(context)), context.messages.len()))
             .unwrap_or((None, 0));
         if let Ok(mut state) = self.state.lock() {
             state.request = Some(PendingRequest {
@@ -414,6 +428,20 @@ mod tests {
             None,
         );
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_the_request_estimate_includes_tool_definitions() {
+        let messages_only = peach_domain::Context::default()
+            .add_message(peach_domain::ContextMessage::user("x".repeat(400), None));
+        let with_tools = messages_only
+            .clone()
+            .tools(vec![peach_domain::ToolDefinition::new("read").description("d".repeat(4000))]);
+
+        let (without, with) = (request_tokens_estimated(&messages_only), request_tokens_estimated(&with_tools));
+
+        assert_eq!(without, messages_only.token_count_approx() as u64);
+        assert!(with >= without + 1000, "{without} -> {with}");
     }
 
     #[test]
