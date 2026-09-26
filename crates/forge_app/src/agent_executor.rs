@@ -205,6 +205,7 @@ impl<S: Services + EnvironmentInfra<Config = forge_config::ForgeConfig>> AgentEx
                 trigger: format!("{}: {model}: {}", agent_id.as_str(), error.root_cause()),
                 outcome: None,
                 origin_call_id: None,
+                attribution: Some(forge_harness::telemetry::event::FailureAttribution::Harness),
             },
         ));
         error.context(format!(

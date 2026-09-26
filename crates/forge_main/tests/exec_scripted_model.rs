@@ -1784,6 +1784,7 @@ fn test_a_failed_over_run_is_scored_exactly_like_one_that_was_not() {
     assert_eq!(score(&failed_over), score(&plain), "scoring must not depend on which model answered");
     assert_eq!(plain["error_recovery"]["model_failover_count"], 0);
     assert_eq!(failed_over["error_recovery"]["model_failover_count"], 1);
+    assert_eq!(failed_over["error_recovery"]["recoveries_by_attribution"], serde_json::json!({"harness": 1}));
     assert_eq!(plain_models, vec!["scripted-model".to_string()]);
     assert_eq!(failover_models, vec!["scripted-model".to_string(), "fallback-model".to_string()]);
 }

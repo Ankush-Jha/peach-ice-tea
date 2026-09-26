@@ -168,6 +168,11 @@ pub struct ErrorRecovery {
     /// comparison (D-081).
     #[serde(default)]
     pub model_failover_count: u64,
+    /// Recovery events by whose failure they answered (`model`, `harness`,
+    /// `environment`, `ambiguous`; D-086). Events from logs older than schema
+    /// 0.2.0 carry no attribution and are not counted.
+    #[serde(default)]
+    pub recoveries_by_attribution: BTreeMap<String, u64>,
 }
 
 /// What changed in the repository, from `diff.patch`.
@@ -266,6 +271,7 @@ pub fn build(dir: &Path) -> Report {
         refused_integrity_actions: 0,
         suppressed_prompts: 0,
         model_failover_count: 0,
+        recoveries_by_attribution: BTreeMap::new(),
     };
     let mut context = ContextSection {
         compactions: 0,
@@ -374,6 +380,12 @@ pub fn build(dir: &Path) -> Report {
             TelemetryEvent::Recovery(event) => {
                 if event.action == "model_failover" {
                     recovery.model_failover_count += 1;
+                }
+                if let Some(attribution) = event.attribution {
+                    *recovery
+                        .recoveries_by_attribution
+                        .entry(attribution.as_str().to_string())
+                        .or_default() += 1;
                 }
                 format!("recovery: {}", event.action)
             }
@@ -591,6 +603,15 @@ pub fn render_md(report: &Report) -> String {
         "Retries: {retries} · unmetered empty completions: {} · tool errors: {} · refused test edits: {} · suppressed prompts: {}\n",
         r.unmetered_empty_completions, r.tool_errors, r.refused_integrity_actions, r.suppressed_prompts
     );
+    if !r.recoveries_by_attribution.is_empty() {
+        let by = r
+            .recoveries_by_attribution
+            .iter()
+            .map(|(k, v)| format!("{k} ×{v}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let _ = writeln!(md, "Recoveries by cause (D-086): {by}\n");
+    }
     if r.model_failover_count > 0 {
         let _ = writeln!(
             md,
@@ -801,6 +822,35 @@ mod tests {
 
         assert!(actual.contains("| test_assertion | 3 | 1 | 0 | 1 | 110 | `python3 -m unittest` | explicit |"));
         assert!(actual.contains("Last 12 line(s)") && actual.contains("line 30") && !actual.contains("line 18\n"));
+    }
+
+    #[test]
+    fn test_recoveries_are_tallied_by_whose_failure_they_answered() {
+        let fixture = fixture_bundle();
+        let recovery = |action: &str, attribution: Option<&str>| {
+            let mut event = serde_json::json!({"type": "recovery", "action": action, "trigger": "t"});
+            if let Some(attribution) = attribution {
+                event["attribution"] = attribution.into();
+            }
+            let mut line: serde_json::Value =
+                serde_json::from_str(TELEMETRY_FIXTURE.lines().last().unwrap()).unwrap();
+            line["event"] = event;
+            line.to_string()
+        };
+        let telemetry = [
+            TELEMETRY_FIXTURE.trim_end().to_string(),
+            recovery("model_failover", Some("harness")),
+            recovery("rerun_same_command", Some("model")),
+            recovery("reread_same_range", Some("model")),
+            recovery("recovery_hint", None),
+        ]
+        .join("\n");
+        std::fs::write(fixture.path().join(evidence::TELEMETRY), telemetry).unwrap();
+
+        let actual = build(fixture.path()).error_recovery.recoveries_by_attribution;
+
+        let expected = BTreeMap::from([("harness".to_string(), 1), ("model".to_string(), 2)]);
+        assert_eq!(actual, expected);
     }
 
     #[test]
