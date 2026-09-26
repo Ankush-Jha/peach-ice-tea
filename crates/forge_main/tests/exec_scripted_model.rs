@@ -1802,3 +1802,94 @@ fn test_the_doom_loop_ladder_ends_an_exec_run_with_its_own_outcome() {
     assert_eq!(run.report["outcome"], "doom_loop_escalation");
     assert_eq!(model.requests().len(), 4, "the run must stop after the fourth identical call");
 }
+
+// harness: R-HACK-10 (D-083) — the runtime verification gate, from the handoff brief.
+#[test]
+fn test_a_failing_hard_gate_run_is_sent_back_and_the_run_continues() {
+    // The model claims done on the *unfixed* bug (still `a - b`); the harness
+    // must run the real tests itself, see the real failure, and refuse to
+    // end the run on the model's say-so.
+    let project = calc_project();
+    let model = ScriptedModel::start(vec![
+        Turn::Tool("read", serde_json::json!({"file_path": project.path().join("calc.py")})),
+        Turn::Text("Done."), // premature — calc.py is still broken
+        Turn::Tool(
+            "write",
+            serde_json::json!({
+                "file_path": project.path().join("calc.py"),
+                "content": "def add(a, b):\n    return a + b\n",
+                "overwrite": true,
+            }),
+        ),
+        Turn::Text("Fixed."),
+    ]);
+
+    // An evidence bundle, as in a judged run: that is what triggers the
+    // harness's own final run (`harness_final`) after the agent stops.
+    let evidence = tempfile::tempdir().unwrap();
+    let bundle = evidence.path().join("bundle");
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[("FORGE_RUNTIME_VERIFY_GATE", "true")],
+        "fix add",
+        &["--test-command", CALC_TESTS, "--evidence-dir", bundle.to_str().unwrap()],
+    );
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let requests = model.requests();
+    assert_eq!(requests.len(), 4, "read, premature finish (sent back), write, real finish");
+    assert!(
+        requests[2].contains("RUNTIME VERIFICATION GATE") && requests[2].contains("test_assertion"),
+        "the real failure must reach the model: {}",
+        requests[2]
+    );
+
+    let gate_runs: Vec<(&str, &str)> = run
+        .telemetry
+        .iter()
+        .filter(|event| event["type"] == "test_run")
+        .map(|event| (event["origin"].as_str().unwrap(), event["failure_class"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        gate_runs,
+        vec![
+            ("harness_runtime_gate", "test_assertion"), // the harness's own failing run
+            ("harness_runtime_gate", "passed"),         // the harness's own passing run
+            ("harness_final", "passed"),                 // the true post-run evidence run
+        ]
+    );
+    assert_eq!(std::fs::read_to_string(project.path().join("calc.py")).unwrap(), "def add(a, b):\n    return a + b\n");
+}
+
+#[test]
+fn test_the_hard_gate_fails_open_with_no_test_command_configured() {
+    // Flag is ON, but there is nothing to run against (no --test-command and
+    // nothing detectable): completion must be accepted exactly as it is
+    // today — the whole point of "fail open" (principle 5).
+    let project = tempfile::tempdir().unwrap(); // no Cargo.toml/package.json/tests: nothing detected
+    std::fs::write(project.path().join("notes.txt"), "todo\n").unwrap();
+    let model = ScriptedModel::start(vec![Turn::Text("Done.")]);
+
+    let run = run_exec_with_env(project.path(), &model, None, &[("FORGE_RUNTIME_VERIFY_GATE", "true")]);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert_eq!(model.requests().len(), 1, "no test command configured: the gate must do nothing");
+    assert_eq!(run.report["outcome"], "completed");
+}
+
+#[test]
+fn test_the_hard_gate_is_inert_when_the_flag_is_off() {
+    // Default off (principle 6): a premature "Done." on unfixed code must be
+    // accepted immediately, unchanged from today's behaviour, when the flag
+    // is not set at all.
+    let project = calc_project();
+    let model = ScriptedModel::start(vec![Turn::Text("Done.")]); // no fix, no test run, no --test-command flag set
+
+    let run = run_exec_full(project.path(), &model, None, &[], "fix add", &["--test-command", CALC_TESTS]);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert_eq!(model.requests().len(), 1, "default-off: no hard gate interference");
+    assert_eq!(run.report["outcome"], "completed");
+}
