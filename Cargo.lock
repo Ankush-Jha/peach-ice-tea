@@ -2233,6 +2233,650 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
 
 [[package]]
+name = "peach_api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "peach_app",
+ "peach_config",
+ "peach_domain",
+ "peach_infra",
+ "peach_repo",
+ "peach_services",
+ "peach_stream",
+ "futures",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "peach_app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-recursion",
+ "async-trait",
+ "backon",
+ "bytes",
+ "chrono",
+ "console",
+ "convert_case 0.12.0",
+ "dashmap 7.0.0-rc2",
+ "derive_more",
+ "derive_setters",
+ "fake",
+ "peach_config",
+ "peach_display",
+ "peach_domain",
+ "peach_embed",
+ "peach_eventsource",
+ "peach_harness",
+ "peach_json_repair",
+ "peach_stream",
+ "peach_template",
+ "peach_test_kit",
+ "futures",
+ "glob",
+ "handlebars",
+ "hex",
+ "include_dir",
+ "insta",
+ "lazy_static",
+ "merge",
+ "pretty_assertions",
+ "regex",
+ "reqwest 0.12.28",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "serde_yml 0.0.13",
+ "sha2 0.11.0",
+ "strum",
+ "strum_macros 0.28.0",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "peach_ci"
+version = "0.1.0"
+dependencies = [
+ "derive_setters",
+ "gh-workflow",
+ "indexmap 2.14.2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "peach_config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "config",
+ "derive_setters",
+ "dirs",
+ "dotenvy",
+ "fake",
+ "peach_domain",
+ "is_ci",
+ "pretty_assertions",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "strum_macros 0.28.0",
+ "thiserror 2.0.20",
+ "tokio",
+ "toml_edit 0.25.15+spec-1.1.0",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "peach_display"
+version = "0.1.0"
+dependencies = [
+ "console",
+ "derive_setters",
+ "insta",
+ "pretty_assertions",
+ "regex",
+ "similar 3.2.0",
+ "strip-ansi-escapes",
+ "syntect",
+ "termimad",
+ "terminal-colorsaurus",
+ "two-face",
+]
+
+[[package]]
+name = "peach_domain"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.23.1",
+ "chrono",
+ "convert_case 0.12.0",
+ "derive-getters",
+ "derive_more",
+ "derive_setters",
+ "eserde",
+ "fake",
+ "fnv_rs",
+ "peach_json_repair",
+ "peach_template",
+ "peach_test_kit",
+ "peach_tool_macros",
+ "glob",
+ "indexmap 2.14.2",
+ "insta",
+ "is_ci",
+ "lazy_static",
+ "merge",
+ "nom",
+ "pretty_assertions",
+ "regex",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "serde_yml 0.0.13",
+ "strum",
+ "strum_macros 0.28.0",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-stream",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "peach_embed"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "handlebars",
+ "include_dir",
+]
+
+[[package]]
+name = "peach_eventsource"
+version = "0.1.0"
+dependencies = [
+ "peach_eventsource_stream",
+ "futures",
+ "futures-core",
+ "futures-retry",
+ "futures-timer",
+ "mime",
+ "nom",
+ "pin-project-lite",
+ "pin-utils",
+ "reqwest 0.12.28",
+ "rocket",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
+name = "peach_eventsource_stream"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "futures-core",
+ "http 1.5.0",
+ "nom",
+ "pin-project-lite",
+ "reqwest 0.11.27",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "peach_fs"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bstr",
+ "peach_domain",
+ "hex",
+ "infer",
+ "pretty_assertions",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
+name = "peach_harness"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bstr",
+ "chrono",
+ "glob",
+ "ignore",
+ "insta",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "toml_edit 0.25.15+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "peach_infra"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "backon",
+ "base64 0.23.1",
+ "bstr",
+ "bytes",
+ "cacache",
+ "chrono",
+ "diesel",
+ "diesel_migrations",
+ "dirs",
+ "dotenvy",
+ "fake",
+ "peach_app",
+ "peach_config",
+ "peach_domain",
+ "peach_eventsource",
+ "peach_fs",
+ "peach_select",
+ "peach_services",
+ "peach_snaps",
+ "peach_walker",
+ "futures",
+ "glob",
+ "google-cloud-auth",
+ "http 1.5.0",
+ "libsqlite3-sys",
+ "oauth2",
+ "open",
+ "pretty_assertions",
+ "reqwest 0.12.28",
+ "rmcp",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "serial_test",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tonic",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "peach_json_repair"
+version = "0.1.0"
+dependencies = [
+ "pretty_assertions",
+ "regex",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "serde_json5",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "peach_main"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "async-recursion",
+ "bstr",
+ "chrono",
+ "clap",
+ "clap_complete",
+ "colored",
+ "console",
+ "convert_case 0.12.0",
+ "derive_setters",
+ "dirs",
+ "enable-ansi-support",
+ "fake",
+ "peach_api",
+ "peach_app",
+ "peach_config",
+ "peach_display",
+ "peach_domain",
+ "peach_embed",
+ "peach_fs",
+ "peach_harness",
+ "peach_markdown_stream",
+ "peach_select",
+ "peach_spinner",
+ "peach_tracker",
+ "peach_walker",
+ "futures",
+ "gix",
+ "humantime",
+ "include_dir",
+ "indexmap 2.14.2",
+ "insta",
+ "lazy_static",
+ "libc",
+ "merge",
+ "nu-ansi-term",
+ "nucleo",
+ "nucleo-picker",
+ "num-format",
+ "open",
+ "pretty_assertions",
+ "regex",
+ "rustls 0.23.45",
+ "rustyline",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.11.0",
+ "strip-ansi-escapes",
+ "strum",
+ "strum_macros 0.28.0",
+ "tempfile",
+ "terminal_size",
+ "thiserror 2.0.20",
+ "tiny_http",
+ "tokio",
+ "tokio-stream",
+ "toml_edit 0.25.15+spec-1.1.0",
+ "tracing",
+ "update-informer",
+ "url",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "peach_markdown_stream"
+version = "0.1.0"
+dependencies = [
+ "colored",
+ "insta",
+ "pretty_assertions",
+ "streamdown-ansi",
+ "streamdown-core",
+ "streamdown-parser",
+ "streamdown-render",
+ "strip-ansi-escapes",
+ "syntect",
+ "terminal-colorsaurus",
+ "unicode-segmentation",
+ "unicode-width 0.2.2",
+]
+
+[[package]]
+name = "peach_repo"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-openai",
+ "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-bedrockruntime",
+ "aws-smithy-async",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "backon",
+ "base64 0.23.1",
+ "bytes",
+ "chrono",
+ "derive_more",
+ "derive_setters",
+ "diesel",
+ "diesel_migrations",
+ "dirs",
+ "fake",
+ "peach_app",
+ "peach_config",
+ "peach_domain",
+ "peach_eventsource",
+ "peach_eventsource_stream",
+ "peach_fs",
+ "peach_infra",
+ "peach_json_repair",
+ "peach_snaps",
+ "peach_template",
+ "peach_test_kit",
+ "futures",
+ "google-cloud-auth",
+ "gray_matter",
+ "handlebars",
+ "insta",
+ "lazy_static",
+ "merge",
+ "mockito",
+ "pretty_assertions",
+ "prost",
+ "prost-types",
+ "regex",
+ "reqwest 0.12.28",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.11.0",
+ "strum",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "peach_select"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bstr",
+ "colored",
+ "console",
+ "crossterm 0.29.0",
+ "derive_setters",
+ "nucleo",
+ "nucleo-picker",
+ "pretty_assertions",
+ "rustyline",
+ "tracing",
+]
+
+[[package]]
+name = "peach_services"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-recursion",
+ "async-stream",
+ "async-trait",
+ "backon",
+ "base64 0.23.1",
+ "bstr",
+ "bytes",
+ "chrono",
+ "dashmap 7.0.0-rc2",
+ "derive_more",
+ "derive_setters",
+ "fake",
+ "peach_app",
+ "peach_config",
+ "peach_domain",
+ "peach_eventsource",
+ "peach_fs",
+ "peach_harness",
+ "peach_snaps",
+ "peach_stream",
+ "peach_test_kit",
+ "futures",
+ "glob",
+ "gray_matter",
+ "grep-regex",
+ "grep-searcher",
+ "handlebars",
+ "html2md",
+ "http 1.5.0",
+ "humantime",
+ "ignore",
+ "infer",
+ "lazy_static",
+ "merge",
+ "oauth2",
+ "pretty_assertions",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "serde_yml 0.0.13",
+ "strip-ansi-escapes",
+ "strum",
+ "strum_macros 0.28.0",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "peach_snaps"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "fnv_rs",
+ "peach_domain",
+ "peach_fs",
+ "serde",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "peach_spinner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "colored",
+ "console",
+ "peach_domain",
+ "indicatif",
+ "pretty_assertions",
+ "rand 0.10.3",
+ "terminal_size",
+ "tokio",
+ "unicode-width 0.2.2",
+]
+
+[[package]]
+name = "peach_stream"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "tokio",
+]
+
+[[package]]
+name = "peach_template"
+version = "0.1.0"
+dependencies = [
+ "html-escape",
+ "pretty_assertions",
+]
+
+[[package]]
+name = "peach_test_kit"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "peach_tool_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "peach_tracker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bstr",
+ "chrono",
+ "convert_case 0.12.0",
+ "derive_more",
+ "dirs",
+ "peach_domain",
+ "http 1.5.0",
+ "lazy_static",
+ "machineid-rs",
+ "posthog-rs",
+ "pretty_assertions",
+ "regex",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sysinfo 0.38.4",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "whoami 2.1.3",
+]
+
+[[package]]
+name = "peach_walker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "derive_setters",
+ "ignore",
+ "pretty_assertions",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "form_urlencoded"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5566,650 +6210,6 @@ name = "pathdiff"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
-
-[[package]]
-name = "peach_api"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "peach_app",
- "peach_config",
- "peach_domain",
- "peach_infra",
- "peach_repo",
- "peach_services",
- "peach_stream",
- "serde_json",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "peach_app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-recursion",
- "async-trait",
- "backon",
- "bytes",
- "chrono",
- "console",
- "convert_case 0.12.0",
- "dashmap 7.0.0-rc2",
- "derive_more",
- "derive_setters",
- "fake",
- "futures",
- "glob",
- "handlebars",
- "hex",
- "include_dir",
- "insta",
- "lazy_static",
- "merge",
- "peach_config",
- "peach_display",
- "peach_domain",
- "peach_embed",
- "peach_eventsource",
- "peach_harness",
- "peach_json_repair",
- "peach_stream",
- "peach_template",
- "peach_test_kit",
- "pretty_assertions",
- "regex",
- "reqwest 0.12.28",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "serde_yml 0.0.13",
- "sha2 0.11.0",
- "strum",
- "strum_macros 0.28.0",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-stream",
- "tonic",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "peach_ci"
-version = "0.1.0"
-dependencies = [
- "derive_setters",
- "gh-workflow",
- "indexmap 2.14.2",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "peach_config"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "config",
- "derive_setters",
- "dirs",
- "dotenvy",
- "fake",
- "is_ci",
- "peach_domain",
- "pretty_assertions",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "strum_macros 0.28.0",
- "thiserror 2.0.20",
- "tokio",
- "toml_edit 0.25.15+spec-1.1.0",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "peach_display"
-version = "0.1.0"
-dependencies = [
- "console",
- "derive_setters",
- "insta",
- "pretty_assertions",
- "regex",
- "similar 3.2.0",
- "strip-ansi-escapes",
- "syntect",
- "termimad",
- "terminal-colorsaurus",
- "two-face",
-]
-
-[[package]]
-name = "peach_domain"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.23.1",
- "chrono",
- "convert_case 0.12.0",
- "derive-getters",
- "derive_more",
- "derive_setters",
- "eserde",
- "fake",
- "fnv_rs",
- "glob",
- "indexmap 2.14.2",
- "insta",
- "is_ci",
- "lazy_static",
- "merge",
- "nom",
- "peach_json_repair",
- "peach_template",
- "peach_test_kit",
- "peach_tool_macros",
- "pretty_assertions",
- "regex",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "serde_yml 0.0.13",
- "strum",
- "strum_macros 0.28.0",
- "thiserror 2.0.20",
- "tokio",
- "tokio-stream",
- "tracing",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "peach_embed"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "handlebars",
- "include_dir",
-]
-
-[[package]]
-name = "peach_eventsource"
-version = "0.1.0"
-dependencies = [
- "futures",
- "futures-core",
- "futures-retry",
- "futures-timer",
- "mime",
- "nom",
- "peach_eventsource_stream",
- "pin-project-lite",
- "pin-utils",
- "reqwest 0.12.28",
- "rocket",
- "thiserror 2.0.20",
- "tokio",
-]
-
-[[package]]
-name = "peach_eventsource_stream"
-version = "0.1.0"
-dependencies = [
- "futures",
- "futures-core",
- "http 1.5.0",
- "nom",
- "pin-project-lite",
- "reqwest 0.11.27",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "peach_fs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bstr",
- "hex",
- "infer",
- "peach_domain",
- "pretty_assertions",
- "sha2 0.11.0",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
-]
-
-[[package]]
-name = "peach_harness"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bstr",
- "chrono",
- "glob",
- "ignore",
- "insta",
- "pretty_assertions",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "toml_edit 0.25.15+spec-1.1.0",
- "tracing",
-]
-
-[[package]]
-name = "peach_infra"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "aws-config",
- "aws-credential-types",
- "backon",
- "base64 0.23.1",
- "bstr",
- "bytes",
- "cacache",
- "chrono",
- "diesel",
- "diesel_migrations",
- "dirs",
- "dotenvy",
- "fake",
- "futures",
- "glob",
- "google-cloud-auth",
- "http 1.5.0",
- "libsqlite3-sys",
- "oauth2",
- "open",
- "peach_app",
- "peach_config",
- "peach_domain",
- "peach_eventsource",
- "peach_fs",
- "peach_select",
- "peach_services",
- "peach_snaps",
- "peach_walker",
- "pretty_assertions",
- "reqwest 0.12.28",
- "rmcp",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "serial_test",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tonic",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "peach_json_repair"
-version = "0.1.0"
-dependencies = [
- "pretty_assertions",
- "regex",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "serde_json5",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "peach_main"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arboard",
- "async-recursion",
- "bstr",
- "chrono",
- "clap",
- "clap_complete",
- "colored",
- "console",
- "convert_case 0.12.0",
- "derive_setters",
- "dirs",
- "enable-ansi-support",
- "fake",
- "futures",
- "gix",
- "humantime",
- "include_dir",
- "indexmap 2.14.2",
- "insta",
- "lazy_static",
- "libc",
- "merge",
- "nu-ansi-term",
- "nucleo",
- "nucleo-picker",
- "num-format",
- "open",
- "peach_api",
- "peach_app",
- "peach_config",
- "peach_display",
- "peach_domain",
- "peach_embed",
- "peach_fs",
- "peach_harness",
- "peach_markdown_stream",
- "peach_select",
- "peach_spinner",
- "peach_tracker",
- "peach_walker",
- "pretty_assertions",
- "regex",
- "rustls 0.23.45",
- "rustyline",
- "serde",
- "serde_json",
- "serial_test",
- "sha2 0.11.0",
- "strip-ansi-escapes",
- "strum",
- "strum_macros 0.28.0",
- "tempfile",
- "terminal_size",
- "thiserror 2.0.20",
- "tiny_http",
- "tokio",
- "tokio-stream",
- "toml_edit 0.25.15+spec-1.1.0",
- "tracing",
- "update-informer",
- "url",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "peach_markdown_stream"
-version = "0.1.0"
-dependencies = [
- "colored",
- "insta",
- "pretty_assertions",
- "streamdown-ansi",
- "streamdown-core",
- "streamdown-parser",
- "streamdown-render",
- "strip-ansi-escapes",
- "syntect",
- "terminal-colorsaurus",
- "unicode-segmentation",
- "unicode-width 0.2.2",
-]
-
-[[package]]
-name = "peach_repo"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-openai",
- "async-trait",
- "aws-config",
- "aws-credential-types",
- "aws-sdk-bedrockruntime",
- "aws-smithy-async",
- "aws-smithy-runtime",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "backon",
- "base64 0.23.1",
- "bytes",
- "chrono",
- "derive_more",
- "derive_setters",
- "diesel",
- "diesel_migrations",
- "dirs",
- "fake",
- "futures",
- "google-cloud-auth",
- "gray_matter",
- "handlebars",
- "insta",
- "lazy_static",
- "merge",
- "mockito",
- "peach_app",
- "peach_config",
- "peach_domain",
- "peach_eventsource",
- "peach_eventsource_stream",
- "peach_fs",
- "peach_infra",
- "peach_json_repair",
- "peach_snaps",
- "peach_template",
- "peach_test_kit",
- "pretty_assertions",
- "prost",
- "prost-types",
- "regex",
- "reqwest 0.12.28",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "serial_test",
- "sha2 0.11.0",
- "strum",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-stream",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "peach_select"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bstr",
- "colored",
- "console",
- "crossterm 0.29.0",
- "derive_setters",
- "nucleo",
- "nucleo-picker",
- "pretty_assertions",
- "rustyline",
- "tracing",
-]
-
-[[package]]
-name = "peach_services"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-recursion",
- "async-stream",
- "async-trait",
- "backon",
- "base64 0.23.1",
- "bstr",
- "bytes",
- "chrono",
- "dashmap 7.0.0-rc2",
- "derive_more",
- "derive_setters",
- "fake",
- "futures",
- "glob",
- "gray_matter",
- "grep-regex",
- "grep-searcher",
- "handlebars",
- "html2md",
- "http 1.5.0",
- "humantime",
- "ignore",
- "infer",
- "lazy_static",
- "merge",
- "oauth2",
- "peach_app",
- "peach_config",
- "peach_domain",
- "peach_eventsource",
- "peach_fs",
- "peach_harness",
- "peach_snaps",
- "peach_stream",
- "peach_test_kit",
- "pretty_assertions",
- "regex",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "serde_yml 0.0.13",
- "strip-ansi-escapes",
- "strum",
- "strum_macros 0.28.0",
- "tempfile",
- "thiserror 2.0.20",
- "tokio",
- "tokio-stream",
- "tonic",
- "tracing",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "peach_snaps"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "fnv_rs",
- "peach_domain",
- "peach_fs",
- "serde",
- "tempfile",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "peach_spinner"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "colored",
- "console",
- "indicatif",
- "peach_domain",
- "pretty_assertions",
- "rand 0.10.3",
- "terminal_size",
- "tokio",
- "unicode-width 0.2.2",
-]
-
-[[package]]
-name = "peach_stream"
-version = "0.1.0"
-dependencies = [
- "futures",
- "tokio",
-]
-
-[[package]]
-name = "peach_template"
-version = "0.1.0"
-dependencies = [
- "html-escape",
- "pretty_assertions",
-]
-
-[[package]]
-name = "peach_test_kit"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "peach_tool_macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.6",
-]
-
-[[package]]
-name = "peach_tracker"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "bstr",
- "chrono",
- "convert_case 0.12.0",
- "derive_more",
- "dirs",
- "http 1.5.0",
- "lazy_static",
- "machineid-rs",
- "peach_domain",
- "posthog-rs",
- "pretty_assertions",
- "regex",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sysinfo 0.38.4",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "url",
- "uuid",
- "whoami 2.1.3",
-]
-
-[[package]]
-name = "peach_walker"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "derive_setters",
- "ignore",
- "pretty_assertions",
- "tempfile",
- "tokio",
-]
 
 [[package]]
 name = "pear"

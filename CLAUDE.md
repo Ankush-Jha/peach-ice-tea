@@ -1,6 +1,6 @@
 # CLAUDE.md — harness project
 
-You are working in a **fork of an open-source (Apache-2.0) coding agent** (Rust). We are turning it
+You are working in a **fork of an open-source (Apache-2.0) coding agent** (`Ankush-Jha/peach-ice-tea`, Rust). We are turning it
 into a best-in-class coding-agent harness. This file loads every session, so it stays short;
 the detail lives in `docs/harness/`.
 
@@ -35,7 +35,8 @@ orchestration. How he wants you to work:
 7. **Don't regress Peach's strengths:** schema rules (`required` before `properties`, flat
    schemas), enforced verification, todo enforcement, doom-loop detection, reasoning-chain
    preservation in compaction.
-8. **Standalone repository (D-090):** no upstream product names or history; keep the Apache-2.0 LICENSE.
+8. **Stay mergeable with upstream:** additive modules, minimal edits to upstream files,
+   keep crate names.
 
 ## Code conventions
 @AGENTS.md
