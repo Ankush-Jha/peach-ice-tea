@@ -317,3 +317,30 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   (`R-CTX-4`). Not what enters context, and not tool routing.
 - **Consequence:** `R-SAFE-3` redaction (T3.7) moves ahead of the scorer work, because tool previews leave the
   process the moment any scorer is called. T3.7, T3.8 and T3.9 move from Tier 3 to Tier 2 in `ALIGNMENT.md`.
+
+## D-028 — The test-integrity guard is wired but INERT; activating it is the next task (2026-09-23)
+- **Context:** TH.2 shipped the guard and wired it into tool dispatch, and an earlier summary of mine described it
+  as "enforced at runtime". A worker on TH.1 grepped for callers of `peach_harness::runtime::install` and found
+  none anywhere in the codebase.
+- **Correction:** the dispatch-layer check is real, but every accessor answers "not active" when no runtime is
+  installed — which is deliberate, so interactive use is unaffected — and nothing installs one. **The guard
+  currently protects nothing.** A model could edit a protected test today and only the post-run hash comparison
+  in the eval runner would notice.
+- **Next action when work resumes:** install a `HarnessRuntime` at the start of an `exec` run with the repository
+  root, the resolved protected set, and the non-interactive flag, then verify end to end with the eval suite's
+  `cheat` agent driving the real binary rather than a stub.
+- **Related hand-backs, not yet applied:** `peach_services` needs a `peach_harness` dependency and a two-line
+  guard in `followup.rs` so the model cannot ask a question mid-run (the runtime side is done); the same guard
+  belongs in the MCP trust gate if MCP init is ever added to `exec`; and `peach_domain::TaskOutcome` should gain
+  a `TimeBudget` variant so the time-budget report stops being hand-built JSON.
+
+## D-029 — An unbounded `exec` can stall on provider retries (2026-09-23)
+- **Context:** while building the wall-clock budget, a worker pointed a configured provider at a closed local
+  port. The retry policy backed off and kept going for **2 minutes 10 seconds** before being killed by hand — no
+  prompt, no hang, just retries against an unreachable endpoint.
+- **Consequence:** in a frozen one-shot run, that alone could consume the judging window, and it would look like
+  the harness "did nothing" rather than like a network fault.
+- **Decision:** `--max-duration-secs` defaults to off, because changing default behaviour needs evidence we
+  cannot gather without budget (D-025). The **frozen evaluation invocation must always pass it**, and the
+  `harness/peach-ice-tea` wrapper (D-021/D-023) is where that belongs. Exit code 4 and outcome `time_budget`
+  distinguish it from a task failure, so the evidence says which happened.
