@@ -3486,14 +3486,14 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
         }
     }
 
-    /// Creates Peach Ice Tea Services credentials if not already authenticated and
+    /// Creates Hosted Services credentials if not already authenticated and
     /// displays the credentials file location to the user.
     async fn init_peach_services(&mut self) -> Result<()> {
         self.api.create_auth_credentials().await?;
         let env = self.api.environment();
         let credentials_path = crate::info::format_path_for_display(&env, &env.credentials_path());
         self.writeln_title(
-            TitleFormat::info("Peach Ice Tea Services enabled").sub_title(&credentials_path),
+            TitleFormat::info("Hosted Services enabled").sub_title(&credentials_path),
         )?;
         Ok(())
     }
@@ -5420,14 +5420,14 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
         yes: bool,
     ) -> anyhow::Result<()> {
         // Ask for user consent before syncing and sharing directory contents
-        // with the Peach Ice Tea Service.
+        // with the Hosted Services.
         let display_path = path.display().to_string();
 
         let confirmed = if yes {
             Some(true)
         } else {
             PeachWidget::confirm(format!(
-                "This will sync and share the contents of '{}' with Peach Ice Tea Services. Do you wish to continue?",
+                "This will sync and share the contents of '{}' with Hosted Services. Do you wish to continue?",
                 display_path
             ))
             .with_default(true)

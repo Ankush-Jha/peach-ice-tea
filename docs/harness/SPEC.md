@@ -1,6 +1,6 @@
 # Harness specification
 
-**Goal:** turn our fork of Peach Ice Tea into a best-in-class coding-agent harness: keep Peach's
+**Goal:** turn our fork of an open-source coding agent into a best-in-class coding-agent harness: keep Peach's
 tool-reliability lead and add what it lacks — cost-aware output shaping, efficient
 orchestration, reversible context management, a client protocol, safe defaults, and an
 evaluation system that measures cost per *completed task*.
@@ -181,7 +181,7 @@ location in this repo, paths relative to `crates/`), and **acceptance** criteria
 
 ### R-LOOP-3 — Progressive reasoning budget (open-source rebuild)
 - **Why:** S1a FM7 — high reasoning for the first 10 assistant messages, low afterwards,
-  high again on verification; this lives in proprietary Peach Ice Tea Services, not our fork.
+  high again on verification; this lives in the upstream vendor's proprietary services, not our fork.
 - **Where:** new `peach_app/src/hooks/reasoning_budget.rs` on `on_request`, adjusting
   `Context.reasoning` effort.
 - **What:** config `reasoning.schedule = { plan_messages: 10, plan_effort: high,
@@ -445,7 +445,7 @@ location in this repo, paths relative to `crates/`), and **acceptance** criteria
 ---
 
 ## 10. Out of scope (for now)
-- Semantic response caching (D-007). Web UI. Fine-tuning. Changing Peach Ice Tea Services.
+- Semantic response caching (D-007). Web UI. Fine-tuning. Changing Hosted Services.
   Rewriting the TUI onto the protocol (after R-PROTO lands).
 
 ## 11. Definition of done (every task)

@@ -1,6 +1,6 @@
 # Peach Ice Tea — architecture
 
-Peach Ice Tea is a coding-agent harness built on a fork of Peach Ice Tea (`Ankush-Jha/peach-ice-tea`, Rust; D-001,
+Peach Ice Tea is a coding-agent harness built on a fork of an open-source (Apache-2.0) coding agent (Rust; D-001,
 D-024). This document answers the HACKATHON.md §25 interview questions. Each answer names the code that does it,
 the decision behind it (D-*, in `docs/harness/DECISIONS.md`), and **what a real run's telemetry shows**.
 

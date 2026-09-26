@@ -106,8 +106,7 @@ PEACH_AUTO_DUMP=json                          # write a full structured Conversa
 
 ## Guardrails
 
-- `origin` and `upstream` both point at `https://github.com/Ankush-Jha/peach-ice-tea` (plain clone,
-  no fork). **Never push to either.** Create a fork and repoint `origin` before any push.
+- `origin` is `https://github.com/Ankush-Jha/peach-ice-tea`, a standalone repository (D-090).
 - API keys come from the environment only (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Never write them
   to files, logs or reports.
 

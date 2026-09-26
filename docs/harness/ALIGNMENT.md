@@ -1,6 +1,6 @@
 # Alignment with the hackathon specification — Peach Ice Tea
 
-**Peach Ice Tea** is our harness (D-023): built on a Peach Ice Tea fork, entered in the LCC × DevClub AI Coding Harness
+**Peach Ice Tea** is our harness (D-023): built on a fork of an open-source (Apache-2.0) coding agent, entered in the LCC × DevClub AI Coding Harness
 Hackathon.
 
 `HACKATHON.md` is the governing document. `SPEC.md`/`TASKS.md` were written for a general "best-in-class harness"
@@ -108,7 +108,7 @@ for interactive use only. All `[A/B]` tasks A/B on Gemini on the R-HACK-8 suite;
 behind default-off flags and stay unticked (CLAUDE.md principle 6).
 
 ## 4. Open questions for the organizers
-1. ~~Is building on an existing open-source harness (a Peach Ice Tea fork) eligible?~~ **Answered yes (2026-09-23,
+1. ~~Is building on an existing open-source harness (a fork of an open-source (Apache-2.0) coding agent) eligible?~~ **Answered yes (2026-09-23,
    D-024).** The plan stands. The README still states the provenance plainly, and `DECISIONS.md` remains the
    evidence for the §25 interview questions about why each piece is built the way it is.
 2. Are additional models or providers allowed (affects any secondary-model scorer)?

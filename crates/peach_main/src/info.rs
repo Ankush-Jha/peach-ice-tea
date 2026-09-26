@@ -384,7 +384,7 @@ impl From<&PeachConfig> for Info {
 
         info = info
             .add_title("API CONFIGURATION")
-            .add_key_value("Peach Ice Tea Service URL", config.services_url.to_string())
+            .add_key_value("Hosted Services URL", config.services_url.to_string())
             .add_title("TOOL CONFIGURATION")
             .add_key_value("Tool Timeout", format!("{}s", config.tool_timeout_secs))
             .add_key_value(

@@ -4,7 +4,7 @@ Append-only. Format: ID, date, decision, context, alternatives, consequences. Cl
 when the spec is silent or ambiguous, **make the call, record it here, and continue** —
 don't stop to ask unless the choice is destructive, irreversible, or changes scope.
 
-## D-001 — Fork Peach Ice Tea rather than wrap it (2026-09-20)
+## D-001 — Fork an open-source agent rather than wrap it (2026-09-20)
 - **Context:** compaction (`peach_app/src/compact.rs`), tool-output rendering
   (`operation.rs`) and the loop (`orch.rs`) are internal; Peach exposes no external hooks.
 - **Alternatives:** wrapper process around the CLI; plugin via MCP.
@@ -31,7 +31,7 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   minimal and marked with `// harness:` comments where non-obvious. Rebase on upstream
   at each milestone boundary.
 
-## D-005 — Rebuild Peach Ice Tea Services capabilities in the open, selectively (2026-09-20)
+## D-005 — Rebuild Hosted Services capabilities in the open, selectively (2026-09-20)
 - **Context:** Peach's Part 1 credits five capabilities to a proprietary Services layer
   (entry-point discovery, dynamic skill loading, tool-call correction, todo enforcement,
   reasoning-budget control). Todo enforcement exists in open source (`verify_todos`);
@@ -248,13 +248,13 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   It is defined once, as a constant, so nothing hard-codes the string twice.
 - **Not renamed:** the Rust crates (`peach_*`) and the `peach` binary, because renaming them breaks every upstream merge
   (D-004), and upstream's user-facing "Peach" strings (banner, prompts), which are numerous and churn with every
-  release. The README states plainly that Peach Ice Tea is built on a Peach Ice Tea fork — which also answers ALIGNMENT §4
+  release. The README states plainly that Peach Ice Tea is built on a fork of an open-source (Apache-2.0) coding agent — which also answers ALIGNMENT §4
   Q1 honestly rather than obscuring it. Rebranding the binary and banner is a later, separate decision if wanted.
 
-## D-024 — A Peach Ice Tea fork is eligible; provenance stays explicit (2026-09-23)
+## D-024 — A a fork of an open-source (Apache-2.0) coding agent is eligible; provenance stays explicit (2026-09-23)
 - **Context:** ALIGNMENT §4 Q1 was the largest unhedged risk in the project — if the organizers required a
   from-scratch harness, the whole approach would have had to change.
-- **Decision (confirmed by the team, 2026-09-23):** building Peach Ice Tea on a fork of `Ankush-Jha/peach-ice-tea`
+- **Decision (confirmed by the team, 2026-09-23):** building Peach Ice Tea on a fork of an open-source (Apache-2.0) coding agent
   is allowed. Work continues on the five-wave plan.
 - **Consequences:** the README states the provenance plainly rather than obscuring it, and every non-trivial
   change keeps citing a requirement ID and a decision. §25's interview is about *our* engineering decisions, so
@@ -1756,3 +1756,17 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
 - **Decision: leave them.** They are never serialised to a model, so they cost no tokens and change no behaviour.
   They are also upstream code: deleting them gains nothing measurable and adds merge conflicts whenever upstream
   touches that part of the file (principle 8). If upstream removes them, the merge takes that for free.
+
+## D-090 — Standalone repository; no upstream product names (2026-09-27)
+- **Context:** Ankush asked for the harness to live in its own repository, with no upstream commit history and
+  no upstream product name anywhere in the code.
+- **Decision:** the repository starts from one `Initial codebase` commit (the upstream tree at `304bf3b`) with
+  our commits on top. Every upstream product name is renamed to Peach Ice Tea: crates `peach_*`, binary
+  `peach`, environment variables `PEACH_*`, config directory `.peach`. `origin` is
+  `github.com/Ankush-Jha/peach-ice-tea`.
+- **What stays:** the Apache-2.0 `LICENSE`, including its copyright line, which the licence requires; and the
+  README's statement that the harness is built on an open-source Apache-2.0 coding agent, which D-024's
+  eligibility answer depends on.
+- **Consequences:** principle 8 (stay mergeable with upstream, keep crate names) and D-004 no longer apply;
+  upstream changes can only be brought in by hand. Hosted-service URLs point at a domain we do not run, so the
+  proprietary hosted provider is unusable, as D-017 already required for evaluation runs.

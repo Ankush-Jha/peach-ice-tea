@@ -89,7 +89,7 @@ impl<
         .await
     }
 
-    /// Gets the Peach Ice Tea services credential and extracts workspace auth
+    /// Gets the Hosted Services credential and extracts workspace auth
     /// components
     ///
     /// # Errors

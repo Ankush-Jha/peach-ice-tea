@@ -3,10 +3,9 @@
 A coding-agent harness for the LCC × DevClub AI Coding Harness Hackathon: one frozen prompt, one unattended
 run, and an evidence bundle judges can check without taking our word for anything.
 
-**Provenance:** Peach Ice Tea is built on a fork of [Peach Ice Tea](https://github.com/Ankush-Jha/peach-ice-tea)
-(Rust), forked from upstream `304bf3b` (D-008). Peach Ice Tea's own README is kept at
-[`documentation/UPSTREAM_README.md`](documentation/UPSTREAM_README.md). The crates keep their `peach_*`
-names so upstream merges stay possible (D-004). What we built, and why, is in
+**Provenance:** Peach Ice Tea is built on a fork of an open-source (Apache-2.0) Rust coding agent,
+forked from upstream `304bf3b` (D-008). The upstream README is kept at
+[`documentation/UPSTREAM_README.md`](documentation/UPSTREAM_README.md). What we built, and why, is in
 [`documentation/ARCHITECTURE.md`](documentation/ARCHITECTURE.md) and `docs/harness/DECISIONS.md`.
 
 ## What the harness adds

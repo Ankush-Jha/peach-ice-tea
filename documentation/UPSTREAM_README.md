@@ -764,7 +764,7 @@ model: anthropic.claude-3-opus
 </details>
 
 <details>
-<summary><strong>Peach Ice Tea Services</strong></summary>
+<summary><strong>Hosted Services</strong></summary>
 
 ```bash
 # .env

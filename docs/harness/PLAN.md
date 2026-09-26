@@ -278,7 +278,7 @@ W4 --> W5[W5: T3.3 · T3.5+T3.6+T3.11 · final docs]
 2. **`exec_report.rs`:** add outcomes `WallClockBudget` (exit 4) and `Interrupted` (exit 5). Add `evidence_dir: Option<String>` and `first_error_recovered`.
 3. **CLI:** add `--evidence-dir <DIR>` and `--max-wall-secs <N>` to `Exec`, the flag overriding config. If the evidence dir lies inside the repo, add it to `.git/info/exclude`, never `.gitignore`.
 4. **`inquire.rs`:** when `runtime::non_interactive()`, return `Ok(None)` without touching the widget and emit `InteractionSuppressed{site}`.
-5. **`tool_registry.rs`:** filter `sem_search` when non-interactive. It uses Peach Ice Tea Services (`services_url`), an unauthorized external service and model under §31 and D-017.
+5. **`tool_registry.rs`:** filter `sem_search` when non-interactive. It uses Hosted Services (`services_url`), an unauthorized external service and model under §31 and D-017.
 6. **Tracker:** disable it in exec. Release builds track unless `PEACH_TRACKER=false` (`peach_tracker/src/dispatch.rs:30`). Do it programmatically if possible; otherwise document it for the wrapper.
 7. **`preamble.rs`:** mandated content only. (a) No human is available; do not ask questions; assume reasonable defaults and state them in the final message. (b) `integrity::model_notice`. (c) `test_command::model_notice`. Stylistic guidance goes behind `features.prompt_guidance`.
 
@@ -515,7 +515,7 @@ W4 --> W5[W5: T3.3 · T3.5+T3.6+T3.11 · final docs]
    - `PEACH_HARNESS__EXEC__MAX_WALL_SECS`
    
    `harness/build.sh` does a release build for distribution, which AGENTS.md allows for that purpose.
-2. **README:** setup, execution, architecture, dependencies (protoc per D-009), configuration, major decisions, known limitations, and a plain statement that it is built on a Peach Ice Tea fork (D-023). Move upstream's README to `documentation/UPSTREAM_README.md`.
+2. **README:** setup, execution, architecture, dependencies (protoc per D-009), configuration, major decisions, known limitations, and a plain statement that it is built on a fork of an open-source (Apache-2.0) coding agent (D-023). Move upstream's README to `documentation/UPSTREAM_README.md`.
 3. **`documentation/ARCHITECTURE.md`:** answers every §25 question, citing code paths and telemetry field names.
 4. **`telemetry/` and `reporting/`:** a README saying where the organizer files will be vendored byte-for-byte, plus a checksum-verification script. Our schemas stay in `internal/`.
 

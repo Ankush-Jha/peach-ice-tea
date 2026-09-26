@@ -39,13 +39,13 @@ Sources studied (Sept 2026):
 1. **Interactive-by-default kills autonomous runs.** The agent asked clarifying questions nobody would answer. Fix: a separate non-interactive runtime profile (no clarification, assume defaults, commit to an answer). → `R-LOOP-4`
 2. **Good descriptions ≠ correct tool use.** Failures split into wrong tool, wrong argument names, wrong sequencing. These are invisible in aggregate pass rate; they built per-tool, per-model micro-evals. → `R-EVAL-3`
 3. **Naming is a reliability variable.** Renaming edit-tool args to `old_string`/`new_string` (names common in training data) measurably reduced errors. → `R-TOOL-2`
-4. **Context helps only after the right entry point is found.** Bottleneck is entry-point discovery latency, not token count. They built semantic entry-point discovery — **in the proprietary Peach Ice Tea Services layer**. → `R-CTX-9` (future), noted as gap.
+4. **Context helps only after the right entry point is found.** Bottleneck is entry-point discovery latency, not token count. They built semantic entry-point discovery — **in the the upstream vendor's proprietary services layer**. → `R-CTX-9` (future), noted as gap.
 5. **Time limits punish meandering trajectories.** Every failed call and redundant read burns wall-clock budget; timeout = failure. → `R-LOOP-1`, `R-LOOP-2`
 6. **Planning tools only work when enforced.** `todo_write` enforcement took pass rate 38% → 66%. → keep; `R-EVAL-4`
 7. **Speed beats intelligence under time limits.** Two structural changes: low-thinking subagents for easy parallel work, and a *progressive thinking policy*: very high reasoning for the first 10 assistant messages, low afterwards, high again whenever verification runs. → `R-LOOP-3`
 
 - Trajectory: ~25% baseline → ~38% (non-interactive + naming + micro-evals) → 66% (todo enforcement) → 78.4% (subagents + progressive thinking + skill routing).
-- **Critical finding:** Part 1 says five capabilities live in **Peach Ice Tea Services, a proprietary layer**: semantic entry-point discovery, dynamic skill loading, a tool-call correction layer (heuristics + static analysis before dispatch), `todo_write` enforcement, and reasoning-budget control. **A fork of the open-source repo does not automatically get the 81.8% configuration.** We must rebuild the parts we need in the open. → `R-LOOP-3`, `R-TOOL-3`, `D-005`
+- **Critical finding:** Part 1 says five capabilities live in **Hosted Services, a proprietary layer**: semantic entry-point discovery, dynamic skill loading, a tool-call correction layer (heuristics + static analysis before dispatch), `todo_write` enforcement, and reasoning-budget control. **A fork of the open-source repo does not automatically get the 81.8% configuration.** We must rebuild the parts we need in the open. → `R-LOOP-3`, `R-TOOL-3`, `D-005`
 - They gate releases in CI on: per-tool correctness per model, todo compliance, entry-point precision, skill-routing accuracy.
 - Their stated next measurements: per-tool reliability by model, entry-point latency distribution, **recovery rate after the first tool error**, time-efficiency under tight budgets, cross-model variance. → `R-EVAL-2`
 
