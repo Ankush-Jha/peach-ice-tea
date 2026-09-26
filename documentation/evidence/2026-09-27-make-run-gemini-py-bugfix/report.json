@@ -1,0 +1,450 @@
+{
+  "schema_version": "0.1.0",
+  "harness": {
+    "name": "peach-ice-tea",
+    "version": "0.1.0"
+  },
+  "outcome": {
+    "outcome": "error",
+    "exit_code": 1,
+    "error": "provider quota exhausted (GenerateRequestsPerDayPerProjectPerModel-FreeTier), not retried: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse: Invalid Status Code: 429",
+    "model": "gemini-3.8-flash"
+  },
+  "execution": {
+    "started_at": "2026-09-26T20:24:36.786Z",
+    "ended_at": "2026-09-26T20:28:04.161Z",
+    "wall_ms": 207272,
+    "agents": [
+      "peach"
+    ],
+    "telemetry_events": 61,
+    "telemetry_lines_lost": 0
+  },
+  "tokens": {
+    "input": 345977,
+    "cached_input": 198671,
+    "output": 7436,
+    "reasoning": 6251,
+    "cache_hit_rate": 0.5742318130974025
+  },
+  "model_calls": {
+    "calls": 18,
+    "failed": 1,
+    "retried_attempts": 15,
+    "retry_events": 15,
+    "input_tokens_per_call": {
+      "min": 11644,
+      "mean": 18479,
+      "max": 23033
+    },
+    "context_tokens_estimated": {
+      "min": 12637,
+      "mean": 15807,
+      "max": 17978
+    },
+    "duration_ms": {
+      "min": 1449,
+      "mean": 11402,
+      "max": 53730
+    },
+    "finish_reasons": {
+      "end_turn": 18
+    }
+  },
+  "context": {
+    "compactions": 0,
+    "compaction_messages": [],
+    "tokens_reclaimed_estimated": 0,
+    "prompt_composition": {
+      "system_prompt": 2902,
+      "tool_definitions": 9497,
+      "user_prompt": 238
+    }
+  },
+  "tools": [
+    {
+      "name": "fs_search",
+      "calls": 1,
+      "errors": 0,
+      "total_duration_ms": 4
+    },
+    {
+      "name": "patch",
+      "calls": 1,
+      "errors": 0,
+      "total_duration_ms": 1164
+    },
+    {
+      "name": "read",
+      "calls": 3,
+      "errors": 0,
+      "total_duration_ms": 0
+    },
+    {
+      "name": "shell",
+      "calls": 6,
+      "errors": 0,
+      "total_duration_ms": 180
+    },
+    {
+      "name": "todo_read",
+      "calls": 1,
+      "errors": 0,
+      "total_duration_ms": 0
+    },
+    {
+      "name": "todo_write",
+      "calls": 6,
+      "errors": 0,
+      "total_duration_ms": 1
+    }
+  ],
+  "error_recovery": {
+    "retries_by_reason": {
+      "empty_completion": 1,
+      "http_429": 12,
+      "http_503": 2
+    },
+    "unmetered_empty_completions": 0,
+    "tool_errors": 0,
+    "refused_integrity_actions": 0,
+    "suppressed_prompts": 0,
+    "model_failover_count": 0
+  },
+  "testing": {
+    "class": "passed",
+    "command": "python3 -m unittest discover -s tests -t . -v",
+    "duration_ms": 53,
+    "exit_code": 0,
+    "failed": 0,
+    "output_tail": "test_already_sorted_input (tests.test_stats.TestDedupeSorted.test_already_sorted_input) ... ok\ntest_empty_input (tests.test_stats.TestDedupeSorted.test_empty_input) ... ok\ntest_removes_duplicates_and_sorts (tests.test_stats.TestDedupeSorted.test_removes_duplicates_and_sorts) ... ok\ntest_single_value_repeated (tests.test_stats.TestDedupeSorted.test_single_value_repeated) ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK",
+    "passed": 4,
+    "ran": true,
+    "skipped": 0,
+    "source": "explicit",
+    "timed_out": false
+  },
+  "repository": {
+    "files": [
+      {
+        "path": "stats.py",
+        "added": 1,
+        "removed": 5
+      }
+    ],
+    "lines_added": 1,
+    "lines_removed": 5
+  },
+  "integrity": {
+    "checked": 2,
+    "violations": []
+  },
+  "timeline": [
+    {
+      "timestamp": "2026-09-26T20:24:36.786Z",
+      "agent": null,
+      "event": "run started"
+    },
+    {
+      "timestamp": "2026-09-26T20:24:36.903Z",
+      "agent": "peach",
+      "event": "agent running"
+    },
+    {
+      "timestamp": "2026-09-26T20:24:36.909Z",
+      "agent": "peach",
+      "event": "prompt composition recorded"
+    },
+    {
+      "timestamp": "2026-09-26T20:24:41.588Z",
+      "agent": "peach",
+      "event": "retry 1 of model_call: http_503"
+    },
+    {
+      "timestamp": "2026-09-26T20:24:58.857Z",
+      "agent": "peach",
+      "event": "model call: 11644 in / 308 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:24:58.881Z",
+      "agent": "peach",
+      "event": "tool todo_write: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:01.533Z",
+      "agent": "peach",
+      "event": "model call: 12113 in / 202 out, 2 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:01.534Z",
+      "agent": "peach",
+      "event": "tool read: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:01.534Z",
+      "agent": "peach",
+      "event": "tool read: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:06.728Z",
+      "agent": "peach",
+      "event": "model call: 12983 in / 766 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:06.729Z",
+      "agent": "peach",
+      "event": "tool todo_write: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:09.435Z",
+      "agent": "peach",
+      "event": "model call: 13888 in / 38 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:09.501Z",
+      "agent": null,
+      "event": "test run: exit Some(1)"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:09.501Z",
+      "agent": "peach",
+      "event": "tool shell: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:12.389Z",
+      "agent": "peach",
+      "event": "retry 1 of model_call: empty_completion"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:14.478Z",
+      "agent": "peach",
+      "event": "retry 2 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:17.038Z",
+      "agent": "peach",
+      "event": "retry 3 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:24.826Z",
+      "agent": "peach",
+      "event": "retry 4 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:36.949Z",
+      "agent": "peach",
+      "event": "retry 5 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:58.186Z",
+      "agent": "peach",
+      "event": "model call: 14308 in / 67 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:25:58.212Z",
+      "agent": "peach",
+      "event": "tool shell: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:00.460Z",
+      "agent": "peach",
+      "event": "model call: 14564 in / 40 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:00.464Z",
+      "agent": "peach",
+      "event": "tool fs_search: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:13.703Z",
+      "agent": "peach",
+      "event": "model call: 14837 in / 3771 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:13.723Z",
+      "agent": "peach",
+      "event": "tool shell: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:17.605Z",
+      "agent": "peach",
+      "event": "retry 1 of model_call: http_503"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:24.274Z",
+      "agent": "peach",
+      "event": "model call: 19381 in / 1132 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:24.275Z",
+      "agent": "peach",
+      "event": "tool todo_write: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:26.394Z",
+      "agent": "peach",
+      "event": "model call: 20603 in / 266 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:27.559Z",
+      "agent": "peach",
+      "event": "tool patch: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:27.930Z",
+      "agent": "peach",
+      "event": "retry 1 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:29.641Z",
+      "agent": "peach",
+      "event": "retry 2 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:33.439Z",
+      "agent": "peach",
+      "event": "retry 3 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:40.676Z",
+      "agent": "peach",
+      "event": "model call: 21106 in / 76 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:40.677Z",
+      "agent": "peach",
+      "event": "tool todo_write: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:44.420Z",
+      "agent": "peach",
+      "event": "model call: 21318 in / 39 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:44.461Z",
+      "agent": null,
+      "event": "test run: exit Some(0)"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:44.462Z",
+      "agent": "peach",
+      "event": "tool shell: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:51.245Z",
+      "agent": "peach",
+      "event": "model call: 21471 in / 57 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:51.260Z",
+      "agent": "peach",
+      "event": "tool shell: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:52.717Z",
+      "agent": "peach",
+      "event": "model call: 21766 in / 31 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:52.735Z",
+      "agent": "peach",
+      "event": "tool shell: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:54.422Z",
+      "agent": "peach",
+      "event": "model call: 21957 in / 131 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:54.423Z",
+      "agent": "peach",
+      "event": "tool read: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:55.968Z",
+      "agent": "peach",
+      "event": "model call: 22329 in / 40 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:55.968Z",
+      "agent": "peach",
+      "event": "tool todo_write: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:56.409Z",
+      "agent": "peach",
+      "event": "retry 1 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:26:58.596Z",
+      "agent": "peach",
+      "event": "retry 2 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:27:01.638Z",
+      "agent": "peach",
+      "event": "retry 3 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:27:05.987Z",
+      "agent": "peach",
+      "event": "retry 4 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:27:22.304Z",
+      "agent": "peach",
+      "event": "retry 5 of model_call: http_429"
+    },
+    {
+      "timestamp": "2026-09-26T20:27:49.707Z",
+      "agent": "peach",
+      "event": "model call: 22455 in / 368 out, 0 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:27:49.711Z",
+      "agent": "peach",
+      "event": "agent ended"
+    },
+    {
+      "timestamp": "2026-09-26T20:27:56.549Z",
+      "agent": "peach",
+      "event": "model call: 22871 in / 29 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:27:56.550Z",
+      "agent": "peach",
+      "event": "tool todo_read: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:28:03.676Z",
+      "agent": "peach",
+      "event": "model call: 23033 in / 75 out, 1 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T20:28:03.677Z",
+      "agent": "peach",
+      "event": "tool todo_write: ok"
+    },
+    {
+      "timestamp": "2026-09-26T20:28:04.060Z",
+      "agent": null,
+      "event": "integrity verify: 2 protected files checked; all unchanged"
+    },
+    {
+      "timestamp": "2026-09-26T20:28:04.142Z",
+      "agent": null,
+      "event": "test run: exit Some(0)"
+    },
+    {
+      "timestamp": "2026-09-26T20:28:04.161Z",
+      "agent": null,
+      "event": "error error: provider quota exhausted (GenerateRequestsPerDayPerProjectPerModel-FreeTier), not retried: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse: Invalid Status Code: 429"
+    },
+    {
+      "timestamp": "2026-09-26T20:28:04.161Z",
+      "agent": null,
+      "event": "run ended: error"
+    }
+  ],
+  "notes": []
+}

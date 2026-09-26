@@ -128,3 +128,7 @@ DEEPSEEK_API_KEY=... npm run hackathon -- --agent peach --profile deepseek --sui
 
 Estimate the cost before any live run (D-025). The `₹100` budget is for Gemini; DeepSeek spend needs its own
 agreement.
+
+- **Linux `protoc` fallback (`make setup`, D-081):** when neither brew nor a usable `apt-get` is available, setup downloads
+  the pinned protoc 36.2 release into `.tools/protoc/`. Checked: the release URLs (x86_64, aarch_64) resolve, the archive has
+  `bin/protoc` + `include/`, and the x86_64 binary is statically linked (`file`), so it also runs on musl distributions.

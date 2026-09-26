@@ -1745,3 +1745,45 @@ fn test_the_score_stage_cuts_an_unreferenced_old_read_without_a_summary() {
     assert!(requests.iter().any(|b| b.contains("relevance scoring") || b.contains("scored as no longer relevant")), "S2 cut nothing");
     assert!(!requests.iter().any(|b| b.contains("summary frames")), "the lossy summary ran although S2 sufficed");
 }
+
+/// The generated report of a run with an evidence bundle, and the model ids it called.
+fn report_of_failover_run(script: Vec<Turn>) -> (serde_json::Value, Vec<String>) {
+    let project = project_with_a_test();
+    let evidence = tempfile::tempdir().unwrap();
+    let bundle = evidence.path().join("bundle");
+    let model = ScriptedModel::start(script);
+    let env = [("PEACH_HARNESS_FALLBACK_MODELS", "fallback-model")];
+    let args = ["--evidence-dir", bundle.to_str().unwrap(), "--test-command", "python3 -m unittest discover -s tests -t ."];
+
+    let (run, config) = run_exec_keeping_config(project.path(), &model, None, &env, "fix add", &args, FALLBACK_MODEL_TOML);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    // The helper's --telemetry overrides the bundle's own file; put it where a judge's bundle
+    // has it and rebuild the report the way a judge would (`peach report`).
+    std::fs::copy(config.path().join("telemetry.jsonl"), bundle.join("telemetry.jsonl")).unwrap();
+    let rebuilt = Command::new(env!("CARGO_BIN_EXE_peach")).arg("report").arg(&bundle).output().unwrap();
+    assert!(rebuilt.status.success(), "peach report failed: {}", String::from_utf8(rebuilt.stderr.clone()).unwrap_or_default());
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(bundle.join("report.json")).unwrap()).unwrap();
+    let models = model
+        .requests()
+        .iter()
+        .map(|body| serde_json::from_str::<serde_json::Value>(body).unwrap()["model"].as_str().unwrap_or("").to_string())
+        .collect();
+    (report, models)
+}
+
+#[test]
+fn test_a_failed_over_run_is_scored_exactly_like_one_that_was_not() {
+    const NO_CREDIT: &str = r#"{"error":{"message":"This request requires more credits","code":402,"metadata":{"limit_source":"openrouter_credits"}}}"#;
+
+    let (plain, plain_models) = report_of_failover_run(vec![Turn::Text("Done.")]);
+    let (failed_over, failover_models) = report_of_failover_run(vec![Turn::StatusBody(402, NO_CREDIT), Turn::Text("Done.")]);
+
+    let score = |r: &serde_json::Value| (r["outcome"].clone(), r["testing"]["class"].clone(), r["testing"]["passed"].clone());
+    assert_eq!(score(&failed_over), score(&plain), "scoring must not depend on which model answered");
+    assert_eq!(plain["error_recovery"]["model_failover_count"], 0);
+    assert_eq!(failed_over["error_recovery"]["model_failover_count"], 1);
+    assert_eq!(plain_models, vec!["scripted-model".to_string()]);
+    assert_eq!(failover_models, vec!["scripted-model".to_string(), "fallback-model".to_string()]);
+}

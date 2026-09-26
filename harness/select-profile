@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Prints the profile `make run` / `make test` use (D-081).
+#
+# An explicit PROFILE always wins. Otherwise the profile follows the shape of AI_API_KEY, so the
+# organisers' bare recipe (export AI_API_KEY; make setup; make run) authenticates whichever provider
+# the key belongs to. Unrecognised shapes get `gemini`, the model HACKATHON.md names.
+set -euo pipefail
+if [[ -n "${PROFILE:-}" ]]; then
+  echo "$PROFILE"
+  exit 0
+fi
+case "${AI_API_KEY:-}" in
+  sk-or-*) echo openrouter ;;
+  nvapi-*) echo nvidia-deepseek ;;
+  *) echo gemini ;; # Google AI Studio keys start with AIza; also the default
+esac

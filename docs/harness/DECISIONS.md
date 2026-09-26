@@ -1522,3 +1522,41 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   A script re-derived each cited number from the committed telemetry before commit.
 - **Honest gaps stated in the document:** no real run has compacted or failed over yet. Those answers name the
   end-to-end tests that prove the mechanisms with a scripted model. TH.9's "grounded in real telemetry" note is closed.
+
+## D-081 — Handoff brief Tier 0: the bare evaluator recipe now authenticates any provider; Linux `protoc`; failover visible and opt-in (2026-09-27)
+Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the team.
+- **0.1, profile selection. The brief's premise conflicted with D-049/D-069.** The brief read HACKATHON.md's
+  "Gemini 3.8 High" as fixed and asked for `PROFILE ?= gemini`. The team had since allowed any model and chosen the
+  OpenRouter free tier. Either hard-coded default breaks one of the two cases, while the brief's real concern
+  is sound: the organisers' literal recipe (`export AI_API_KEY; make setup; make run`, no `PROFILE`) must
+  authenticate. **Decision:** `harness/select-profile`, shared by `make run` and `make test`, picks the profile
+  from the key's shape.
+  - `sk-or-…` → `openrouter`; `nvapi-…` → `nvidia-deepseek`.
+  - `AIza…` (Google AI Studio) **and anything unrecognised → `gemini`**, the model HACKATHON.md names.
+  - An explicit `PROFILE=` always wins.
+  - **Proven live:** only `AI_API_KEY` set to the AI Studio key, and a bare `make run` on a fresh `py-bugfix` copy.
+    The run selected `gemini`, authenticated, and made 18 calls on `gemini-3.8-flash`. **Gemini fixed the bug**:
+    the agent's test run and the harness's final run both passed. It then spent its remaining requests on
+    `todo_write` bookkeeping until the free tier's 20 requests/day ran out; the outcome is `error`, named by
+    D-040's detector. The key appears nowhere in the evidence. Bundle committed at
+    `documentation/evidence/2026-09-27-make-run-gemini-py-bugfix/`. The todo-spending pattern matches D-032, and
+    `PEACH_HARNESS_COMPACT_TOOL_DOCS` (which drops the "use todos proactively" examples) is the natural A/B for it.
+- **0.2, Linux `protoc`:** the brief's `make setup` hunks are applied as given. When there is no brew, it runs
+  `apt-get` non-interactively (as root or with passwordless sudo). Otherwise it downloads the pinned protoc 36.2
+  release into `.tools/protoc` (gitignored), which the build then uses. **Checked here:** make parses the recipe,
+  the protoc block is valid shell, both release URLs (x86_64, aarch_64) return 200, and the archive has
+  `bin/protoc` + `include/`. **Correction to the brief:** `file` shows the Linux binary is *statically* linked, so
+  it runs on musl (Alpine) too; DEV.md says so. **Not run on Linux:** no Docker daemon was available.
+- **0.3, failover visibility and default:**
+  - The report's `error_recovery.model_failover_count` counts `recovery: model_failover`, and the markdown flags
+    it when non-zero.
+  - A scripted test runs the same task twice, plain and with a no-credit 402 then a fallback. **Outcome and test
+    result are identical**, with counts 0 and 1, so scoring is model-agnostic.
+  - **Past data checked:** all 19 real bundles contain exactly one model in their `model_call` events. My first
+    check wrongly counted retry events, whose `operation` field is `"model_call"`. No earlier comparison was
+    contaminated; the free screen predates MM.4.
+  - **MM.4 is now opt-in** (`openrouter/profile.env`'s fallback list commented out). It shipped on with scripted
+    proof only, not an A/B (principle 6). This supersedes D-072's "on in the profile".
+- **Tests:** `cargo insta test --workspace`: 3021 passed. The known timing test
+  (`test_concurrent_operations_dont_block_runtime`, D-031) failed once under load and passed 5/5 alone and on the
+  next full run.
