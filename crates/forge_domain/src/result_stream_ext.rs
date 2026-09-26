@@ -282,7 +282,9 @@ impl ResultStreamExt<anyhow::Error> for crate::BoxStream<ChatCompletionMessage, 
             && finish_reason.is_none()
             && thought_signature.is_none()
         {
-            return Err(crate::Error::EmptyCompletion.into_retryable().into());
+            return Err(crate::Error::EmptyCompletion { usage: Box::new(usage) }
+                .into_retryable()
+                .into());
         }
 
         Ok(ChatCompletionMessageFull {
@@ -1268,6 +1270,39 @@ mod tests {
         };
 
         assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
+    async fn test_empty_completion_keeps_the_usage_the_provider_reported() {
+        // D-032: Gemini returned empty completions that may have been billed.
+        // Whatever usage came with one must reach the retry accounting.
+        let usage = Usage {
+            prompt_tokens: TokenCount::Actual(14_000),
+            completion_tokens: TokenCount::Actual(900),
+            total_tokens: TokenCount::Actual(14_900),
+            cached_tokens: TokenCount::Actual(0),
+            reasoning_tokens: TokenCount::Actual(900),
+            cost: None,
+        };
+        let messages = vec![Ok(ChatCompletionMessage::default().usage(usage))];
+        let fixture: BoxStream<ChatCompletionMessage, anyhow::Error> =
+            Box::pin(tokio_stream::iter(messages));
+
+        let actual = fixture.into_full(false).await.unwrap_err();
+
+        assert_eq!(crate::Error::billed_usage(&actual), Some(usage));
+    }
+
+    #[tokio::test]
+    async fn test_empty_completion_without_usage_is_unknown_not_free() {
+        let messages = vec![Ok(ChatCompletionMessage::default())];
+        let fixture: BoxStream<ChatCompletionMessage, anyhow::Error> =
+            Box::pin(tokio_stream::iter(messages));
+
+        let actual = fixture.into_full(false).await.unwrap_err();
+
+        assert!(actual.to_string().contains("Empty completion"));
+        assert_eq!(crate::Error::billed_usage(&actual), None);
     }
 
     #[tokio::test]

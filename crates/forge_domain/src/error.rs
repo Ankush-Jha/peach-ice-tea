@@ -4,7 +4,7 @@ use derive_more::From;
 use forge_json_repair::JsonRepairError;
 use thiserror::Error;
 
-use crate::{AgentId, ConversationId, ProviderId, WorkspaceId};
+use crate::{AgentId, ConversationId, ProviderId, Usage, WorkspaceId};
 
 // NOTE: Deriving From for error is a really bad idea. This is because you end
 // up converting errors incorrectly without much context. For eg: You don't want
@@ -71,8 +71,12 @@ pub enum Error {
     #[from(skip)]
     NoModelDefined(AgentId),
 
+    /// `usage` is whatever the provider reported for the empty response.
+    /// harness: R-HACK-3 / D-032 — an empty completion can still be billed,
+    /// so the usage travels with the error to be counted, not dropped.
     #[error("Empty completion received - no content, tool calls, or valid finish reason")]
-    EmptyCompletion,
+    #[from(skip)]
+    EmptyCompletion { usage: Box<Usage> },
 
     #[error(
         "The model refused to generate a response (safety/content filter). \
@@ -135,6 +139,18 @@ impl std::fmt::Display for ToolCallArgumentError {
 }
 
 impl Error {
+    /// Provider-reported usage for a failed attempt that may still have been
+    /// billed, found anywhere in `error`'s chain. `None` when the attempt
+    /// carried no usage, or the provider reported none (all zero): that is
+    /// "unknown", not "free".
+    pub fn billed_usage(error: &anyhow::Error) -> Option<Usage> {
+        error.chain().find_map(|cause| match cause.downcast_ref::<Error>() {
+            Some(Error::EmptyCompletion { usage }) if usage.has_reported_tokens() => Some(**usage),
+            Some(Error::Retryable(inner)) => Self::billed_usage(inner),
+            _ => None,
+        })
+    }
+
     pub fn into_retryable(self) -> Self {
         use anyhow::anyhow;
         Self::Retryable(anyhow!(self))

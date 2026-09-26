@@ -425,3 +425,38 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   4. Gemini accepted `thinkingLevel: "high"` (lowercase). There were no 400s.
 - **Next live run** should wait until retries are metered and TH.4's model_call/tool_call events are wired,
   and should use the default request limit (or ≥ 30).
+
+## D-033 — TH.4 wired: model, tool, agent-state and retry telemetry; retries metered (2026-09-25)
+- **Context:** D-032's live run showed 31 requests on the wire against 13 counted calls. That was 17 retries
+  (11 × 429, 3 × 503, 3 × empty completion) with nothing in the metrics or telemetry, and the telemetry held
+  only `run_start` / `integrity` / `run_end`.
+- **Decisions:**
+  - `TelemetryHandler` (`forge_app/src/hooks/telemetry.rs`) is chained after `TracingHandler` in all six hook
+    chains. It emits `agent_state` at start and end, one `model_call` per response (provider usage only),
+    and one `tool_call` per result, carrying `origin_call_id` back to the `model_call` that requested it.
+    It returns immediately when no sink is installed, so interactive runs pay nothing.
+  - **Calls stay semantic, not literal.** `llm_calls` is still one per request, however many attempts it took.
+    The new `TaskMetrics.retried_llm_calls` counts failed attempts separately, and each one emits its own `retry`
+    event with the failure reason. The orchestrator's retry notifier used to exist only when a UI sender was
+    attached; it now always exists, so subagent retries are counted too. Counts go into the tool context's
+    metrics, not the conversation's, because the end-of-iteration sync copies one over the other.
+  - **Empty completions carry their usage.** `Error::EmptyCompletion { usage }` keeps whatever the provider
+    reported. The retry notifier adds those tokens to the task totals (not to `llm_calls`) and to the `retry`
+    event. `usage_reported` on the event is `true` when usage came back, `false` when an empty completion
+    reported none, and absent for HTTP/transport failures, which have no response to bill.
+  - Sink-level redaction of every free-text field (`daa6ad3d9`).
+- **Known accounting gap, recorded rather than assumed away:** `Usage` defaults to all zero, so "the provider
+  sent no usage" and "the provider reported zero" cannot be told apart. All-zero is therefore treated as
+  **not reported**, and the event says `usage_reported: false`, meaning cost unknown, not free. The Google DTO
+  does attach `usageMetadata` to candidate-less chunks (`dto/google/response.rs`, `test_response_no_candidates`),
+  so if Gemini bills an empty completion and reports it, it is now counted. **Whether Gemini sends usage on
+  its empty completions is unverified.** D-032's three empties were not captured. The next paid run will show
+  it per event; until then, D-032's ₹22 upper bound stands.
+- **Verified locally, no spend:** `exec_scripted_model.rs::test_retries_are_metered_and_the_telemetry_stream_is_complete`
+  replays a 503, an empty completion without usage, an empty completion with 14,000/900 usage, a `shell` call
+  and a finish against the real binary. It asserts `llm_calls` 2, `retried_llm_calls` 3, the billed tokens
+  in the totals, the exact event sequence, and the tool→model correlation. Disabling the billed-usage line in
+  `orch.rs` makes it fail (input 20 instead of 14,020).
+- **Not yet emitted (TH.4 stays unticked):** `context_compaction` / `context_composition`, `test_run` (TH.6),
+  `error` / `recovery`. The LLM call for conversation-title generation bypasses the orchestrator and is
+  in neither the metrics nor telemetry.

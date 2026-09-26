@@ -37,6 +37,15 @@ pub struct Usage {
 }
 
 impl Usage {
+    /// Whether the provider reported any token count at all. `Usage`'s
+    /// default is all zero, which cannot be told apart from a provider that
+    /// sent no usage, so zero is treated as "not reported".
+    pub fn has_reported_tokens(&self) -> bool {
+        [self.prompt_tokens, self.completion_tokens, self.total_tokens, self.reasoning_tokens]
+            .iter()
+            .any(|count| **count > 0)
+    }
+
     /// Accumulates usage from another Usage instance by summing all fields.
     ///
     /// Use this for aggregating usage across **independent** requests (e.g.,

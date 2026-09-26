@@ -285,8 +285,13 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
                 .handle(&request_event, &mut self.conversation)
                 .await?;
 
+            let retry_config = self.config.clone().retry.unwrap_or_default();
+            let retries = Arc::new(std::sync::atomic::AtomicU64::new(0));
+            // Usage reported for failed-but-possibly-billed attempts (empty
+            // completions): counted as tokens, never as extra calls.
+            let retried_usage = Arc::new(std::sync::Mutex::new(Vec::<Usage>::new()));
             let message = crate::retry::retry_with_config(
-                &self.config.clone().retry.unwrap_or_default(),
+                &retry_config,
                 || {
                     self.execute_chat_turn(
                         &model_id,
@@ -294,10 +299,17 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
                         context.is_reasoning_supported(),
                     )
                 },
-                self.sender.as_ref().map(|sender| {
-                    let sender = sender.clone();
+                // harness: R-HACK-3 — the notifier always exists now (it used to
+                // only when a UI sender was attached), so every retry is
+                // counted and reaches telemetry, subagents included (D-032).
+                Some({
+                    let sender = self.sender.clone();
                     let agent_id = self.agent.id.clone();
                     let model_id = model_id.clone();
+                    let retries = retries.clone();
+                    let retried_usage = retried_usage.clone();
+                    let conversation_id = self.conversation.id.to_string();
+                    let max_attempts = retry_config.max_attempts;
                     move |error: &anyhow::Error, duration: Duration| {
                         let root_cause = error.root_cause();
                         // Log retry attempts - critical for debugging API
@@ -308,13 +320,31 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
                             model = %model_id,
                             "Retry attempt due to error"
                         );
-                        let retry_event =
-                            ChatResponse::RetryAttempt { cause: error.into(), duration };
-                        let _ = sender.try_send(Ok(retry_event));
+                        let attempt = retries.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                        crate::hooks::record_model_retry(
+                            &conversation_id,
+                            agent_id.as_str(),
+                            attempt,
+                            max_attempts,
+                            error,
+                        );
+                        if let (Some(usage), Ok(mut billed)) =
+                            (Error::billed_usage(error), retried_usage.lock())
+                        {
+                            billed.push(usage);
+                        }
+                        if let Some(sender) = &sender {
+                            let retry_event =
+                                ChatResponse::RetryAttempt { cause: error.into(), duration };
+                            let _ = sender.try_send(Ok(retry_event));
+                        }
                     }
                 }),
             )
             .await;
+            let retried = retries.load(std::sync::atomic::Ordering::Relaxed);
+            let retried_usage: Vec<Usage> =
+                retried_usage.lock().map(|usage| usage.clone()).unwrap_or_default();
 
             // harness: R-EVAL-2 — a request that never produced a response is
             // not counted by `record_llm_call` below, because the error
@@ -322,8 +352,23 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
             // end-of-iteration sync from the tool context never runs on this
             // path, but `app.rs` still persists the conversation afterwards.
             let message = match message {
-                Ok(message) => message,
+                Ok(message) => {
+                    // Into the tool context, not the conversation: the
+                    // end-of-iteration sync copies the context's metrics
+                    // over the conversation's.
+                    tool_context.with_metrics(|metrics| {
+                        metrics.task.record_retried_llm_calls(retried);
+                        retried_usage
+                            .iter()
+                            .for_each(|usage| metrics.task.record_retried_usage(usage));
+                    })?;
+                    message
+                }
                 Err(error) => {
+                    self.conversation.metrics.task.record_retried_llm_calls(retried);
+                    retried_usage
+                        .iter()
+                        .for_each(|usage| self.conversation.metrics.task.record_retried_usage(usage));
                     self.conversation.metrics.task.record_failed_llm_call();
                     self.services.update(self.conversation.clone()).await.ok();
                     return Err(error);
