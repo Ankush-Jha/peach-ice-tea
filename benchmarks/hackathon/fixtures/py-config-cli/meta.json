@@ -1,5 +1,13 @@
 {
   "language": "python",
   "test_command": "python3 -m unittest discover -s tests -t . -v",
-  "test_files": ["tests/__init__.py", "tests/test_cli.py", "tests/test_merge.py", "tests/test_paths.py"]
+  "test_files": [
+    "tests/__init__.py",
+    "tests/test_cli.py",
+    "tests/test_merge.py",
+    "tests/test_paths.py",
+    "integration/__init__.py",
+    "integration/test_process.py"
+  ],
+  "integration_command": "python3 -m unittest discover -s integration -t . -v"
 }

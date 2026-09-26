@@ -920,3 +920,22 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   `manifest.json`). The completed-bundle test's file list gains `integrity.baseline.json`: an intended layout
   change, not a weakened assertion.
 - **TH.5 ticked.** The residual limit is inherent: after SIGKILL there is no transcript, report or automatic restore.
+
+## D-057 — The local suite gains integration tests; TH.7 closed (2026-09-26)
+- **Gap:** R-HACK-8 requires fixtures with unit *and* integration tests, since the judged repository has both
+  (HACKATHON §7). `run.ts` has supported `integration_command` since TH.7, but no fixture set one: every run
+  printed `integration=n/a`, so an agent that passed unit tests but broke the program end to end scored as a success.
+- **Added:** integration suites in the three harder fixtures, each exercising the program across module
+  boundaries and failing on the unfixed code:
+  - `py-config-cli`: runs `python -m synctool` as a subprocess against a real config file (comments, `dry-run`
+    key, CLI override);
+  - `py-ledger`: a discounted invoice with a half-cent line price, rendered and split three ways to the cent;
+  - `js-duration`: a new `src/jobs.js` loads a jobs JSON file and resolves fractional timeouts. It names the job
+    on error.
+
+  The integration files are declared in `test_files`, so both integrity checks cover them. For Node, a directory
+  argument to `node --test` fails on v25 (it is resolved as a module), so the command uses a glob.
+- **Checked:** `--agent reference` gives 3/3 with integration pass, and each suite fails before the fix.
+  `--agent forge-cheat` (real binary, tests tampered mid-run) gives 3/3 restored, integrity clean. The original
+  three fixtures stay unit-only: they are one-function bugs, and their value is as fast smoke tests.
+- **TH.7 ticked.**
