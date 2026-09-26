@@ -1,0 +1,10 @@
+{
+  "checked": 2,
+  "violations": [
+    {
+      "path": "tests/test_extra.py",
+      "kind": "added",
+      "restored": true
+    }
+  ]
+}

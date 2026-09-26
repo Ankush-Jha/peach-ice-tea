@@ -122,6 +122,13 @@ pub enum TopLevelCommand {
         evidence_dir: Option<PathBuf>,
     },
 
+    /// Generate the standard run report (`report.json`, `report.md`) from an
+    /// `exec --evidence-dir` bundle. Reads only the bundle; re-runs nothing.
+    Report {
+        /// The evidence bundle directory.
+        dir: PathBuf,
+    },
+
     /// Manage agents.
     Agent(AgentCommandGroup),
 

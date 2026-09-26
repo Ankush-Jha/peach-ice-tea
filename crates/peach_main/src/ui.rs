@@ -694,6 +694,15 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
                 self.on_info(porcelain, conversation_id).await?;
                 return Ok(());
             }
+            TopLevelCommand::Report { dir } => {
+                // harness: R-HACK-4 — offline: reads the bundle only.
+                let report = peach_harness::report::generate(&dir)?;
+                println!("{}", dir.join(peach_harness::report::REPORT_MD).display());
+                for note in report.notes {
+                    eprintln!("note: {note}");
+                }
+                return Ok(());
+            }
             TopLevelCommand::Exec { task, json, max_duration_secs, telemetry, evidence_dir } => {
                 let outputs = crate::harness_exec::ExecOutputs {
                     evidence_dir: evidence_dir.as_deref(),

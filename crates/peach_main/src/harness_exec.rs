@@ -184,6 +184,7 @@ impl ExecHarness {
         }));
         telemetry::flush();
         if let Some(evidence) = self.evidence.as_mut() {
+            evidence.write_report();
             evidence.write_manifest(&self.started_at, outcome);
         }
     }

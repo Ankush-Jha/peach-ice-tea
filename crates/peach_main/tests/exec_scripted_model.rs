@@ -517,6 +517,8 @@ fn test_a_completed_run_writes_a_complete_redacted_evidence_bundle() {
             "integrity.json",
             "manifest.json",
             "prompt.txt",
+            "report.json",
+            "report.md",
             "tests.json",
             "transcript.json",
         ],
@@ -548,6 +550,27 @@ fn test_a_completed_run_writes_a_complete_redacted_evidence_bundle() {
         .map(|(name, bytes)| (name.clone(), serde_json::Value::String(sha256_hex(bytes))))
         .collect();
     assert_eq!(manifest["files"], serde_json::Value::Object(expected));
+
+    // The report agrees with the exec outcome it was built from.
+    let report: serde_json::Value = serde_json::from_str(&read("report.json")).unwrap();
+    assert_eq!(report["outcome"]["outcome"], "completed");
+    assert_eq!(report["tokens"]["input"], exec["metrics"]["input_tokens"]);
+    assert_eq!(report["model_calls"]["calls"], exec["metrics"]["llm_calls"]);
+    assert_eq!(report["repository"]["files"][0]["path"], "math.py");
+
+    // `peach report` rebuilds the same report from the bundle alone: no
+    // provider, no model, nothing re-run.
+    let empty_config = tempfile::tempdir().unwrap();
+    std::fs::remove_file(dir.join("report.md")).unwrap();
+    let status = Command::new(env!("CARGO_BIN_EXE_peach"))
+        .args(["report", dir.to_str().unwrap()])
+        .env("PEACH_CONFIG", empty_config.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert_eq!(std::fs::read_to_string(dir.join("report.md")).unwrap(), read("report.md"));
 
     // The key reached the model (it was in the task) but not the bundle.
     for (name, bytes) in &files {

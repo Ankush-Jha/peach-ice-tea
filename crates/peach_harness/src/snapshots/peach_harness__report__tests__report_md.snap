@@ -1,0 +1,78 @@
+---
+source: crates/peach_harness/src/report.rs
+expression: render_md(&normalized)
+---
+# Run report — peach-ice-tea 0
+
+| Outcome | Exit | Model | Wall time |
+|---|---|---|---|
+| completed | 0 | gemini-3.8-flash | 10.1 s |
+
+## Tokens (provider-reported)
+
+| Input | Cached input | Output | Reasoning | Cache hit rate |
+|---|---|---|---|---|
+| 38500 | 23000 | 650 | 420 | 59.7% |
+
+## Model calls
+
+| Calls | Failed | Retried attempts (metrics) | Retry events (telemetry) | Input tok/call (min/mean/max) | Context tok est. (min/mean/max) | Duration ms (min/mean/max) |
+|---|---|---|---|---|---|---|
+| 3 | 0 | 2 | 2 | 12000 / 12833 / 13500 | 11800 / 12700 / 13400 | 1600 / 3060 / 4980 |
+
+## Context
+
+Compactions: 1 · tokens reclaimed (estimated): 7500 · messages: 40→6
+
+## Tools
+
+| Tool | Calls | Errors | Total ms |
+|---|---|---|---|
+| patch | 2 | 0 | 12 |
+| shell | 1 | 1 | 180 |
+
+## Error recovery
+
+Retries: empty_completion ×1, http_429 ×1 · unmetered empty completions: 1 · tool errors: 1 · refused test edits: 1 · suppressed prompts: 0
+
+## Testing
+
+```json
+{
+  "ran": false,
+  "reason": "the harness does not run a final test pass yet (TH.6)"
+}
+```
+
+## Repository changes
+
+1 file(s), +1 −1
+
+| File | + | − |
+|---|---|---|
+| `math.py` | 1 | 1 |
+
+## Test integrity
+
+2 protected file(s) checked; 1 violation(s):
+
+- `tests/test_extra.py` added, restored
+
+## Timeline
+
+- `2026-09-25T10:00:00.000Z` run started
+- `2026-09-25T10:00:00.010Z` [peach] agent running
+- `2026-09-25T10:00:01.000Z` [peach] retry 1 of model_call: http_429
+- `2026-09-25T10:00:03.000Z` [peach] retry 2 of model_call: empty_completion
+- `2026-09-25T10:00:05.000Z` [peach] model call: 12000 in / 400 out, 2 tool call(s), finish tool_calls
+- `2026-09-25T10:00:05.200Z` [peach] tool shell: error
+- `2026-09-25T10:00:05.300Z` [peach] integrity refused `tests/test_math.py`: Refused: cannot modify `tests/test_math.py` because it is a protected test file.
+- `2026-09-25T10:00:05.310Z` [peach] tool patch: ok
+- `2026-09-25T10:00:08.000Z` [peach] model call: 13000 in / 200 out, 1 tool call(s), finish tool_calls
+- `2026-09-25T10:00:08.100Z` [peach] context compacted: 40 -> 6 messages
+- `2026-09-25T10:00:08.300Z` [peach] tool patch: ok
+- `2026-09-25T10:00:10.000Z` [peach] model call: 13500 in / 50 out, 0 tool call(s), finish stop
+- `2026-09-25T10:00:10.010Z` [peach] agent ended
+- `2026-09-25T10:00:10.020Z` integrity verify: 2 protected files checked; 1 violation(s), 1 restored
+- `2026-09-25T10:00:10.021Z` integrity restored `tests/test_extra.py`: added during the run; restored to its pre-run state
+- `2026-09-25T10:00:10.100Z` run ended: completed

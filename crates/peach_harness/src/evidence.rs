@@ -123,6 +123,15 @@ impl Evidence {
         }
     }
 
+    /// Writes `report.json` and `report.md` from the bundle so far (TH.8).
+    /// Call after every input the report reads, before the manifest.
+    pub fn write_report(&mut self) {
+        if let Err(error) = crate::report::generate(&self.dir) {
+            tracing::warn!(?error, "Could not write the run report");
+            self.note(format!("{}: not written: {error}", crate::report::REPORT_JSON));
+        }
+    }
+
     /// Writes `manifest.json` with the SHA-256 of every file in the bundle.
     /// Call last: files written afterwards are not covered.
     ///
