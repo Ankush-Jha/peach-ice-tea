@@ -579,6 +579,7 @@ mod tests {
 
         // Usage on a message INSIDE the compaction range (index 1)
         let inside_usage = Usage {
+            reasoning_tokens: Default::default(),
             total_tokens: TokenCount::Actual(20000),
             prompt_tokens: TokenCount::Actual(18000),
             completion_tokens: TokenCount::Actual(2000),
@@ -588,6 +589,7 @@ mod tests {
 
         // Usage on a message INSIDE the compaction range (index 3)
         let inside_usage2 = Usage {
+            reasoning_tokens: Default::default(),
             total_tokens: TokenCount::Actual(30000),
             prompt_tokens: TokenCount::Actual(27000),
             completion_tokens: TokenCount::Actual(3000),
@@ -597,6 +599,7 @@ mod tests {
 
         // Usage on a message OUTSIDE the compaction range (index 5)
         let outside_usage = Usage {
+            reasoning_tokens: Default::default(),
             total_tokens: TokenCount::Actual(50000),
             prompt_tokens: TokenCount::Actual(45000),
             completion_tokens: TokenCount::Actual(5000),
@@ -637,6 +640,7 @@ mod tests {
         // The summary entry at index 0 should carry the accumulated usage from
         // indices 1 and 3 (inside_usage + inside_usage2)
         let expected_compacted_usage = Usage {
+            reasoning_tokens: Default::default(),
             total_tokens: TokenCount::Actual(50000),
             prompt_tokens: TokenCount::Actual(45000),
             completion_tokens: TokenCount::Actual(5000),
@@ -654,6 +658,7 @@ mod tests {
         // summary message) and the surviving outside_usage — total =
         // inside + inside2 + outside
         let expected_total_usage = Usage {
+            reasoning_tokens: Default::default(),
             total_tokens: TokenCount::Actual(100000),
             prompt_tokens: TokenCount::Actual(90000),
             completion_tokens: TokenCount::Actual(10000),

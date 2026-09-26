@@ -134,6 +134,10 @@ impl IntoDomain for oai::ResponseUsage {
             completion_tokens: TokenCount::Actual(self.output_tokens as usize),
             total_tokens: TokenCount::Actual(self.total_tokens as usize),
             cached_tokens: TokenCount::Actual(self.input_tokens_details.cached_tokens as usize),
+            // harness: R-EVAL-2 — already parsed by the DTO, previously dropped.
+            reasoning_tokens: TokenCount::Actual(
+                self.output_tokens_details.reasoning_tokens as usize,
+            ),
             cost: None,
         }
     }
@@ -912,6 +916,7 @@ mod tests {
 
     fn fixture_expected_usage() -> Usage {
         Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(100),
             completion_tokens: TokenCount::Actual(50),
             total_tokens: TokenCount::Actual(150),
@@ -1825,6 +1830,9 @@ mod tests {
             completion_tokens: TokenCount::Actual(381),
             total_tokens: TokenCount::Actual(15281),
             cached_tokens: TokenCount::Actual(14720),
+            // harness: the fixture has always carried 317 reasoning tokens;
+            // they were dropped before R-EVAL-2 mapped the field through.
+            reasoning_tokens: TokenCount::Actual(317),
             cost: None,
         };
 

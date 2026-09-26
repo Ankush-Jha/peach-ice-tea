@@ -27,6 +27,12 @@ pub struct Usage {
     pub completion_tokens: TokenCount,
     pub total_tokens: TokenCount,
     pub cached_tokens: TokenCount,
+    // harness: R-EVAL-2 — reasoning tokens billed by models that charge for
+    // extended thinking. Providers report it inside the completion token
+    // details; a provider that does not report it leaves this zero, which is
+    // indistinguishable from a model that did no reasoning.
+    #[serde(default)]
+    pub reasoning_tokens: TokenCount,
     pub cost: Option<f64>,
 }
 
@@ -40,6 +46,7 @@ impl Usage {
         self.completion_tokens = self.completion_tokens + other.completion_tokens;
         self.total_tokens = self.total_tokens + other.total_tokens;
         self.cached_tokens = self.cached_tokens + other.cached_tokens;
+        self.reasoning_tokens = self.reasoning_tokens + other.reasoning_tokens;
         self.cost = match (self.cost, other.cost) {
             (Some(a), Some(b)) => Some(a + b),
             (Some(a), None) => Some(a),
@@ -68,6 +75,7 @@ impl Usage {
         self.completion_tokens = self.completion_tokens.max(other.completion_tokens);
         self.total_tokens = self.total_tokens.max(other.total_tokens);
         self.cached_tokens = self.cached_tokens.max(other.cached_tokens);
+        self.reasoning_tokens = self.reasoning_tokens.max(other.reasoning_tokens);
         self.cost = match (self.cost, other.cost) {
             (Some(a), Some(b)) => Some(a + b),
             (Some(a), None) => Some(a),
@@ -238,6 +246,7 @@ mod tests {
     #[test]
     fn test_usage_accumulate_with_both_costs() {
         let fixture_usage_1 = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(100),
             completion_tokens: TokenCount::Actual(50),
             total_tokens: TokenCount::Actual(150),
@@ -246,6 +255,7 @@ mod tests {
         };
 
         let fixture_usage_2 = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(200),
             completion_tokens: TokenCount::Actual(75),
             total_tokens: TokenCount::Actual(275),
@@ -256,6 +266,7 @@ mod tests {
         let actual = fixture_usage_1.accumulate(&fixture_usage_2);
 
         let expected = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(300),
             completion_tokens: TokenCount::Actual(125),
             total_tokens: TokenCount::Actual(425),
@@ -269,6 +280,7 @@ mod tests {
     #[test]
     fn test_usage_accumulate_mixed_token_types() {
         let fixture_usage_1 = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(100),
             completion_tokens: TokenCount::Approx(50),
             total_tokens: TokenCount::Actual(150),
@@ -277,6 +289,7 @@ mod tests {
         };
 
         let fixture_usage_2 = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Approx(200),
             completion_tokens: TokenCount::Actual(75),
             total_tokens: TokenCount::Approx(275),
@@ -287,6 +300,7 @@ mod tests {
         let actual = fixture_usage_1.accumulate(&fixture_usage_2);
 
         let expected = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Approx(300),
             completion_tokens: TokenCount::Approx(125),
             total_tokens: TokenCount::Approx(425),
@@ -300,6 +314,7 @@ mod tests {
     #[test]
     fn test_usage_accumulate_partial_costs() {
         let fixture_usage_1 = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(100),
             completion_tokens: TokenCount::Actual(50),
             total_tokens: TokenCount::Actual(150),
@@ -308,6 +323,7 @@ mod tests {
         };
 
         let fixture_usage_2 = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(200),
             completion_tokens: TokenCount::Actual(75),
             total_tokens: TokenCount::Actual(275),
@@ -318,6 +334,7 @@ mod tests {
         let actual = fixture_usage_1.accumulate(&fixture_usage_2);
 
         let expected = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(300),
             completion_tokens: TokenCount::Actual(125),
             total_tokens: TokenCount::Actual(425),
@@ -331,6 +348,7 @@ mod tests {
     #[test]
     fn test_usage_accumulate_no_costs() {
         let fixture_usage_1 = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(100),
             completion_tokens: TokenCount::Actual(50),
             total_tokens: TokenCount::Actual(150),
@@ -339,6 +357,7 @@ mod tests {
         };
 
         let fixture_usage_2 = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(200),
             completion_tokens: TokenCount::Actual(75),
             total_tokens: TokenCount::Actual(275),
@@ -349,6 +368,7 @@ mod tests {
         let actual = fixture_usage_1.accumulate(&fixture_usage_2);
 
         let expected = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(300),
             completion_tokens: TokenCount::Actual(125),
             total_tokens: TokenCount::Actual(425),
@@ -364,6 +384,7 @@ mod tests {
         let fixture_usage_1 = Usage::default();
 
         let fixture_usage_2 = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(200),
             completion_tokens: TokenCount::Actual(75),
             total_tokens: TokenCount::Actual(275),
@@ -374,6 +395,7 @@ mod tests {
         let actual = fixture_usage_1.accumulate(&fixture_usage_2);
 
         let expected = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(200),
             completion_tokens: TokenCount::Actual(75),
             total_tokens: TokenCount::Actual(275),
@@ -411,6 +433,7 @@ mod tests {
         // where output_tokens in message_delta is CUMULATIVE (total), not a
         // delta.
         let fixture_message_start = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(1000),
             completion_tokens: TokenCount::Actual(1), // Initial output token
             total_tokens: TokenCount::Actual(1001),
@@ -419,6 +442,7 @@ mod tests {
         };
 
         let fixture_message_delta = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(0),
             completion_tokens: TokenCount::Actual(75), // Cumulative total, NOT delta
             total_tokens: TokenCount::Actual(75),
@@ -429,6 +453,7 @@ mod tests {
         let actual = fixture_message_start.merge(&fixture_message_delta);
 
         let expected = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(1000),   // max(1000, 0)
             completion_tokens: TokenCount::Actual(75), // max(1, 75) = 75, NOT 1+75=76
             total_tokens: TokenCount::Actual(1001),    // max(1001, 75)
@@ -442,6 +467,7 @@ mod tests {
     #[test]
     fn test_usage_merge_preserves_costs() {
         let fixture_usage_1 = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(100),
             completion_tokens: TokenCount::Actual(0),
             total_tokens: TokenCount::Actual(100),
@@ -450,6 +476,7 @@ mod tests {
         };
 
         let fixture_usage_2 = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(0),
             completion_tokens: TokenCount::Actual(50),
             total_tokens: TokenCount::Actual(50),
@@ -460,6 +487,7 @@ mod tests {
         let actual = fixture_usage_1.merge(&fixture_usage_2);
 
         let expected = Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(100),
             completion_tokens: TokenCount::Actual(50),
             total_tokens: TokenCount::Actual(100),
