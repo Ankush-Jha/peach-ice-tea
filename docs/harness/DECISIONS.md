@@ -1177,3 +1177,24 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   add a catalog tool for every model to learn (§21). It belongs in interactive use, with approval, as the spec
   says. Revisit with T4.1's approval flow, and keep it disabled whenever the run is unattended.
 - **T6.4 stays unticked**, with the load half done.
+
+## D-068 — Where the brief stopped, and the exact commands to resume (2026-09-26, 17:10 UTC)
+- **Stopped on a real blocker, as the brief allows:** steps 1–3 need paid models. At the last check the OpenRouter
+  account still had **$0 credit**; the free allowance was spent (52/50, resets 00:00 UTC); the key **expires
+  2026-09-27 17:46 UTC**. A background watcher polls for credit. Step 4's offline work went down TASKS in priority
+  order: TH.1, TH.2, TH.3, TH.5, TH.7, T0.8, T1.1, T1.3, T3.1–T3.4, T3.7, T3.8 and T3.10 are ticked; T6.4 is half
+  done by decision (D-053–D-067). What is left is live-run work or Tier 3.
+- **Resume, in order** (`target/debug/peach` rebuilt at the current HEAD):
+  1. Round 2, reachability and first ranking:
+     `npx tsx benchmarks/hackathon/bakeoff.ts --label round2 --suite all --seeds 1 --bin "$PWD/target/debug/peach" --max-requests 60 --max-duration-secs 1500 --models "anthropic/claude-fable-5.1,anthropic/claude-opus-5.5,openai/gpt-6-sol,google/gemini-3.8-flash,x-ai/grok-4.7,~deepseek/deepseek-pro-latest,z-ai/glm-5.3,qwen/qwen3.8-max-0902,nvidia/nemotron-3-ultra-550b-a55b:free"`.
+     Then `--seeds 3 --label round2-k3` on every model with at least one completed run. The default is the top of
+     the report's ranking (success rate, then cost; blocked runs are excluded). Set it in
+     `configuration/profiles/openrouter/peach.toml`.
+  2. D-046 on the winner:
+     `PEACH_SESSION__MODEL_ID=<winner> node benchmarks/hackathon/run.ts --agent peach --profile openrouter --bin "$PWD/target/debug/peach" --suite py-bugfix --max-requests 60 --max-duration-secs 1500`.
+  3. One A/B per flag on the winner, k = 3, all six fixtures:
+     `PEACH_SESSION__MODEL_ID=<winner> npx tsx benchmarks/hackathon/ab.ts --suite all --profile openrouter --seeds 3 --base "<FLAG>=0" --cand "<FLAG>=1" --label <flag>-<model> --estimate-inr-per-run 50 --yes`.
+     The flags are `PEACH_HARNESS_COMPACT_TOOL_DOCS`, `_PARALLEL_READONLY`, `_TOOL_CORRECTION`, `_LINE_NUMBERS_OFF`,
+     `_HANDOFF_NOTE` and `_RECALL_HANDLES`. The last two need tasks long enough to compact: add
+     `PEACH_COMPACT__MESSAGE_THRESHOLD=12` to both arms. Flip a flag to default on only if success is not lower on
+     both families. `offload_read` is now real (D-060), so the recovery column finally means something.
