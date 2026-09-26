@@ -12,10 +12,17 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [ ] **TH.2** `R-HACK-2` test-integrity guard: protected-path manifest, tool + shell refusal, loud notice to the model, post-run verify + restore.
 - [ ] **TH.3** `R-HACK-6` Gemini first: capture thoughts/cached tokens, tool-schema compatibility, reasoning-effort mapping, Gemini registry.
 - [ ] **TH.4** `R-HACK-3` telemetry event stream (`TelemetrySink`, internal schema, organizer adapter stub).
+      → wired (D-033): run, agent_state, model_call, tool_call, retry (with billed usage), context_compaction,
+      integrity, prompt_suppressed; sink redacts. **Open:** `test_run` (lands with TH.6), `error`/`recovery`,
+      `context_composition`; title-generation call is unmetered.
 - [ ] **TH.5** `R-HACK-5` evidence bundle (`--evidence-dir`), transcript on every exit path, redaction (pulls T3.7 forward).
+      → bundle on completed/error/time-budget paths, redacted, checksummed (D-034). **Open:** real `tests.json`
+      (TH.6); bundle when killed by a signal (exit 5 not implemented).
 - [ ] **TH.6** `R-HACK-7` verified completion: test-command detection, green-after-last-edit gate, failure classification + recovery hints.
 - [ ] **TH.7** `R-HACK-8` local hackathon-shaped evaluation suite and runner (replaces T0.5 as primary suite).
-- [ ] **TH.8** `R-HACK-4` standard report generator (`forge report`).
+- [x] **TH.8** `R-HACK-4` standard report generator (`forge report`).
+      → `forge_harness::report`, golden from `fixtures/evidence_min`; generated in every bundle (D-035).
+      Organizer `report.schema.json` adapter waits on publication (D-020).
 - [ ] **TH.9** `R-HACK-9` submission layout, README, `documentation/ARCHITECTURE.md`, prompt template; `harness/peach-ice-tea` entry command and the `peach-ice-tea` harness identity constant (D-023).
 
 ## M0 — Foundations (nothing else starts until M0 is done)
