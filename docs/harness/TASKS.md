@@ -13,12 +13,14 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [ ] **TH.3** `R-HACK-6` Gemini first: capture thoughts/cached tokens, tool-schema compatibility, reasoning-effort mapping, Gemini registry.
 - [ ] **TH.4** `R-HACK-3` telemetry event stream (`TelemetrySink`, internal schema, organizer adapter stub).
       → wired (D-033): run, agent_state, model_call, tool_call, retry (with billed usage), context_compaction,
-      integrity, prompt_suppressed; sink redacts. **Open:** `test_run` (lands with TH.6), `error`/`recovery`,
+      integrity, prompt_suppressed, test_run (TH.6); sink redacts. **Open:** `error`/`recovery`,
       `context_composition`; title-generation call is unmetered.
 - [ ] **TH.5** `R-HACK-5` evidence bundle (`--evidence-dir`), transcript on every exit path, redaction (pulls T3.7 forward).
-      → bundle on completed/error/time-budget paths, redacted, checksummed (D-034). **Open:** real `tests.json`
-      (TH.6); bundle when killed by a signal (exit 5 not implemented).
+      → bundle on completed/error/time-budget paths, redacted, checksummed (D-034); `tests.json` is the harness's
+      own final run (D-037). **Open:** bundle when killed by a signal (exit 5 not implemented).
 - [ ] **TH.6** `R-HACK-7` verified completion: test-command detection, green-after-last-edit gate, failure classification + recovery hints.
+      → detection, classification, gate (2 nudges, voluntary stops only), `test_run` events, final harness run
+      into `tests.json` (D-037). **Open:** recovery hints keyed by failure class; shell-made edits don't arm the gate.
 - [ ] **TH.7** `R-HACK-8` local hackathon-shaped evaluation suite and runner (replaces T0.5 as primary suite).
 - [x] **TH.8** `R-HACK-4` standard report generator (`peach report`).
       → `peach_harness::report`, golden from `fixtures/evidence_min`; generated in every bundle (D-035).

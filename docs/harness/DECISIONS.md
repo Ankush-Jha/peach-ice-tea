@@ -521,3 +521,22 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Not done:** no live DeepSeek call. There is no key, and no budget was agreed for it. TH.9's
   `harness/peach-ice-tea` wrapper should hard-code the `gemini` profile, so the judged entry point cannot run
   anything else.
+
+## D-037 — TH.6 verified completion: what enforces it, and what it does not cover (2026-09-25)
+- **Enforced in the runtime (principle 3):** edits and test runs are observed at `tool_executor::execute`, with
+  structured exit codes. The End-hook gate sends back an agent that stops on an unverified edit, at most
+  `MAX_GATE_NUDGES` = 2 times, and then records `verification_unconfirmed`. It acts only on a voluntary stop,
+  so the request and tool-failure limits still end a run.
+- **On by default in `exec` only**, without an A/B (PLAN.md C2; no budget, D-025). `PEACH_HARNESS_VERIFY_GATE=0`
+  disables it. When budget allows, A/B it on the TH.7 suite: success rate, LLM calls and wall time with the
+  gate on vs off.
+- **Evidence, not claims (§16):** with `--evidence-dir`, the harness runs the tests itself after the diff and
+  writes `tests.json` (command, why that command, exit code, class, counts, output tail). It then re-verifies
+  integrity, because the suite may write files. Checked end to end: an unfixed `py-bugfix` reports
+  `test_assertion` 3 passed / 1 failed against the restored tests.
+- **Test-command source:** `--test-command` (the runner passes each fixture's own command, as judges will) beats
+  detection. For Python without pytest configuration, detection picks stdlib `unittest`.
+- **Not covered, recorded:** edits made through shell commands (`sed -i`, redirects) do not arm the gate, since
+  only tool edits are observed. Failure-class-keyed recovery hints injected into tool results (PLAN.md W2-D
+  step 3) are not built: the classification exists, but nothing tells the model "this is an environment
+  failure, not your code" yet.
