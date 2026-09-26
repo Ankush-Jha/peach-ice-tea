@@ -1097,3 +1097,42 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   - The migration is additive (`CREATE TABLE IF NOT EXISTS`), so existing databases upgrade in place.
 - **Not yet (T3.2):** nothing writes events during a run. The orchestrator append path, and making
   `conversations.context` a projection, is the next task.
+
+## D-065 — T3.2: every save appends to the event log; two ways a snapshot diff lied, found on a real run (2026-09-26)
+- **Write path:** `ForgeRepo::upsert_conversation` saves the working view first, which stays authoritative. It then
+  hands the conversation to `EventLogWriter`, which appends the events between the log's view and the new context.
+  - A logging error is a warning and never fails the save (principle 5).
+  - The writer diffs against the **log's own replayed view**, cached per conversation and rebuilt from the log on a
+    miss, never against the stored `context` column: that goes through repository mirror records, and any
+    difference in the round trip would read as a rewrite.
+  - A resumed conversation continues its log. A conversation from before the migration is seeded on its first save.
+  - `conversations.context` is now a projection: `replay_view(log)` equals it (writer test).
+- **Found by the end-to-end test, not by the unit tests:** a real `exec` run that compacts, inspected with `sqlite3`.
+  - **Lie 1: metadata looked like compaction.** forge edits messages it has already saved. `SetModel` stamps the
+    model on text messages that lack one, and usage is attached after a response. The exact-prefix check read each
+    of these as a rewrite, so the first save after the prompt logged a "compaction" of 3 messages into 3.
+    **Fix:** messages match by content, ignoring `model` and `usage`. A metadata-only change becomes a small
+    `Revise { index, entry }` event, applied by `replay_view` (so the view stays byte-exact) and ignored by
+    `replay_history`.
+  - **Lie 2: messages hidden inside compaction views.** forge compacts mid-turn (`on_response`) and saves at the
+    end of the turn, so one snapshot holds a compaction *and* that turn's new call and result. They were recorded
+    only inside the `Compaction` view, and so were missing from the history the log exists to keep. A first fix
+    (longest surviving tail of the old view) failed on the real run: with a small retention window the compactor
+    keeps none of the old tail. **Fix:** anchor on what `Compactor::compress_single_sequence` actually does. It
+    splices exactly one summary where the evicted stretch began, so after the common prefix comes the summary,
+    then the entries it kept from before, then new ones. The view ends at the last kept entry (or the summary), and
+    everything after it is new `Message` events.
+- **Proof:**
+  - Domain: revisions don't count as compactions and the view stays exact; messages appended in the same snapshot
+    as a compaction stay in the history; the same holds when the compaction keeps nothing; pre-compaction view
+    replay is byte-exact (`replay_view_before_compaction`).
+  - Writer: saves become messages plus a compaction, and the view equals the stored context; a resume from a cold
+    cache adds no spurious compaction; seeding works; no context means nothing is written.
+  - End to end: a compacting run has ≥ 1 compaction event, and each of `echo one` to `echo four` and the final
+    answer is in the log **exactly once** as a message, although the working view summarised most of them away.
+- **Limits:**
+  - `replay_history` keeps each message as first recorded; revisions are not applied, since their index refers to
+    the view.
+  - The diff assumes forge's single-summary compaction shape. A future stage that rewrites differently (S0/S1
+    stubs, T3.5/T3.6) must write its own events rather than rely on the diff. That is the point of recording
+    compaction events at the source, and it is noted for those tasks.
