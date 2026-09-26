@@ -162,6 +162,12 @@ pub struct ErrorRecovery {
     pub tool_errors: u64,
     pub refused_integrity_actions: u64,
     pub suppressed_prompts: u64,
+    /// Times the run moved to a fallback model (`recovery: model_failover`,
+    /// D-072). Non-zero means some calls were served by a different model
+    /// than the one the run started on, which matters for any per-model
+    /// comparison (D-081).
+    #[serde(default)]
+    pub model_failover_count: u64,
 }
 
 /// What changed in the repository, from `diff.patch`.
@@ -259,6 +265,7 @@ pub fn build(dir: &Path) -> Report {
         tool_errors: 0,
         refused_integrity_actions: 0,
         suppressed_prompts: 0,
+        model_failover_count: 0,
     };
     let mut context = ContextSection {
         compactions: 0,
@@ -364,7 +371,12 @@ pub fn build(dir: &Path) -> Report {
             }
             TelemetryEvent::AgentState(state) => format!("agent {}", state.to),
             TelemetryEvent::Error(error) => format!("error {}: {}", error.kind, error.message),
-            TelemetryEvent::Recovery(recovery) => format!("recovery: {}", recovery.action),
+            TelemetryEvent::Recovery(event) => {
+                if event.action == "model_failover" {
+                    recovery.model_failover_count += 1;
+                }
+                format!("recovery: {}", event.action)
+            }
             TelemetryEvent::TestRun(run) => format!("test run: exit {:?}", run.exit_code),
             TelemetryEvent::ContextComposition(composition) => {
                 if context.prompt_composition.is_empty() {
@@ -579,6 +591,13 @@ pub fn render_md(report: &Report) -> String {
         "Retries: {retries} · unmetered empty completions: {} · tool errors: {} · refused test edits: {} · suppressed prompts: {}\n",
         r.unmetered_empty_completions, r.tool_errors, r.refused_integrity_actions, r.suppressed_prompts
     );
+    if r.model_failover_count > 0 {
+        let _ = writeln!(
+            md,
+            "Model failovers: {} — some calls were served by a fallback model (D-072); check `model_call.model`.\n",
+            r.model_failover_count
+        );
+    }
 
     let _ = writeln!(md, "## Testing (the harness's own run after the agent stopped)\n");
     let _ = writeln!(md, "{}", render_testing(&report.testing));

@@ -1,0 +1,13 @@
+{
+  "class": "passed",
+  "command": "python3 -m unittest discover -s tests -t . -v",
+  "duration_ms": 53,
+  "exit_code": 0,
+  "failed": 0,
+  "output_tail": "test_already_sorted_input (tests.test_stats.TestDedupeSorted.test_already_sorted_input) ... ok\ntest_empty_input (tests.test_stats.TestDedupeSorted.test_empty_input) ... ok\ntest_removes_duplicates_and_sorts (tests.test_stats.TestDedupeSorted.test_removes_duplicates_and_sorts) ... ok\ntest_single_value_repeated (tests.test_stats.TestDedupeSorted.test_single_value_repeated) ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK",
+  "passed": 4,
+  "ran": true,
+  "skipped": 0,
+  "source": "explicit",
+  "timed_out": false
+}
