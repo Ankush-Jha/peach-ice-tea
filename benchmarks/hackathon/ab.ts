@@ -247,7 +247,10 @@ function renderMarkdown(meta: Record<string, unknown>, base: ArmSummary, cand: A
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const role = await profileRole(args.profile);
-  const fixtures = args.suite.split(",").filter(Boolean).length;
+  const fixtures =
+    args.suite === "all"
+      ? (await fs.readdir(path.join(HERE, "fixtures"), { withFileTypes: true })).filter((d) => d.isDirectory()).length
+      : args.suite.split(",").filter(Boolean).length;
   const runs = fixtures * args.seeds * 2;
   const estimate = args.estimateInrPerRun !== undefined ? `≈ ₹${(runs * args.estimateInrPerRun).toFixed(0)}` : "not given";
   console.log(`[ab] ${runs} fixture-runs (${fixtures} fixtures × ${args.seeds} seeds × 2 arms), profile ${args.profile} (${role}); estimate ${estimate}`);
