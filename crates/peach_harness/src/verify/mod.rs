@@ -70,6 +70,13 @@ pub fn record_edit() {
 pub fn record_shell(command: &str, exit_code: Option<i32>, output: &str, duration_ms: u64) -> Option<String> {
     let detected = crate::runtime::get().and_then(|runtime| runtime.test_command());
     if !is_test_command(command, detected) {
+        // D-037 gap closed: an edit made through the shell arms the gate too.
+        if let Some(runtime) = crate::runtime::get()
+            && exit_code == Some(0)
+            && writes_inside(command, runtime.repo_root())
+        {
+            record_edit();
+        }
         return None;
     }
     let classification = classify(exit_code, false, output);
@@ -123,6 +130,21 @@ pub fn recovery_hint(class: FailureClass, test: Option<&TestCommand>) -> Option<
         )),
         FailureClass::Passed | FailureClass::TestAssertion | FailureClass::Unknown => None,
     }
+}
+
+/// Whether `command` writes or deletes a path inside `repo` (redirects to
+/// `/dev/null` or scratch files elsewhere don't count). Relative paths are
+/// taken as relative to the repository root, where the agent's shell runs.
+fn writes_inside(command: &str, repo: &Path) -> bool {
+    crate::integrity::mutated_paths(command).iter().any(|target| {
+        let target = target.trim_matches(['"', '\'']);
+        let path = Path::new(target);
+        if path.is_absolute() {
+            path.starts_with(repo)
+        } else {
+            !target.is_empty() && !target.starts_with('&')
+        }
+    })
 }
 
 fn emit_test_run(command: &str, exit_code: Option<i32>, result: &Classification, duration_ms: u64, origin: &str) {
@@ -324,6 +346,25 @@ mod tests {
         assert_eq!(actual, vec![false, false, false, true, true, true]);
         let environment = recovery_hint(FailureClass::Environment, Some(&test)).unwrap();
         assert!(environment.contains("`python3 -m unittest`") && environment.contains("do not modify tests"));
+    }
+
+    #[test]
+    fn test_shell_writes_inside_the_repo_count_as_edits() {
+        let repo = Path::new("/repo");
+
+        let actual: Vec<bool> = [
+            "sed -i 's/-/+/' calc.py",
+            "cat > /repo/calc.py <<EOF",
+            "echo x > /dev/null",
+            "python3 -c 'print(1)' > /tmp/out.txt",
+            "ls -la",
+            "cat calc.py 2>&1",
+        ]
+        .iter()
+        .map(|command| writes_inside(command, repo))
+        .collect();
+
+        assert_eq!(actual, vec![true, true, false, false, false, false]);
     }
 
     #[test]

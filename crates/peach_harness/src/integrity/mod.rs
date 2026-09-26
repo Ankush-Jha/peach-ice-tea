@@ -22,7 +22,7 @@ mod shell_guard;
 
 pub use globs::{DEFAULT_EXCLUDE_GLOBS, DEFAULT_PROTECTED_GLOBS, ProtectedSet};
 pub use manifest::{FileState, IntegrityReport, Manifest, Violation, ViolationKind};
-pub use shell_guard::check_command;
+pub use shell_guard::{check_command, mutated_paths};
 
 /// What a tool is trying to do to a path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

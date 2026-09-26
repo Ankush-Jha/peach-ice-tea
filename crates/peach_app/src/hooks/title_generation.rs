@@ -38,7 +38,10 @@ impl<S: AgentService> EventHandle<EventData<StartPayload>> for TitleGenerationHa
         event: &EventData<StartPayload>,
         conversation: &mut Conversation,
     ) -> anyhow::Result<()> {
-        if conversation.title.is_some() {
+        // harness: D-045 — an unattended run has no one to show a title to,
+        // and the call costs a model request (5% of a 20-request free tier)
+        // that neither the metrics nor telemetry would see.
+        if conversation.title.is_some() || peach_harness::runtime::is_non_interactive() {
             return Ok(());
         }
 
