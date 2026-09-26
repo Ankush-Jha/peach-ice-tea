@@ -4,6 +4,12 @@ expression: json
 ---
 {
   "context": {
+    "cache_around_compactions": [
+      [
+        0.8461538461538461,
+        0.8888888888888888
+      ]
+    ],
     "compaction_messages": [
       [
         40,
