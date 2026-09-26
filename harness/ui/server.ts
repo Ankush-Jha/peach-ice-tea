@@ -20,7 +20,7 @@ import * as path from "path";
 import { spawn, type ChildProcess } from "child_process";
 import { fileURLToPath } from "url";
 
-import { PROVIDER_KEY_VARS, autoProfile, keyFor, listProfiles, projectStats, splitTelemetry, summarizeBundle, within } from "./lib.ts";
+import { PROVIDER_KEY_VARS, autoProfile, keyFor, listProfiles, splitTelemetry, summarizeBundle, within } from "./lib.ts";
 
 const HARNESS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PORT = Number(process.env.UI_PORT ?? 4173);
@@ -305,9 +305,6 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "GET" && url.pathname === "/") {
       return send(res, 200, fs.readFileSync(path.join(HARNESS, "harness", "ui", "index.html"), "utf8"), "text/html");
-    }
-    if (req.method === "GET" && url.pathname === "/api/overview") {
-      return send(res, 200, projectStats(HARNESS));
     }
     if (req.method === "GET" && url.pathname === "/api/status") {
       return send(res, 200, {
