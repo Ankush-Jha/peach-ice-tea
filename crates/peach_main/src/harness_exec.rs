@@ -103,6 +103,12 @@ impl ExecHarness {
             (files, config) => files.or(config),
         };
 
+        // TH.5 (D-056): written now, because SIGKILL leaves no chance later.
+        if let Some(evidence) = evidence.as_mut() {
+            evidence.write_json(evidence::INTEGRITY_BASELINE, &manifest);
+            evidence.write_provisional_manifest(&started_at);
+        }
+
         let test_command = peach_harness::verify::detect(&repo_root, outputs.test_command);
         runtime::install(
             runtime::HarnessRuntime::new(repo_root.clone())

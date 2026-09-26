@@ -83,6 +83,8 @@ changes stay behind default-off flags until an A/B supports them (D-039, D-041, 
 - The organizers' telemetry and report schemas are not published yet; the adapters are stubs (D-020).
 - Edits made through shell commands don't arm the verify gate; only tool edits do (D-037).
 - The title-generation model call is not metered.
-- SIGKILL cannot be caught, so a run killed that way leaves no bundle (D-038).
+- SIGKILL cannot be caught. A run killed that way keeps only what was written as it went: the prompt, streamed
+  telemetry, a provisional `manifest.json` reading `incomplete`, and `integrity.baseline.json` with each test's
+  pre-run hash and the location of its copy. There is no transcript, report or restore (D-038, D-056).
 - No A/B has been affordable yet (D-025), so the flagged features are unmeasured.
 - Live-model evidence so far is limited (D-032, D-040, D-043).

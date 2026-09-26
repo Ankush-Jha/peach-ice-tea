@@ -607,6 +607,7 @@ fn test_a_completed_run_writes_a_complete_redacted_evidence_bundle() {
         vec![
             "diff.patch",
             "exec.json",
+            "integrity.baseline.json",
             "integrity.json",
             "manifest.json",
             "prompt.txt",
