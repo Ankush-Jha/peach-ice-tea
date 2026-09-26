@@ -1,0 +1,38 @@
+{
+  "outcome": "completed",
+  "exit_code": 0,
+  "metrics": {
+    "llm_calls": 3,
+    "failed_llm_calls": 0,
+    "retried_llm_calls": 2,
+    "input_tokens": 38500,
+    "cached_input_tokens": 23000,
+    "output_tokens": 650,
+    "reasoning_tokens": 420,
+    "tool_calls": {
+      "patch": 2,
+      "shell": 1
+    },
+    "tool_errors": {
+      "shell": 1
+    },
+    "wall_ms": 10100,
+    "compactions": {
+      "count": 1,
+      "tokens_before": 9000,
+      "tokens_after": 1500
+    }
+  },
+  "conversation_id": "conv-1",
+  "model": "gemini-3.8-flash",
+  "integrity": {
+    "checked": 2,
+    "violations": [
+      {
+        "path": "tests/test_extra.py",
+        "kind": "added",
+        "restored": true
+      }
+    ]
+  }
+}
