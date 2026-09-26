@@ -49,6 +49,7 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [x] **MM.4** Quota/outage failover: when D-040's detector sees an exhausted quota or a provider is unreachable, continue
       on the next model in the profile's fallback list, with a `recovery` event, instead of exiting.
       → `FORGE_HARNESS_FALLBACK_MODELS`; quota + exhausted-retry cases fail over, a 400 does not; e2e tests (D-072).
+        Opt-in in profiles until an A/B; `model_failover_count` in the report (D-081).
 - [ ] **MM.5** Second-family A/Bs for the flagged work: compact tool docs (DeepSeek arm done), T2.1, T2.6, T1.2.
       → blocked on budget: needs k = 3 A/B runs on a second model family; free tier only (D-069), after the bake-off (D-071).
 

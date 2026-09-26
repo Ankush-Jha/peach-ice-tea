@@ -3,7 +3,8 @@
 #
 # - The credential is AI_API_KEY (fixed by the organizers). It is handed to the selected
 #   profile as the provider variable that profile expects, so the provider can change
-#   without touching source: `make run PROFILE=gemini` uses AI_API_KEY as GEMINI_API_KEY.
+#   without touching source. With no PROFILE, the key's shape picks it (harness/select-profile, D-081):
+#   an AI Studio key (AIza…) runs `gemini`, an OpenRouter key (sk-or-…) `openrouter`.
 # - The task comes from PROMPT (if set) or from stdin: piped (`make run < issue.md`) or
 #   typed and ended with Ctrl-D.
 # - The agent works in REPO, the repository to fix, never in this harness repository.
@@ -13,7 +14,7 @@
 set -euo pipefail
 
 HARNESS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROFILE="${PROFILE:-openrouter}"
+PROFILE="$("$HARNESS/harness/select-profile")"
 PROFILE_DIR="$HARNESS/configuration/profiles/$PROFILE"
 
 fail() { echo "make run: $*" >&2; exit 1; }
