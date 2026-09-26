@@ -109,18 +109,21 @@ impl<
             }
             ToolOperation::Shell { output } => {
                 let config = self.services.get_config()?;
+                // harness: R-OUT-2 (D-073) — compressed output must be recoverable
+                // even when it is under the truncation caps.
+                let command = &output.output.command;
                 let stdout_truncated = stream_needs_dump(
                     &output.output.stdout,
                     config.max_stdout_prefix_lines,
                     config.max_stdout_suffix_lines,
                     config.max_stdout_line_chars,
-                );
+                ) || crate::truncation::shaping_withholds(command, &output.output.stdout);
                 let stderr_truncated = stream_needs_dump(
                     &output.output.stderr,
                     config.max_stdout_prefix_lines,
                     config.max_stdout_suffix_lines,
                     config.max_stdout_line_chars,
-                );
+                ) || crate::truncation::shaping_withholds(command, &output.output.stderr);
 
                 let mut files = TempContentFiles::default();
 

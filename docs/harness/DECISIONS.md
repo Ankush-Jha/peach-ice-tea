@@ -1311,3 +1311,39 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   - Three 503s with two retries: the fourth request goes to `fallback-model`, and the run completes.
   - A 400 does not fail over (exit 1, one request).
   - The existing D-040 test (no list) still fails fast after one request.
+
+## D-073 — T1.4/T1.5: content-aware shell shaping built behind two flags; a path-and-full-stop ambiguity fixed in every notice (2026-09-27)
+- **Built (R-OUT-2), each behind its own default-off flag so each gets its own A/B:**
+  - `truncation::classify` (T1.4, `PEACH_HARNESS_SEARCH_REGROUP=1`) classifies a command by the first program of
+    each pipeline/list segment, skipping env assignments and `sudo`/`time`/`env`, with known subcommands
+    (`git grep|diff|log|show|blame`, `python -m pytest|unittest|pip…`) as Search, Noise, SourceLike or Unknown.
+    Search wins over noise, which wins over source-like: `cargo test | grep FAIL` is search. It regroups
+    `path:line:text` search output under one header per file, dropping only the repeated prefix and never a
+    match, and only when the result is smaller.
+  - `truncation::compress_noise` (T1.5, `PEACH_HARNESS_NOISE_COMPRESSION=1`) handles builds, installs, test runners
+    and linters:
+    - strips ANSI and carriage-return progress frames;
+    - always keeps signal lines (error, warn, fail, panic, exception, traceback, assert, fatal, denied, not found)
+      with ±3 lines of context, plus the last 15 lines (the summary);
+    - counts passing-test lines (cargo/pytest/jest/go/unittest shapes);
+    - collapses runs of 3 or more lines that match once digits are blurred ("… N similar lines");
+    - applies only if that saves at least 30% and 2,000 characters.
+  - It is hooked into the `Shell` branch of `operation.rs` before head/tail truncation. `dump_operation` saves the
+    raw stream whenever shaping withholds anything, even under the caps, and the output ends with the shared
+    recovery sentence (R-OUT-3/4), so a read of it counts as `offload_read`.
+- **Found while testing:** the new notice ended "…read /path/file.txt." A full stop glued to a path is read as part
+  of it: my own end-to-end test's reader did, and a model can too, which means a failed `read` and a lost turn.
+  Three live notices from T1.1 (shell line-clipping, fetch, MCP) had the same shape. **All now close with a
+  parenthetical**: "Full output: read /path (the complete output)." The only snapshot change is exactly that one
+  line (`net_fetch_truncated`).
+- **Proof:**
+  - Unit tests with realistic logs: a 300-line cargo build keeps the E0308 error and "could not compile", and
+    shrinks more than 5×; a 200-test pytest run keeps the FAILED line, the AssertionError and the summary, and
+    counts the passes; npm progress frames and ANSI are stripped while "npm WARN" is kept; short or all-signal
+    output passes through. Classification over 10 command shapes; lossless regrouping with every match
+    re-checked.
+  - End to end: `./make` prints 300 `Compiling` lines and an error. With the flag, the model sees the error and the
+    recovery sentence, not the noise; reading the path brings the full output back, and `offload_read == 1`.
+    Without the flag, the output is untouched.
+- **Ship bar (R-OUT-2):** the A/B must show success within noise **and the noise class's recovery rate under 2%**,
+  now measurable because `offload_read` is real (D-060). **T1.4 and T1.5 stay unticked** until then.

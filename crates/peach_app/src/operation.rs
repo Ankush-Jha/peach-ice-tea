@@ -233,7 +233,7 @@ fn create_stream_element<T: StreamElement>(
     }
     if stream.truncated_lines_count() > 0 {
         let recovery = match full_output_path {
-            Some(path) => format!("Full output: read {}.", path.display()),
+            Some(path) => format!("Full output: read {} (the complete output).", path.display()),
             None => "the full output was not saved".to_string(),
         };
         notices.push(format!(
@@ -695,7 +695,7 @@ impl ToolOperation {
                 if let Some(path) = content_files.stdout
                     && withheld > 0
                 {
-                    let recovery = format!("Full output: read {}.", path.display());
+                    let recovery = format!("Full output: read {} (the complete output).", path.display());
                     elm = elm.append(
                         Element::new("truncated")
                             .text(recovery_notice(withheld as u64, "chars", &recovery)),
@@ -717,9 +717,21 @@ impl ToolOperation {
                     parent_elem = parent_elem.attr("exit_code", exit_code);
                 }
 
-                let truncated_output = truncate_shell_output(
+                // harness: R-OUT-2 (T1.4, T1.5; D-073) — content-aware shaping
+                // before head/tail clipping; unchanged unless a flag is on.
+                let stdout = crate::truncation::shape_shell_stream(
+                    &output.output.command,
                     &output.output.stdout,
+                    content_files.stdout.as_deref(),
+                );
+                let stderr = crate::truncation::shape_shell_stream(
+                    &output.output.command,
                     &output.output.stderr,
+                    content_files.stderr.as_deref(),
+                );
+                let truncated_output = truncate_shell_output(
+                    &stdout,
+                    &stderr,
                     config.max_stdout_prefix_lines,
                     config.max_stdout_suffix_lines,
                     config.max_stdout_line_chars,

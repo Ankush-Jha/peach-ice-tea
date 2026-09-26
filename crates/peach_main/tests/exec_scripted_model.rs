@@ -1569,3 +1569,49 @@ fn test_a_malformed_request_does_not_fail_over() {
     assert_eq!(run.exit_code, Some(1), "report: {}", run.report);
     assert_eq!(models, vec!["scripted-model".to_string()]);
 }
+
+/// A project whose `./make` prints a noisy build with one error (R-OUT-2).
+fn project_with_a_noisy_build() -> tempfile::TempDir {
+    let project = project_with_a_test();
+    let script = "#!/bin/sh\nfor i in $(seq 1 300); do echo \"   Compiling crate$i v0.$i.1\"; done\necho 'error[E0308]: mismatched types'\necho 'error: could not compile `ledger`'\nexit 1\n";
+    let path = project.path().join("make");
+    std::fs::write(&path, script).unwrap();
+    std::process::Command::new("chmod").arg("+x").arg(&path).status().unwrap();
+    project
+}
+
+fn noisy_build_run(extra_env: &[(&str, &str)]) -> (Run, Vec<String>) {
+    let project = project_with_a_noisy_build();
+    let model = ScriptedModel::start(vec![
+        Turn::Tool("shell", serde_json::json!({"command": "./make", "description": "build"})),
+        Turn::FromRequest(read_the_dump_file),
+        Turn::Text("Done."),
+    ]);
+    let run = run_exec_with_env(project.path(), &model, None, extra_env);
+    (run, model.requests())
+}
+
+#[test]
+fn test_noisy_build_output_is_compressed_loudly_and_recoverable_with_the_flag() {
+    let (run, requests) = noisy_build_run(&[("PEACH_HARNESS_NOISE_COMPRESSION", "1")]);
+
+    let seen = &requests[1];
+    assert!(seen.contains("error[E0308]: mismatched types"), "the error was lost");
+    assert!(seen.contains("similar or passing lines not shown. Full output: read"), "no recovery sentence");
+    assert!(!seen.contains("Compiling crate150 "), "the noise was not collapsed");
+    assert!(requests[2].contains("Compiling crate150 "), "reading the dump did not bring the full output back");
+    assert_eq!(run.report["metrics"]["recovery"]["offload_read"], 1, "report: {}", run.report);
+}
+
+#[test]
+fn test_noisy_build_output_is_untouched_without_the_flag() {
+    let project = project_with_a_noisy_build();
+    let model = ScriptedModel::start(vec![
+        Turn::Tool("shell", serde_json::json!({"command": "./make", "description": "build"})),
+        Turn::Text("Done."),
+    ]);
+
+    run_exec(project.path(), &model, None);
+
+    assert!(!model.requests()[1].contains("similar or passing lines"));
+}
