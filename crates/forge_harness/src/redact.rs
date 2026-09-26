@@ -111,6 +111,37 @@ pub fn redact_json(value: &mut serde_json::Value) {
     }
 }
 
+/// Redacts a JSON document for writing to disk without changing its shape:
+/// every string leaf goes through [`redact`], and a string value under a
+/// secret-looking key is replaced outright. Numbers, booleans and structure
+/// are never touched.
+///
+/// Use this, not [`redact_json`], for documents that carry counters: a key
+/// test alone would replace `input_tokens: 1200` (`token` is a sensitive
+/// substring) and running [`redact`] over serialized JSON text could turn
+/// `"token_count": 5` into invalid JSON.
+pub fn redact_json_strings(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, entry) in map.iter_mut() {
+                match entry {
+                    serde_json::Value::String(_) if is_sensitive_key(key) => {
+                        *entry = serde_json::Value::String(REDACTED.to_string());
+                    }
+                    _ => redact_json_strings(entry),
+                }
+            }
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(redact_json_strings),
+        serde_json::Value::String(text) => {
+            if let Cow::Owned(redacted) = redact(text) {
+                *text = redacted;
+            }
+        }
+        _ => {}
+    }
+}
+
 fn is_sensitive_key(key: &str) -> bool {
     let normalized = key.to_ascii_lowercase().replace('-', "_");
     SENSITIVE_KEY_SUBSTRINGS.iter().any(|needle| normalized.contains(needle))
@@ -787,6 +818,27 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn test_json_strings_are_redacted_and_counters_are_not() {
+        let key = format!("AIza{}", "k".repeat(35));
+        let mut fixture = serde_json::json!({
+            "input_tokens": 1200,
+            "api_key": "plain-secret-value",
+            "messages": [{"text": format!("use {key} here")}],
+            "nested": {"session_count": 3},
+        });
+
+        redact_json_strings(&mut fixture);
+
+        let expected = serde_json::json!({
+            "input_tokens": 1200,
+            "api_key": "[REDACTED]",
+            "messages": [{"text": "use [REDACTED] here"}],
+            "nested": {"session_count": 3},
+        });
+        assert_eq!(fixture, expected);
+    }
 
     #[test]
     fn test_plain_text_is_returned_borrowed_and_unchanged() {
