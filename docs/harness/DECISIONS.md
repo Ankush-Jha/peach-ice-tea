@@ -879,3 +879,27 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   toggle `console`'s process-global colour flag. When one runs between this test's `actual` and `expected` renders,
   one string has ANSI codes and the other does not. A race between upstream tests, unrelated to our code; recorded,
   not changed (CLAUDE.md guardrail).
+
+## D-055 — TH.3 and T0.8 closed; R-TOOL-1's ordering rule stays deferred, now with the concrete reason (2026-09-26)
+- **TH.3 (R-HACK-6), each item checked against the code:**
+  - `thoughtsTokenCount` folded into output and kept as reasoning (D-026, confirmed live);
+  - `cachedContentTokenCount` read (`dto/google/response.rs`);
+  - every catalog tool schema, after conversion, passes a Gemini-allowed-keys/format walk (`schema_compat.rs`, plus
+    an MCP-shaped fixture and snapshots);
+  - thinking-level mapping wired (`20500d10f`, found in D-032's dry run);
+  - `gemini-3.8-flash` registered in `configuration/profiles/gemini`.
+
+  "Registry becomes Gemini-only" is superseded by D-049/D-052: any model is allowed in the judged run.
+- **`max_tokens = 20480` vs Gemini's 65,536 output limit (raised in D-026):** not changed, because there is no
+  evidence it binds. D-032's only live Gemini run used 8,296 thinking tokens across 13 calls (well under 1k per
+  call). Its 3 empty completions cannot have been budget exhaustion either: a Gemini `MAX_TOKENS` finish maps to
+  `FinishReason::Length`, and forge raises `EmptyCompletion` only when there is *no* finish reason. Revisit if a
+  `Length` finish appears in a real bundle's telemetry.
+- **T0.8 (R-TOOL-1):** the flat-schema rule is enforced by a catalog-wide test. The "`required` before
+  `properties`" rule was deferred in PLAN C14 but never recorded here, so it is recorded now, with the reason. The
+  workspace `serde_json` lacks `preserve_order`, so every JSON object is serialised with sorted keys, and
+  `properties` < `required` alphabetically. Reordering means turning `preserve_order` on for the whole workspace,
+  which changes key order in every serialised payload for every provider (and churns snapshots), and the ordering
+  evidence is GPT-specific. With GPT models now in scope (D-049), it becomes an `[A/B]` candidate on a GPT model,
+  not a default. The documenting test `test_t0_8_required_currently_orders_after_properties` will notice if this
+  changes. **T0.8 ticked** (enforced part done; ordering deferred by decision).
