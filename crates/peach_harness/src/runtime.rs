@@ -10,6 +10,15 @@
 //! Nothing is installed by default. Every accessor answers "not active" when
 //! there is no runtime, so interactive use and existing tests behave exactly as
 //! before.
+//!
+//! `is_non_interactive` has a second, weaker source: an environment variable
+//! (`NON_INTERACTIVE_ENV_VAR`). `peach exec` (`crates/peach_main`) is the one
+//! caller that needs to flip this on before a human could possibly be asked
+//! anything, but `peach_main` does not depend on this crate and adding that
+//! dependency is a `Cargo.toml` edit outside this piece of work (TH.1
+//! report). The env var is a same-process, no-new-dependency stand-in for
+//! calling [`install`] directly; a real installed [`HarnessRuntime`] always
+//! takes priority when both are present.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -17,6 +26,11 @@ use std::sync::OnceLock;
 use crate::integrity::ProtectedSet;
 
 static RUNTIME: OnceLock<HarnessRuntime> = OnceLock::new();
+
+/// Environment variable that marks the process as an unattended harness run
+/// when no [`HarnessRuntime`] has been installed. See the module docs for why
+/// this exists alongside [`install`].
+pub const NON_INTERACTIVE_ENV_VAR: &str = "PEACH_HARNESS_NON_INTERACTIVE";
 
 /// State shared by the harness subsystems for the duration of a run.
 #[derive(Debug)]
@@ -73,8 +87,24 @@ pub fn get() -> Option<&'static HarnessRuntime> {
 }
 
 /// Whether this process is an unattended harness run.
+///
+/// True when a [`HarnessRuntime`] was installed with `non_interactive(true)`,
+/// or — failing that — when [`NON_INTERACTIVE_ENV_VAR`] is set to `"1"` (see
+/// the module docs).
 pub fn is_non_interactive() -> bool {
     get().is_some_and(|runtime| runtime.non_interactive)
+        || env_flag_is_set(std::env::var(NON_INTERACTIVE_ENV_VAR).ok())
+}
+
+/// Whether an environment variable value counts as "set" for
+/// [`is_non_interactive`]'s env-var fallback.
+///
+/// Kept as a pure function of the value rather than reading `std::env`
+/// directly so it can be unit tested without mutating real process state,
+/// which would race with any other test in this binary reading the same
+/// variable.
+fn env_flag_is_set(value: Option<String>) -> bool {
+    value.is_some_and(|v| v == "1")
 }
 
 /// Refusal text if this operation targets a protected test file.
@@ -109,6 +139,15 @@ mod tests {
             None
         );
         assert!(!is_non_interactive());
+    }
+
+    #[test]
+    fn test_env_flag_is_set_only_for_the_exact_value() {
+        assert!(env_flag_is_set(Some("1".to_string())));
+        assert!(!env_flag_is_set(Some("0".to_string())));
+        assert!(!env_flag_is_set(Some("true".to_string())));
+        assert!(!env_flag_is_set(Some(String::new())));
+        assert!(!env_flag_is_set(None));
     }
 
     #[test]

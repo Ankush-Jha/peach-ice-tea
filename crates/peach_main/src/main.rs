@@ -9,6 +9,12 @@ use peach_config::PeachConfig;
 use peach_domain::TitleFormat;
 use peach_main::{Cli, Sandbox, TitleDisplayExt, TopLevelCommand, UI, tracker};
 
+/// harness: R-HACK-1 — must stay equal to
+/// `peach_harness::runtime::NON_INTERACTIVE_ENV_VAR`. Duplicated as a literal
+/// rather than imported because `peach_main` does not depend on
+/// `peach_harness` (see the comment where this is set).
+const EXEC_NON_INTERACTIVE_ENV_VAR: &str = "PEACH_HARNESS_NON_INTERACTIVE";
+
 /// Enables ENABLE_VIRTUAL_TERMINAL_PROCESSING on the stdout console handle.
 ///
 /// The `enable_ansi_support` crate sets VT processing on the `CONOUT$` handle,
@@ -97,7 +103,27 @@ async fn run() -> Result<()> {
     // stdin. Reading to EOF here blocks forever when stdin is an open pipe that
     // the parent never closes, which is exactly how an automated runner spawns
     // a subprocess. In a one-shot evaluation that is an unrecoverable hang.
-    let reads_stdin = !is_select && !matches!(cli.subcommands, Some(TopLevelCommand::Exec { .. }));
+    let is_exec = matches!(cli.subcommands, Some(TopLevelCommand::Exec { .. }));
+    let reads_stdin = !is_select && !is_exec;
+
+    // harness: R-HACK-1 — mark the process as unattended before anything else
+    // runs. `peach_harness::runtime::is_non_interactive()` reads this same
+    // variable as a fallback to a real installed runtime, and is the check
+    // the `followup` tool needs to add (out of scope here — see the TH.1
+    // report's hand-back, `peach_services` is not a crate this piece owns).
+    // Set via an environment variable rather than
+    // `peach_harness::runtime::install`: `peach_main` does not depend on
+    // `peach_harness`, and adding that dependency is a `Cargo.toml` edit out
+    // of scope for this piece too (see the same report).
+    if is_exec {
+        // SAFETY: this runs synchronously at start-up before the tokio runtime
+        // has spawned any task and before any other thread exists, so nothing
+        // else can be reading or writing the process environment concurrently.
+        unsafe {
+            std::env::set_var(EXEC_NON_INTERACTIVE_ENV_VAR, "1");
+        }
+    }
+
     if reads_stdin && !std::io::stdin().is_terminal() {
         let mut stdin_content = String::new();
         std::io::stdin().read_to_string(&mut stdin_content)?;

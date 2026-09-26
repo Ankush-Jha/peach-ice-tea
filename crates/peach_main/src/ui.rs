@@ -694,8 +694,8 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
                 self.on_info(porcelain, conversation_id).await?;
                 return Ok(());
             }
-            TopLevelCommand::Exec { task, json } => {
-                self.handle_exec(task.clone(), json).await?;
+            TopLevelCommand::Exec { task, json, max_duration_secs } => {
+                self.handle_exec(task.clone(), json, max_duration_secs).await?;
                 return Ok(());
             }
             TopLevelCommand::Banner => {
@@ -3985,6 +3985,58 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
         Ok(())
     }
 
+    // harness: R-HACK-1 — `exec` called `handle_exec` directly and never ran
+    // `init_state`, which is why no picker could ever appear from `exec`. But
+    // it also meant credential migration never ran, so `exec` only worked on
+    // a machine where an earlier interactive run had already migrated
+    // credentials — fragile on a judge's fresh machine (HACKATHON.md §10).
+    //
+    // This performs the parts of `init_state` that are safe in a run that can
+    // never prompt: credential migration (writes to config, asks nobody) and
+    // provider/model resolution. Deliberately does NOT call
+    // `on_provider_selection` / `on_model_selection` (both interactive
+    // pickers) or `on_update` (can prompt to confirm an upgrade) — anything
+    // that would need one of those fails fast here with a clear error
+    // instead.
+    //
+    // MCP initialisation is deliberately left out too: `init_mcp` runs a
+    // trust-gate prompt (`PeachMcpManager::apply_trust_gate`,
+    // `crates/peach_services/src/mcp/manager.rs`) the first time an untrusted
+    // project-local `.mcp.json` is found, which is exactly the kind of
+    // reachable prompt R-HACK-1 forbids. See the TH.1 report for the guard
+    // that would make it safe to add back.
+    async fn init_state_exec(&mut self) -> Result<()> {
+        // Fails open: a migration error is not fatal here (fail open,
+        // CLAUDE.md principle 5). If credentials truly are missing, the
+        // session-config check just below reports that clearly.
+        let _ = self.handle_migrate_credentials().await;
+
+        if self.api.get_session_config().await.is_none() {
+            anyhow::bail!(
+                "No model or provider is configured, and `exec` cannot prompt to select one. \
+                 Configure one first (for example `peach provider login` then `peach model \
+                 set`), or set the PEACH_SESSION__PROVIDER_ID and PEACH_SESSION__MODEL_ID \
+                 environment variables."
+            );
+        }
+
+        let active_agent = self.api.get_active_agent().await;
+        let operating_model = self.get_agent_model(active_agent.clone()).await;
+        if operating_model.is_none() {
+            anyhow::bail!(
+                "No model is configured for the active agent, and `exec` cannot prompt to \
+                 select one. Configure a model for this agent before running `exec`."
+            );
+        }
+
+        self.api
+            .set_active_agent(active_agent.clone().unwrap_or_default())
+            .await?;
+        self.update_model(operating_model);
+
+        Ok(())
+    }
+
     async fn on_message(&mut self, content: Option<String>) -> Result<()> {
         let conversation_id = self.init_conversation().await?;
 
@@ -4290,7 +4342,12 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
     // measured behaviour is the behaviour users get (D-010). What it adds is
     // the structured final line and the exit code, neither of which `-p` has:
     // `-p` returns 0 even when the provider errored or a limit was hit.
-    async fn handle_exec(&mut self, task: String, json: bool) -> anyhow::Result<()> {
+    async fn handle_exec(
+        &mut self,
+        task: String,
+        json: bool,
+        max_duration_secs: Option<u64>,
+    ) -> anyhow::Result<()> {
         self.state.non_interactive = true;
 
         let model = self
@@ -4300,8 +4357,68 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
             .map(|config| config.model.to_string());
 
         let started = std::time::Instant::now();
-        let run = self.on_message(Some(task)).await;
+
+        // harness: R-HACK-1 — `exec` never ran `init_state`; see
+        // `init_state_exec` for why that made it fragile on a fresh machine.
+        // A failure here folds into the same `Err` arm as an `on_message`
+        // failure below, so it is reported and exits non-zero exactly like
+        // any other exec-time error rather than propagating past the report.
+        let mut timed_out = false;
+        let run: Result<()> = match self.init_state_exec().await {
+            Err(error) => Err(error),
+            Ok(()) => match max_duration_secs {
+                None => self.on_message(Some(task)).await,
+                Some(secs) => {
+                    tokio::select! {
+                        result = self.on_message(Some(task)) => result,
+                        _ = tokio::time::sleep(std::time::Duration::from_secs(secs)) => {
+                            timed_out = true;
+                            Ok(())
+                        }
+                    }
+                }
+            },
+        };
         let elapsed_ms = started.elapsed().as_millis() as u64;
+
+        // harness: R-HACK-1 — a wall-clock budget is a distinct way for a
+        // one-shot run to stop: it did not fail, hit a limit, or complete: the
+        // clock simply ran out. It gets its own exit code (4), following on
+        // from the existing 0 (completed) / 1 (error) / 2 (tool-failure
+        // limit) / 3 (request limit) in `TaskOutcome::exit_code`
+        // (`crates/peach_domain/src/exec_report.rs`). Built by hand rather
+        // than through `ExecReport`/`TaskOutcome`, neither of which has a
+        // variant for this outcome — adding one is a `peach_domain` edit out
+        // of scope for this piece; see the TH.1 report's hand-back. The
+        // shape matches `ExecReport`'s own JSON field-for-field so a consumer
+        // that parses the normal report also parses this one.
+        if timed_out {
+            let metrics = self.exec_task_metrics(elapsed_ms).await;
+            let mut fields = serde_json::json!({
+                "outcome": "time_budget",
+                "exit_code": 4,
+                "metrics": metrics,
+                "error": format!(
+                    "wall-clock budget of {}s exceeded",
+                    max_duration_secs.unwrap_or_default()
+                ),
+            });
+            if let Some(id) = self.state.conversation_id {
+                fields["conversation_id"] = serde_json::Value::String(id.into_string());
+            }
+            if let Some(model) = model {
+                fields["model"] = serde_json::Value::String(model);
+            }
+
+            if json {
+                // Printed directly rather than through the markdown writer so
+                // the last line of stdout is exactly this object.
+                println!("{}", serde_json::to_string(&fields)?);
+            }
+
+            self.exec_exit_code = Some(4);
+            return Ok(());
+        }
 
         // A failure to run is an outcome, not a reason to skip the report: the
         // A/B runner still needs the line, and the metrics gathered up to the
@@ -4319,23 +4436,7 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
             (Ok(_), None) => (TaskOutcome::Completed, None),
         };
 
-        let metrics = match self.state.conversation_id {
-            Some(id) => self
-                .api
-                .conversation(&id)
-                .await
-                .ok()
-                .flatten()
-                .map(|conversation| conversation.metrics.task)
-                .unwrap_or_default(),
-            None => Default::default(),
-        };
-
-        // The orchestrator refreshes wall time only when a loop iteration
-        // completes, so a task that failed inside its first request reports
-        // zero. The caller's view of elapsed time is what `exec` promises.
-        let mut metrics = metrics;
-        metrics.wall_ms = metrics.wall_ms.max(elapsed_ms);
+        let metrics = self.exec_task_metrics(elapsed_ms).await;
 
         let mut report = ExecReport::new(outcome, metrics);
         if let Some(id) = self.state.conversation_id {
@@ -4356,6 +4457,29 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
 
         self.exec_exit_code = Some(report.exit_code);
         Ok(())
+    }
+
+    /// Task cost metrics for the `exec` report, with wall time floored to
+    /// what the caller actually measured.
+    ///
+    /// The orchestrator refreshes wall time only when a loop iteration
+    /// completes, so a task that failed or was stopped inside its first
+    /// request would otherwise report zero. The caller's view of elapsed
+    /// time is what `exec` promises.
+    async fn exec_task_metrics(&self, elapsed_ms: u64) -> peach_domain::TaskMetrics {
+        let mut metrics = match self.state.conversation_id {
+            Some(id) => self
+                .api
+                .conversation(&id)
+                .await
+                .ok()
+                .flatten()
+                .map(|conversation| conversation.metrics.task)
+                .unwrap_or_default(),
+            None => Default::default(),
+        };
+        metrics.wall_ms = metrics.wall_ms.max(elapsed_ms);
+        metrics
     }
 
     async fn should_continue(&mut self) -> anyhow::Result<bool> {
