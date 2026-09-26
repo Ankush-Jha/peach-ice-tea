@@ -1,7 +1,13 @@
-# Peach Ice Tea
+<p align="center">
+  <img src="documentation/assets/logo.svg" width="120" alt="Peach Ice Tea logo">
+</p>
 
-A coding-agent harness for the LCC × DevClub AI Coding Harness Hackathon: one frozen prompt, one unattended
-run, and an evidence bundle judges can check without taking our word for anything.
+<h1 align="center">Peach Ice Tea</h1>
+
+<p align="center">
+  A coding-agent harness for the LCC × DevClub AI Coding Harness Hackathon:<br>
+  one frozen prompt, one unattended run, and an evidence bundle judges can check without taking our word for anything.
+</p>
 
 **Provenance:** Peach Ice Tea is built on a fork of an open-source (Apache-2.0) Rust coding agent
 (Rust), forked from upstream `304bf3b` (D-008). The upstream README is kept at
@@ -19,6 +25,35 @@ names so upstream merges stay possible (D-004). What we built, and why, is in
 | Telemetry | JSONL events with provider-reported tokens, retries (with billed usage), tool/model correlation, compaction, tests, integrity; redacted before disk | `crates/peach_harness/src/telemetry/`, `crates/peach_app/src/hooks/telemetry.rs` |
 | Evidence + report | Prompt, transcript, telemetry, integrity, diff, tests, `exec.json`, `report.json`/`report.md` and a checksum manifest on every exit path | `crates/peach_harness/src/{evidence,report}.rs` |
 | Provider robustness | Gemini thinking level, DeepSeek cache accounting, fail-fast on quotas that cannot recover | `crates/peach_repo/src/provider/`, `crates/peach_domain/src/provider_quota.rs` |
+| Local web UI | `make ui`: run a task, watch it live, browse evidence and A/B reports from a browser; loopback-only | `harness/ui/` (D-092) |
+
+## How one run works
+
+```mermaid
+flowchart TD
+    P["Frozen prompt"] --> M["Model call"]
+    M --> T{"Tool calls?"}
+    T -->|"yes"| X["Execute tools<br>read · write · patch · shell · fetch · search · todo · skill"]
+    X --> M
+    T -->|"no — stopping"| VG["Runtime verification gate:<br>harness runs the real tests itself"]
+    VG -->|"tests fail"| M
+    VG -->|"tests pass, or gate off"| EX["Exit"]
+    M -.->|"context past threshold"| CP0
+
+    subgraph CP["Compaction — cheapest stage first, lossless before lossy"]
+        CP0["S0 · supersede stale results"] --> CP1["S1 · offload large results to handles"]
+        CP1 --> CP2["S2 · drop by relevance score"]
+        CP2 --> CP3["S3 · lossy summary — last resort"]
+    end
+    CP3 -.-> M
+
+    EX --> EV["Evidence bundle<br>prompt · transcript · telemetry.jsonl · integrity.json · diff.patch · tests.json · exec.json"]
+    EV --> RP["report.json / report.md"]
+```
+
+A test-integrity guard runs alongside every step: it captures a manifest of protected test files before the
+run starts, refuses any edit to them at tool or shell dispatch, and verifies and restores them after — including
+after the harness's own final test run, since a suite can write files of its own.
 
 ## Setup
 
@@ -33,7 +68,19 @@ make setup                   # release build → target/release/peach, npm deps,
 
 ## Running a task
 
-The evaluator interface is the root `Makefile` (MAKEFILE_EVAL.md, D-070). `make run` takes the issue from stdin
+The evaluator interface is the root `Makefile` (MAKEFILE_EVAL.md, D-070):
+
+```mermaid
+flowchart LR
+    A["git clone"] --> B["export AI_API_KEY"]
+    B --> C["make setup"]
+    C --> D["make run"]
+    D --> F["one unattended run"]
+    F --> G["evidence bundle +<br>report.json / report.md"]
+    G --> H["make test (optional)"]
+```
+
+`make run` takes the issue from stdin
 (piped, or typed and ended with Ctrl-D) or from `PROMPT=`, and runs it once, unattended, in the repository named by
 `REPO` (by default the directory `make` was invoked from; it refuses to work on the harness itself):
 
@@ -61,6 +108,10 @@ OPENROUTER_API_KEY=... harness/peach-ice-tea --profile openrouter --evidence-dir
 The last stdout line is the JSON outcome. Exit codes: 0 completed, 1 error, 2 tool-failure limit, 3 request
 limit, 4 time budget, 5 interrupted, 6 doom-loop escalation (flagged, D-082). `peach report <evidence-dir>` regenerates the report offline.
 
+**`make ui`** starts a small local web UI (D-092) as an alternative to the command line: start a task, watch
+it run live against the same `harness/run-task` entry point `make run` uses, and browse past evidence bundles
+and benchmark reports. Loopback-only; provider keys never reach the browser.
+
 ## Evaluating locally
 
 ```bash
@@ -77,7 +128,7 @@ binary against a scripted model.
 | Path | Contents |
 |---|---|
 | `Makefile` | Evaluator interface: `setup`, `run`, `test`, `check`, `clean` (D-070) |
-| `harness/` | Entry point (`peach-ice-tea`), `run-task` (what `make run` calls), build and layout scripts |
+| `harness/` | Entry point (`peach-ice-tea`), `run-task` (what `make run` calls), the local web UI (`ui/`), build and layout scripts |
 | `crates/` | The harness itself (Rust workspace; stays here for upstream merges, D-021) |
 | `telemetry/` | Where the organizers' telemetry files will be vendored; describes our internal stream |
 | `reporting/` | Where the organizers' reporting files will be vendored; describes our report |
