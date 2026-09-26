@@ -1506,3 +1506,66 @@ fn test_the_project_memory_file_reaches_the_model() {
     let first = model.requests().first().cloned().unwrap_or_default();
     assert!(first.contains("MEMORY_MARKER: money is stored in cents."), "memory not in the first request");
 }
+
+/// Registers `fallback-model` on the scripted provider (MM.4).
+const FALLBACK_MODEL_TOML: &str = r#"
+[[providers.models]]
+id = "fallback-model"
+name = "Fallback"
+tools_supported = true
+input_modalities = ["text"]
+"#;
+
+fn failover_run(script: Vec<Turn>, extra_env: &[(&str, &str)]) -> (Run, Vec<String>) {
+    let project = project_with_a_test();
+    let model = ScriptedModel::start(script);
+    let mut env = vec![("FORGE_HARNESS_FALLBACK_MODELS", "fallback-model")];
+    env.extend_from_slice(extra_env);
+    let run = run_exec_configured(project.path(), &model, None, &env, "fix add", &[], FALLBACK_MODEL_TOML);
+    let models = model
+        .requests()
+        .iter()
+        .map(|body| serde_json::from_str::<serde_json::Value>(body).unwrap()["model"].as_str().unwrap_or("").to_string())
+        .collect();
+    (run, models)
+}
+
+#[test]
+fn test_an_exhausted_quota_fails_over_to_the_next_model_and_finishes() {
+    const NO_CREDIT: &str = r#"{"error":{"message":"This request requires more credits","code":402,"metadata":{"limit_source":"openrouter_credits"}}}"#;
+
+    let (run, models) = failover_run(vec![Turn::StatusBody(402, NO_CREDIT), Turn::Text("Done.")], &[]);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert_eq!(models, vec!["scripted-model".to_string(), "fallback-model".to_string()]);
+    assert_eq!(run.report["metrics"]["failed_llm_calls"], 1, "report: {}", run.report);
+    assert!(
+        run.telemetry.iter().any(|event| event["type"] == "recovery"
+            && event["action"] == "model_failover"
+            && event["trigger"].as_str().unwrap_or("").contains("continuing on fallback-model")),
+        "no failover event: {:?}",
+        run.telemetry
+    );
+}
+
+#[test]
+fn test_an_outage_that_outlasts_the_retries_fails_over_too() {
+    let (run, models) = failover_run(
+        // max_attempts = 2 is two retries: three attempts, all 503, then the fallback.
+        vec![Turn::Status(503), Turn::Status(503), Turn::Status(503), Turn::Text("Done.")],
+        &[("FORGE_RETRY__MAX_ATTEMPTS", "2")],
+    );
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let expected: Vec<String> =
+        ["scripted-model", "scripted-model", "scripted-model", "fallback-model"].map(String::from).to_vec();
+    assert_eq!(models, expected);
+}
+
+#[test]
+fn test_a_malformed_request_does_not_fail_over() {
+    let (run, models) = failover_run(vec![Turn::Status(400), Turn::Text("unreachable")], &[]);
+
+    assert_eq!(run.exit_code, Some(1), "report: {}", run.report);
+    assert_eq!(models, vec!["scripted-model".to_string()]);
+}

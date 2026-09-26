@@ -260,7 +260,10 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
 
     // Create a helper method with the core functionality
     pub async fn run(&mut self) -> anyhow::Result<()> {
-        let model_id = self.get_model();
+        let mut model_id = self.get_model();
+        // harness: MM.4 (D-072) — models to continue on if this one's quota or
+        // provider gives out; empty unless the profile sets a fallback list.
+        let mut failover = crate::model_failover::Failover::from_env(&model_id);
 
         let mut context = self.conversation.context.clone().unwrap_or_default();
 
@@ -382,6 +385,29 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
                     message
                 }
                 Err(error) => {
+                    if let Some(reason) = crate::model_failover::failover_reason(&error)
+                        && let Some(next) = failover.next_model()
+                    {
+                        // Counted on the tool context: the end-of-iteration sync
+                        // copies its metrics over the conversation's.
+                        tool_context.with_metrics(|metrics| {
+                            metrics.task.record_retried_llm_calls(retried);
+                            retried_usage.iter().for_each(|usage| metrics.task.record_retried_usage(usage));
+                            metrics.task.record_failed_llm_call();
+                        })?;
+                        tracing::warn!(from = %model_id, to = %next, %reason, "Failing over to the next model");
+                        forge_harness::telemetry::emit(forge_harness::telemetry::TelemetryEvent::Recovery(
+                            forge_harness::telemetry::event::Recovery {
+                                action: "model_failover".to_string(),
+                                trigger: format!("{model_id}: {reason}; continuing on {next}"),
+                                outcome: None,
+                                origin_call_id: None,
+                            },
+                        ));
+                        model_id = next.clone();
+                        self.agent.model = next;
+                        continue;
+                    }
                     self.conversation.metrics.task.record_retried_llm_calls(retried);
                     retried_usage
                         .iter()

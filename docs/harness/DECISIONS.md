@@ -1288,3 +1288,26 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   by calls since every model here is free).
 - **Where it stops today:** ~3 free requests remain. Resume tomorrow with
   `OPENROUTER_API_KEY=… npx tsx benchmarks/hackathon/bakeoff.ts --label free-suite-dots --suite all --seeds 1 --bin "$PWD/target/debug/forge" --max-requests 50 --max-duration-secs 1500 --models dots-studio/dots-3-note-preview:free`.
+
+## D-072 — MM.4: an exhausted quota or an outage fails over to the next model instead of ending the run (2026-09-27)
+- **What broke:** D-040 made an exhausted quota fail *fast*, but it still ended the run, as did an outage that
+  outlasted the retries. On a free tier, per-model upstream rate limits are routine (4 of 10 models on D-071's
+  probe), so one busy model could cost the whole one-shot task.
+- **Built:**
+  - `model_failover::failover_reason` qualifies exactly two cases: a quota D-040 identifies as unrecoverable, and a
+    `Retryable` error (rate limit, 5xx, transport) that survived every retry. Anything else, such as a 400 for a
+    malformed request, would fail the same way on another model and still ends the run.
+  - `Failover` holds `FORGE_HARNESS_FALLBACK_MODELS` (same provider, in order, without the current model or
+    duplicates). In `orch.rs` the failing iteration counts the failed call on the tool context's metrics (the copy
+    the sync keeps), emits `recovery{action: model_failover, trigger: "<old>: <reason>; continuing on <new>"}`,
+    switches `model_id` and `agent.model`, and runs the iteration again.
+  - With no list, nothing changes (principle 5).
+- **Profile:** `openrouter` falls back to nemotron-3-super, dots-3-note-preview and north-mini-code, the models that
+  passed D-071's screen. **Limit:** OpenRouter's 50 free requests/day are per *account*, so failover cannot rescue a
+  run once that allowance is spent. It covers per-model upstream limits and outages.
+- **Proof (real binary, scripted provider):**
+  - No-credit 402: request 1 goes to `scripted-model`, request 2 to `fallback-model`; the run completes (exit 0) with
+    `failed_llm_calls` 1 and the recovery event.
+  - Three 503s with two retries: the fourth request goes to `fallback-model`, and the run completes.
+  - A 400 does not fail over (exit 1, one request).
+  - The existing D-040 test (no list) still fails fast after one request.
