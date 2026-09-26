@@ -122,8 +122,9 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 ## M3 — Context engine
 - [x] **T3.1** `R-CTX-1` migrations + `thread_events` + `artifacts` + repository + replay test.
       → domain events + replay, SQLite repo with content-addressed artifacts, cap and GC; byte-exact replay test (D-064).
-- [ ] **T3.2** `R-CTX-1` write path: orchestrator appends all events; `conversations.context`
+- [x] **T3.2** `R-CTX-1` write path: orchestrator appends all events; `conversations.context`
       becomes projection; old conversations still resume.
+      → every save appends via `EventLogWriter`; content-based diff with `Revise` + compactor-shaped split (D-065).
 - [ ] **T3.3** `R-CTX-3` `recall` tool over artifacts; stub format with handles.
 - [x] **T3.4** `R-CTX-2` pipeline skeleton with S3 = existing Compactor (behaviour identical to
       today; golden test proves it).

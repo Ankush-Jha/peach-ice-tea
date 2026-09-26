@@ -22,6 +22,15 @@ pub enum ThreadEvent {
         /// are not padded to its size; serialisation is unaffected.
         entry: Box<MessageEntry>,
     },
+    /// A message already in the view gained metadata without changing what
+    /// it says: peach stamps the model on messages that lack one and attaches
+    /// usage after a response. Recorded so the replayed view stays exact.
+    Revise {
+        /// Position of the message in the view.
+        index: usize,
+        /// The message as it is now. Boxed like `Message::entry`.
+        entry: Box<MessageEntry>,
+    },
     /// The working view was compacted. `view` is the context's messages
     /// straight after; the messages it replaced stay in the log.
     Compaction {
@@ -37,6 +46,7 @@ impl ThreadEvent {
     pub fn kind(&self) -> &'static str {
         match self {
             ThreadEvent::Message { .. } => "message",
+            ThreadEvent::Revise { .. } => "revise",
             ThreadEvent::Compaction { .. } => "compaction",
         }
     }
@@ -54,7 +64,9 @@ pub struct StoredThreadEvent {
 }
 
 /// Every message the conversation ever had, in order, ignoring compactions:
-/// the full history a compaction could not destroy.
+/// the full history a compaction could not destroy. Each message appears as
+/// it was first recorded; later metadata (`Revise`) is not applied, because
+/// its index refers to the view, not the history.
 ///
 /// # Arguments
 /// * `events` - The conversation's events in `seq` order.
@@ -63,7 +75,7 @@ pub fn replay_history(events: &[ThreadEvent]) -> Vec<MessageEntry> {
         .iter()
         .filter_map(|event| match event {
             ThreadEvent::Message { entry } => Some((**entry).clone()),
-            ThreadEvent::Compaction { .. } => None,
+            ThreadEvent::Revise { .. } | ThreadEvent::Compaction { .. } => None,
         })
         .collect()
 }
@@ -77,30 +89,96 @@ pub fn replay_view(events: &[ThreadEvent]) -> Vec<MessageEntry> {
     events.iter().fold(Vec::new(), |mut view, event| {
         match event {
             ThreadEvent::Message { entry } => view.push((**entry).clone()),
+            ThreadEvent::Revise { index, entry } => {
+                if let Some(slot) = view.get_mut(*index) {
+                    *slot = (**entry).clone();
+                }
+            }
             ThreadEvent::Compaction { view: after, .. } => view = after.clone(),
         }
         view
     })
 }
 
+/// The working view just before the first compaction at or after
+/// `compaction_index` in `events`: the context exactly as it was when that
+/// compaction ran (R-CTX-1's acceptance). All of `events` when there is none.
+///
+/// # Arguments
+/// * `events` - The conversation's events in `seq` order.
+/// * `compaction_index` - Where in `events` to start looking.
+pub fn replay_view_before_compaction(events: &[ThreadEvent], compaction_index: usize) -> Vec<MessageEntry> {
+    let end = events
+        .iter()
+        .enumerate()
+        .skip(compaction_index)
+        .find(|(_, event)| matches!(event, ThreadEvent::Compaction { .. }))
+        .map_or(events.len(), |(at, _)| at);
+    replay_view(&events[..end])
+}
+
+/// Whether two entries say the same thing: equal once the metadata peach adds
+/// after the fact (the model stamped on text messages, usage) is ignored.
+fn same_content(a: &MessageEntry, b: &MessageEntry) -> bool {
+    let strip = |entry: &MessageEntry| {
+        let mut entry = entry.clone();
+        entry.usage = None;
+        if let crate::ContextMessage::Text(text) = &mut entry.message {
+            text.model = None;
+        }
+        entry
+    };
+    a == b || strip(a) == strip(b)
+}
+
+fn same_run(a: &[MessageEntry], b: &[MessageEntry]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| same_content(x, y))
+}
+
 /// The events that turn the view `before` into the view `after`, for a
-/// writer that only sees snapshots (T3.2): new messages appended at the end
-/// become `Message` events; anything else is a rewrite of earlier messages,
-/// which is what compaction does, and becomes one `Compaction` event.
+/// writer that only sees snapshots (T3.2).
+///
+/// Messages are matched by content, ignoring the metadata peach adds after
+/// the fact (see `Revise`). When `before` is still the start of `after`, the
+/// changes are metadata revisions plus new `Message` events. Otherwise the
+/// view was rewritten, which is a compaction, and one snapshot can hold a
+/// compaction *and* messages appended after it, because peach compacts in
+/// the middle of a turn and saves at its end. Peach's compactor replaces one
+/// stretch with a single summary message, so after the prefix both views
+/// share comes the summary, then the messages it kept from `before`, then
+/// new ones: the `Compaction` view ends at the last kept message (or at the
+/// summary when nothing was kept), and everything after it becomes new
+/// `Message` events, which keeps them in the history.
 ///
 /// # Arguments
 /// * `before` - The view the log already reproduces.
 /// * `after` - The view to record.
 pub fn events_between(before: &[MessageEntry], after: &[MessageEntry]) -> Vec<ThreadEvent> {
-    if after.len() >= before.len() && after[..before.len()] == *before {
-        after[before.len()..]
-            .iter()
-            .cloned()
-            .map(|entry| ThreadEvent::Message { entry: Box::new(entry) })
-            .collect()
-    } else {
-        vec![ThreadEvent::Compaction { messages_before: before.len(), view: after.to_vec() }]
+    let messages = |entries: &[MessageEntry]| -> Vec<ThreadEvent> {
+        entries.iter().cloned().map(|entry| ThreadEvent::Message { entry: Box::new(entry) }).collect()
+    };
+    if after.len() >= before.len() && same_run(&after[..before.len()], before) {
+        let revisions = (0..before.len())
+            .filter(|&i| after[i] != before[i])
+            .map(|index| ThreadEvent::Revise { index, entry: Box::new(after[index].clone()) });
+        return revisions.chain(messages(&after[before.len()..])).collect();
     }
+    // Peach's compactor splices exactly one summary where the evicted stretch
+    // began (`Compactor::compress_single_sequence`): after the common prefix,
+    // the first entry is that summary, then whatever it kept from `before`,
+    // then anything new.
+    let prefix = before.iter().zip(after).take_while(|(b, a)| same_content(a, b)).count();
+    let view_end = if prefix >= after.len() {
+        after.len()
+    } else {
+        (prefix + 1..after.len())
+            .rev()
+            .find(|&i| before[prefix..].iter().any(|kept| same_content(kept, &after[i])))
+            .map_or(prefix + 1, |last_kept| last_kept + 1)
+    };
+    let mut events = vec![ThreadEvent::Compaction { messages_before: before.len(), view: after[..view_end].to_vec() }];
+    events.extend(messages(&after[view_end..]));
+    events
 }
 
 /// Storage for conversation event logs and the artifacts large payloads are
@@ -146,10 +224,13 @@ mod tests {
         let mut events = events_between(&[], &before.messages);
         events.extend(events_between(&before.messages, &summary.messages));
 
-        let actual = serde_json::to_string(&replay_history(&events)).unwrap();
+        let actual = (
+            serde_json::to_string(&replay_view_before_compaction(&events, 0)).unwrap(),
+            serde_json::to_string(&replay_history(&events)).unwrap(),
+        );
 
         let expected = serde_json::to_string(&before.messages).unwrap();
-        assert_eq!(actual, expected);
+        assert_eq!(actual, (expected.clone(), expected));
     }
 
     #[test]
@@ -167,6 +248,62 @@ mod tests {
 
         let expected = (after, 5);
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_messages_appended_after_a_compaction_in_the_same_snapshot_stay_in_the_history() {
+        let before = fixture_context().messages;
+        let summary: MessageEntry = ContextMessage::user("Summary.", None).into();
+        let new_turn: MessageEntry = ContextMessage::assistant("Next step.", None, None, None).into();
+        let after = vec![before[0].clone(), summary.clone(), before[3].clone(), new_turn.clone()];
+        let mut events = events_between(&[], &before);
+        events.extend(events_between(&before, &after));
+
+        let actual = (
+            events.iter().map(ThreadEvent::kind).collect::<Vec<_>>(),
+            replay_view(&events),
+            replay_history(&events).last().cloned(),
+        );
+
+        let expected = (
+            vec!["message", "message", "message", "message", "compaction", "message"],
+            after,
+            Some(new_turn),
+        );
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_metadata_added_later_is_a_revision_not_a_compaction_and_the_view_stays_exact() {
+        let before = fixture_context().messages;
+        let mut stamped = before.clone();
+        if let ContextMessage::Text(text) = &mut stamped[0].message {
+            text.model = Some(crate::ModelId::new("m"));
+        }
+        let next: MessageEntry = ContextMessage::user("Next.", None).into();
+        let mut after = stamped.clone();
+        after.push(next);
+        let mut events = events_between(&[], &before);
+        events.extend(events_between(&before, &after));
+
+        let actual = (events.iter().map(ThreadEvent::kind).collect::<Vec<_>>(), replay_view(&events));
+
+        let expected = (vec!["message", "message", "message", "message", "revise", "message"], after);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_when_compaction_keeps_nothing_later_messages_are_still_split_out() {
+        let before = fixture_context().messages;
+        let summary: MessageEntry = ContextMessage::user("Summary.", None).into();
+        let new_call: MessageEntry = ContextMessage::assistant("Calling.", None, None, None).into();
+        let new_result: MessageEntry = ContextMessage::user("result", None).into();
+        let after = vec![before[0].clone(), summary, new_call.clone(), new_result.clone()];
+
+        let actual: Vec<&str> = events_between(&before, &after).iter().map(ThreadEvent::kind).collect();
+
+        assert_eq!(actual, vec!["compaction", "message", "message"]);
+        assert_eq!(replay_history(&events_between(&before, &after)), vec![new_call, new_result]);
     }
 
     #[test]
