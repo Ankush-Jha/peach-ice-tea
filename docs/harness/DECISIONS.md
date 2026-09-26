@@ -953,3 +953,21 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   `benchmarks/reports/hackathon/` are ignored by design (TH.7); aggregate A/B and bake-off reports are committed.
 - **Process slip, recorded:** `f4db04837` was committed without running clippy first, against the standing rule.
   It changed no Rust. Clippy was run right after (clean) and is included with this entry's commit.
+
+## D-059 — MCP output was never clipped: the shaper existed but nothing called it; T1.1 and T3.7 closed (2026-09-26)
+- **What broke:** `712689fc9` (T1.1) built `truncation::shape_mcp_output` with 5 tests, left it `#[allow(dead_code)]`
+  because `tool_registry.rs` belonged to another piece, and listed the call site as carried forward. It was never
+  added. MCP tool results reached the model **unclipped and unannounced**: one large MCP result could fill the
+  context with no notice and no recovery path, the opposite of R-OUT-4.
+- **Found by:** reading T1.1's commit for its "unfinished" list; `grep shape_mcp_output` showed tests only.
+- **Fix:** called in the MCP branch of `ToolRegistry::call_inner`, right after the executor returns. It uses the
+  shell caps, with head/tail clipping, the shared recovery sentence and the full text saved to a temp file for
+  `read`. The `dead_code` and `unused_imports` allowances are removed, so the compiler now flags it if it becomes
+  unused again. In unattended runs project MCP servers are refused (D-048), so this matters for interactive use
+  and globally trusted servers.
+- **T1.1 ticked:** read, shell, search and fetch have snapshot tests containing the notice, and MCP has unit
+  assertions. The behavioural "truncation awareness" test is R-EVAL-4's (T0.7), tracked there.
+- **T3.7 ticked** (no code change): `forge_harness::redact`, 36 tests, covers R-SAFE-3's keys (`access_token` via
+  `token`; hyphen/camel variants normalised) plus credential formats, and is applied at every exit that exists
+  today: evidence files, telemetry free text and scorer previews. T6.3's external hooks must call it when built.
+- **Still carried from `712689fc9`:** `first_error_recovered` is summed and diffed but derived nowhere (T1.3).
