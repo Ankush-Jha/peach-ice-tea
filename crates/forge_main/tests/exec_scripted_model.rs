@@ -584,8 +584,9 @@ fn test_a_completed_run_writes_a_complete_redacted_evidence_bundle() {
     );
     let exec: serde_json::Value = serde_json::from_str(&read("exec.json")).unwrap();
     assert_eq!(exec["outcome"], "completed");
+    // The harness found the project's tests itself and ran them.
     let tests: serde_json::Value = serde_json::from_str(&read("tests.json")).unwrap();
-    assert_eq!(tests["ran"], false);
+    assert_eq!((tests["ran"].as_bool(), tests["source"].as_str()), (Some(true), Some("tests/test_*.py")));
     let transcript: serde_json::Value = serde_json::from_str(&read("transcript.json")).unwrap();
     assert_eq!(transcript["conversation"]["id"], run.report["conversation_id"]);
 
@@ -708,4 +709,116 @@ fn test_deepseek_thinking_mode_runs_with_full_accounting() {
         serde_json::from_str(&std::fs::read_to_string(dir.join("report.json")).unwrap()).unwrap();
     assert_eq!(report["tokens"]["cache_hit_rate"], 0.6);
     assert_eq!(report["integrity"]["violations"], serde_json::json!([]));
+}
+
+/// A git project whose suite runs under the standard library's unittest:
+/// `calc.add` subtracts, and `tests/test_calc.py` expects addition.
+fn calc_project() -> tempfile::TempDir {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(project.path().join("tests")).unwrap();
+    std::fs::write(project.path().join("calc.py"), "def add(a, b):\n    return a - b\n").unwrap();
+    std::fs::write(project.path().join("tests/__init__.py"), "").unwrap();
+    std::fs::write(
+        project.path().join("tests/test_calc.py"),
+        "import unittest\n\nfrom calc import add\n\n\nclass TestAdd(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(add(1, 2), 3)\n",
+    )
+    .unwrap();
+    git(project.path(), &["init", "-q"]);
+    git(project.path(), &["add", "-A"]);
+    git(project.path(), &["commit", "-qm", "start"]);
+    project
+}
+
+const CALC_TESTS: &str = "python3 -m unittest discover -s tests -t . -v";
+
+fn fix_calc(project: &Path) -> Vec<Turn> {
+    vec![
+        Turn::Tool("read", serde_json::json!({"file_path": project.join("calc.py")})),
+        Turn::Tool(
+            "write",
+            serde_json::json!({
+                "file_path": project.join("calc.py"),
+                "content": "def add(a, b):\n    return a + b\n",
+                "overwrite": true,
+            }),
+        ),
+    ]
+}
+
+#[test]
+fn test_an_unverified_finish_is_sent_back_to_run_the_tests() {
+    let project = calc_project();
+    let evidence = tempfile::tempdir().unwrap();
+    let mut script = fix_calc(project.path());
+    script.push(Turn::Text("Fixed."));
+    script.push(Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run tests"})));
+    script.push(Turn::Text("Fixed and verified."));
+    let model = ScriptedModel::start(script);
+    let dir = evidence.path().join("bundle");
+
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[],
+        "fix add",
+        &["--evidence-dir", dir.to_str().unwrap(), "--test-command", CALC_TESTS],
+    );
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let requests = model.requests();
+    assert_eq!(requests.len(), 5, "read, write, finish (sent back), test run, finish");
+    assert!(requests[3].contains("VERIFICATION REQUIRED"));
+    assert!(requests[3].contains(CALC_TESTS));
+    assert!(
+        !requests[4].contains("before finishing (2 of 2)"),
+        "no second reminder after a green run"
+    );
+
+    let test_runs: Vec<(String, String)> = run
+        .telemetry
+        .iter()
+        .filter(|event| event["type"] == "test_run")
+        .map(|event| {
+            (event["origin"].as_str().unwrap().to_string(), event["failure_class"].as_str().unwrap().to_string())
+        })
+        .collect();
+    assert_eq!(
+        test_runs,
+        vec![("agent".to_string(), "passed".to_string()), ("harness_final".to_string(), "passed".to_string())]
+    );
+    let tests: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("tests.json")).unwrap()).unwrap();
+    assert_eq!(tests["class"], "passed");
+    assert_eq!(tests["passed"], 1);
+    assert_eq!(tests["source"], "explicit");
+}
+
+#[test]
+fn test_the_gate_gives_up_after_two_reminders_and_says_so() {
+    let project = calc_project();
+    let evidence = tempfile::tempdir().unwrap();
+    let mut script = fix_calc(project.path());
+    script.extend([Turn::Text("Fixed."), Turn::Text("Still fixed."), Turn::Text("Really fixed.")]);
+    let model = ScriptedModel::start(script);
+    let dir = evidence.path().join("bundle");
+
+    // No --test-command: detection must find the unittest suite on its own.
+    let run = run_exec_full(project.path(), &model, None, &[], "fix add", &["--evidence-dir", dir.to_str().unwrap()]);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let requests = model.requests();
+    assert_eq!(requests.len(), 5, "two reminders, then the run is allowed to end");
+    assert!(requests[3].contains("before finishing (1 of 2)"));
+    assert!(!requests[3].contains("before finishing (2 of 2)"));
+    assert!(requests[4].contains("before finishing (2 of 2)"));
+    assert!(
+        run.telemetry.iter().any(|event| event["type"] == "agent_state" && event["to"] == "verification_unconfirmed"),
+        "telemetry: {:?}",
+        run.telemetry
+    );
+    // The harness still checks: the fix was right, so its own run passes.
+    let tests: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("tests.json")).unwrap()).unwrap();
+    assert_eq!((tests["class"].as_str(), tests["source"].as_str()), (Some("passed"), Some("tests/test_*.py")));
 }

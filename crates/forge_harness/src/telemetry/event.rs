@@ -405,6 +405,14 @@ pub struct TestRun {
     pub skipped: Option<u64>,
     /// Wall-clock duration of the command.
     pub duration_ms: u64,
+    /// What kind of result this was (`passed`, `test_assertion`, `compile`,
+    /// `environment`, `timeout`, `unknown`), from `verify::classify`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_class: Option<String>,
+    /// Who ran it: `agent` (a shell call the model made) or `harness_final`
+    /// (the harness's own run after the agent stopped).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 
 /// A test-integrity check or restore took place (R-HACK-2).
