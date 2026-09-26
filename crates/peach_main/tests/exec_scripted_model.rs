@@ -1893,3 +1893,15 @@ fn test_the_hard_gate_is_inert_when_the_flag_is_off() {
     assert_eq!(model.requests().len(), 1, "default-off: no hard gate interference");
     assert_eq!(run.report["outcome"], "completed");
 }
+
+#[test]
+fn test_compact_tool_docs_are_the_default() {
+    // D-085: shipped default-on after A/Bs on two model families.
+    let project = calc_project();
+    let model = ScriptedModel::start(vec![Turn::Text("Done.")]);
+
+    run_exec(project.path(), &model, None);
+
+    let body: serde_json::Value = serde_json::from_str(&model.requests()[0]).unwrap();
+    assert!(!body["tools"].to_string().contains("<example"), "tool examples are still sent by default");
+}

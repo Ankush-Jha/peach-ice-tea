@@ -1,0 +1,74 @@
+# Development profile — NOT for a judged run (D-085). Several models on NVIDIA NIM's free tier through peach's
+# generic `nvidia` provider, for A/Bs (principle 6's second model family). Pick one with PEACH_SESSION__MODEL_ID;
+# the key comes from NVIDIA_API_KEY in the caller's environment and is never written here.
+# Probed 2026-09-27: every model below returned a correct tool call.
+[[providers]]
+id = "nvidia"
+url = "https://integrate.api.nvidia.com/v1/chat/completions"
+response_type = "OpenAI"
+api_key_var = "NVIDIA_API_KEY"
+auth_methods = ["api_key"]
+
+[[providers.models]]
+id = "nvidia/nemotron-3-ultra-550b-a55b"
+name = "Nemotron 3 Ultra (NIM)"
+# Conservative: NIM's served context may be below each model's native window.
+context_length = 131072
+tools_supported = true
+supports_parallel_tool_calls = true
+supports_reasoning = true
+input_modalities = ["text"]
+
+[[providers.models]]
+id = "z-ai/glm-5.3"
+name = "GLM 5.3 (NIM)"
+# Conservative: NIM's served context may be below each model's native window.
+context_length = 131072
+tools_supported = true
+supports_parallel_tool_calls = true
+supports_reasoning = true
+input_modalities = ["text"]
+
+[[providers.models]]
+id = "moonshotai/kimi-k3"
+name = "Kimi K3 (NIM)"
+# Conservative: NIM's served context may be below each model's native window.
+context_length = 131072
+tools_supported = true
+supports_parallel_tool_calls = true
+supports_reasoning = true
+input_modalities = ["text"]
+
+[[providers.models]]
+id = "nvidia/nemotron-3.5-lightning-30b-a3b"
+name = "Nemotron 3.5 Lightning (NIM)"
+# Conservative: NIM's served context may be below each model's native window.
+context_length = 131072
+tools_supported = true
+supports_parallel_tool_calls = true
+supports_reasoning = true
+input_modalities = ["text"]
+
+[[providers.models]]
+id = "meta/muse-glimmer-30b"
+name = "Muse Glimmer 30B (NIM)"
+# Conservative: NIM's served context may be below each model's native window.
+context_length = 131072
+tools_supported = true
+supports_parallel_tool_calls = true
+supports_reasoning = true
+input_modalities = ["text"]
+
+[[providers.models]]
+id = "google/gemma-4-31b-it"
+name = "Gemma 4 31B (NIM)"
+# Conservative: NIM's served context may be below each model's native window.
+context_length = 131072
+tools_supported = true
+supports_parallel_tool_calls = true
+supports_reasoning = true
+input_modalities = ["text"]
+
+[session]
+provider_id = "nvidia"
+model_id = "nvidia/nemotron-3-ultra-550b-a55b"
