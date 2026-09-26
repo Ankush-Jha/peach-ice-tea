@@ -41,6 +41,8 @@ jobs/**
 .mcp.json
 *.d.ts
 *.js
+# Fixture repositories are data, not build output: their JavaScript is the code under test (D-058).
+!benchmarks/hackathon/fixtures/*/repo/**/*.js
 *.map
 **/.peach/request.body.json
 node_modules/
