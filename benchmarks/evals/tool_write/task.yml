@@ -1,0 +1,18 @@
+# Micro-eval for `write` (R-EVAL-3, D-079): pre-dispatch argument correction (T2.6) is on, so
+# a misnamed argument (`filePath`, `contents`) is renamed rather than failing. Isolates
+# wrong-args: counts write calls rejected for their arguments.
+run:
+  - mkdir -p test_repo
+  - |
+    cd test_repo && FORGE_HARNESS_TOOL_CORRECTION=1 FORGE_SESSION__PROVIDER_ID={{provider}} FORGE_SESSION__MODEL_ID={{model}} FORGE_DEBUG_REQUESTS='{{dir}}/context.json' forgee -p 'Create a file named greeting.txt containing exactly: hello world'
+parallelism: 1
+timeout: 180
+validations:
+  - name: "The file was written"
+    type: shell
+    command: "grep -qx 'hello world' test_repo/greeting.txt"
+  - name: "No write call was rejected for its arguments"
+    type: shell
+    command: "! jq -e '[.messages[]? | select(.role == \"tool\" and .name == \"write\") | .content | tostring | select(contains(\"unknown field\") or contains(\"missing field\"))] | length > 0' {{dir}}/context.json"
+sources:
+  - csv: ../../models.free.csv
