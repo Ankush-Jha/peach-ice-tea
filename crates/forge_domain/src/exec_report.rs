@@ -125,8 +125,11 @@ pub struct ExecIntegrityViolation {
 
 impl ExecReport {
     /// Builds a report, deriving `exit_code` from the outcome so the two can
-    /// never disagree.
-    pub fn new(outcome: TaskOutcome, metrics: TaskMetrics) -> Self {
+    /// never disagree, and `recovery.first_error_recovered` (R-EVAL-2): 1 when
+    /// the task completed although at least one tool call failed on the way.
+    pub fn new(outcome: TaskOutcome, mut metrics: TaskMetrics) -> Self {
+        let had_tool_error = metrics.tool_errors.values().any(|count| *count > 0);
+        metrics.recovery.first_error_recovered = u64::from(outcome.is_success() && had_tool_error);
         Self {
             outcome,
             exit_code: outcome.exit_code(),
@@ -196,6 +199,23 @@ mod tests {
         assert!(!TaskOutcome::ToolFailureLimit.is_success());
         assert!(!TaskOutcome::RequestLimit.is_success());
         assert!(!TaskOutcome::TimeBudget.is_success());
+    }
+
+    #[test]
+    fn test_first_error_recovered_means_completed_after_a_tool_error() {
+        let errored = TaskMetrics::default().tool_errors(
+            [("patch".to_string(), 1u64)].into_iter().collect::<std::collections::BTreeMap<_, _>>(),
+        );
+
+        let actual = [
+            ExecReport::new(TaskOutcome::Completed, errored.clone()),
+            ExecReport::new(TaskOutcome::ToolFailureLimit, errored),
+            ExecReport::new(TaskOutcome::Completed, TaskMetrics::default()),
+        ]
+        .map(|report| report.metrics.recovery.first_error_recovered);
+
+        let expected = [1, 0, 0];
+        assert_eq!(actual, expected);
     }
 
     #[test]

@@ -41,6 +41,9 @@ enum Turn {
     /// usage (`prompt_cache_hit_tokens`, reasoning in
     /// `completion_tokens_details`).
     DeepSeek { reasoning: &'static str, tool: &'static str, arguments: serde_json::Value, text: &'static str },
+    /// A turn built from the body of the request it answers, for calls whose
+    /// arguments only exist at run time (e.g. a dump file's path).
+    FromRequest(fn(&str) -> Turn),
 }
 
 /// A local OpenAI-compatible chat endpoint that replays `script` for every
@@ -75,8 +78,11 @@ impl ScriptedModel {
                 let mut body = String::new();
                 let _ = request.as_reader().read_to_string(&mut body);
                 let turn = if body.contains(r#""tools""#) {
-                    recorded.lock().unwrap().push(body);
-                    script.next().unwrap_or(Turn::Text("Done."))
+                    recorded.lock().unwrap().push(body.clone());
+                    match script.next().unwrap_or(Turn::Text("Done.")) {
+                        Turn::FromRequest(build) => build(&body),
+                        turn => turn,
+                    }
                 } else {
                     *side_recorded.lock().unwrap() += 1;
                     Turn::Text("Scripted title")
@@ -165,7 +171,11 @@ fn sse(turn: Turn) -> String {
             "tool_calls",
         ),
         Turn::Text(text) => (serde_json::json!({"role": "assistant", "content": text}), "stop"),
-        Turn::Status(_) | Turn::StatusBody(..) | Turn::Empty(_) | Turn::DeepSeek { .. } => {
+        Turn::Status(_)
+        | Turn::StatusBody(..)
+        | Turn::Empty(_)
+        | Turn::DeepSeek { .. }
+        | Turn::FromRequest(_) => {
             unreachable!("handled above")
         }
     };
@@ -1335,4 +1345,29 @@ fn test_a_changed_test_script_in_package_json_is_flagged_and_announced() {
         {"path": "package.json", "kind": "test_config_changed", "restored": false}
     ]);
     assert_eq!(actual, expected, "report: {}", run.report);
+}
+
+/// Reads the file named in the first "Full output: read <path>" notice in a
+/// request body, as a model recovering truncated output would.
+fn read_the_dump_file(body: &str) -> Turn {
+    let unescaped = body.replace("\\/", "/");
+    let start = unescaped.find("Full output: read ").expect("no recovery notice in the request") + 18;
+    let path: String = unescaped[start..].chars().take_while(|c| !c.is_whitespace() && *c != '"').collect();
+    Turn::Tool("read", serde_json::json!({"file_path": path}))
+}
+
+#[test]
+fn test_reading_a_truncated_output_back_counts_as_an_offload_read() {
+    let project = project_with_a_test();
+    let model = ScriptedModel::start(vec![
+        Turn::Tool("shell", serde_json::json!({"command": "seq 1 500", "description": "count"})),
+        Turn::FromRequest(read_the_dump_file),
+        Turn::Text("Done."),
+    ]);
+
+    let run = run_exec(project.path(), &model, None);
+
+    let read_back = model.requests().get(2).cloned().unwrap_or_default();
+    assert!(read_back.contains("250"), "the dump file was not read back");
+    assert_eq!(run.report["metrics"]["recovery"]["offload_read"], 1, "report: {}", run.report);
 }
