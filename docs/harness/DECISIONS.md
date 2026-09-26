@@ -1560,3 +1560,28 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
 - **Tests:** `cargo insta test --workspace`: 3021 passed. The known timing test
   (`test_concurrent_operations_dont_block_runtime`, D-031) failed once under load and passed 5/5 alone and on the
   next full run.
+
+## D-082 — Brief Tier 1.1: an enforced doom-loop escalation ladder (R-LOOP-5), behind a flag (2026-09-27)
+- **Built as the brief specified, with two changes:**
+  - `forge_app::doom_loop_escalation::EscalationGuard` fingerprints each call by name and canonicalised arguments.
+    The 1st repeat runs with a warning appended, the 2nd repeat is withheld and answered with the warning, and the
+    3rd repeat is withheld and pauses the run. After a pause, a one-shot re-arm lets that call through once, so an
+    End hook that continues the run does not re-trigger the pause at once.
+  - Warning templates: `forge-doom-loop-{warn,skip,pause}.md`.
+  - `InterruptionReason::DoomLoopEscalation` and exec outcome `doom_loop_escalation` (exit 6), mapped in both
+    `ui.rs` matches.
+  - `hooks/doom_loop.rs` is untouched: upstream's nudge also catches `[A,B,C]` cycles, which this does not.
+  - **Change 1, per-orchestrator setting.** The brief read the flag inside `execute_tool_calls`. A process-wide env
+    read would leak between unit tests running in parallel, including upstream's doom-loop spec with its four
+    identical calls. So `Orchestrator.doom_loop_escalation` is a setting, like `parallel_readonly`: `app.rs` sets it
+    from `FORGE_HARNESS_DOOM_LOOP_ESCALATION`, and tests set it directly.
+  - **Change 2, borrow fix.** The brief's `ui.rs` arm moved `tool_name` out of `reason`, which is used afterwards
+    (a compile error); the title match now matches on a reference.
+- **Proof:**
+  - The brief's 4 unit tests.
+  - An orchestrator spec: four identical calls give 4 results, **2 executed**, 1 warned, and an `Interrupt` with
+    `occurrences: 4`.
+  - An `exec` run through the real binary with the env flag: **exit 6**, outcome `doom_loop_escalation`, and the
+    run stops after the fourth request.
+  - Upstream's doom-loop tests are unchanged and pass.
+- **SPEC:** R-LOOP-5 added to §3. **TASKS:** T2.7, `[A/B]`, default off.
