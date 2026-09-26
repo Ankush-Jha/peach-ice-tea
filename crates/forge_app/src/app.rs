@@ -11,7 +11,7 @@ use crate::changed_files::ChangedFiles;
 use crate::dto::ToolsOverview;
 use crate::hooks::{
     CompactionHandler, DoomLoopDetector, PendingTodosHandler, TelemetryHandler,
-    TitleGenerationHandler, TracingHandler,
+    TitleGenerationHandler, TracingHandler, VerifyGateHandler,
 };
 use crate::init_conversation_metrics::InitConversationMetrics;
 use crate::orch::Orchestrator;
@@ -158,11 +158,14 @@ impl<S: Services + EnvironmentInfra<Config = forge_config::ForgeConfig>> ForgeAp
                 .and(telemetry_handler.clone())
                 .and(title_handler.clone())
                 .and(PendingTodosHandler::new())
+                // harness: R-HACK-7 — inert unless an exec runtime is installed.
+                .and(VerifyGateHandler::new())
         } else {
             tracing_handler
                 .clone()
                 .and(telemetry_handler.clone())
                 .and(title_handler.clone())
+                .and(VerifyGateHandler::new())
         };
 
         let hook = Hook::default()
