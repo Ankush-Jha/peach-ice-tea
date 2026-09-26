@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use forge_domain::{
-    Conversation, EndPayload, EventData, EventHandle, RequestPayload, ResponsePayload,
+    CompactionMetrics, Conversation, EndPayload, EventData, EventHandle, RequestPayload, ResponsePayload,
     StartPayload, TokenCount, ToolOutput, ToolValue, ToolcallEndPayload, ToolcallStartPayload,
 };
 use forge_harness::telemetry::event::Truncated;
@@ -34,6 +34,9 @@ struct State {
     model_calls: u64,
     last_model_call_id: Option<String>,
     tool_started: HashMap<String, Instant>,
+    /// Compaction counters and message count just before `CompactionHandler`
+    /// ran on the latest response, for [`CompactionObserver`] to compare.
+    pre_compaction: Option<(CompactionMetrics, usize)>,
 }
 
 struct PendingRequest {
@@ -47,6 +50,65 @@ impl TelemetryHandler {
     /// Creates a handler with no calls in flight.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// An observer to chain directly after `CompactionHandler`, sharing this
+    /// handler's state, that emits `context_compaction` when it compacted.
+    pub fn compaction_observer(&self) -> CompactionObserver {
+        CompactionObserver { state: self.state.clone() }
+    }
+}
+
+/// Emits `context_compaction` when the compaction hook that ran just before
+/// it compacted the context. See [`TelemetryHandler::compaction_observer`].
+pub struct CompactionObserver {
+    state: Arc<Mutex<State>>,
+}
+
+fn message_count(conversation: &Conversation) -> usize {
+    conversation.context.as_ref().map_or(0, |context| context.messages.len())
+}
+
+/// The compaction event implied by the counters before and after the
+/// compaction hook, or `None` when it did not compact.
+fn compaction_event(
+    before: &(CompactionMetrics, usize),
+    after: &(CompactionMetrics, usize),
+) -> Option<event::ContextCompaction> {
+    let ((metrics_before, messages_before), (metrics_after, messages_after)) = (before, after);
+    (metrics_after.count > metrics_before.count).then(|| event::ContextCompaction {
+        messages_before: *messages_before,
+        messages_after: *messages_after,
+        tokens_before_estimated: Some(
+            metrics_after.tokens_before.saturating_sub(metrics_before.tokens_before),
+        ),
+        tokens_after_estimated: Some(
+            metrics_after.tokens_after.saturating_sub(metrics_before.tokens_after),
+        ),
+        retained_content_kinds: vec![],
+    })
+}
+
+#[async_trait]
+impl EventHandle<EventData<ResponsePayload>> for CompactionObserver {
+    async fn handle(
+        &self,
+        event: &EventData<ResponsePayload>,
+        conversation: &mut Conversation,
+    ) -> anyhow::Result<()> {
+        if !telemetry::is_installed() {
+            return Ok(());
+        }
+        let before = self.state.lock().ok().and_then(|mut state| state.pre_compaction.take());
+        let after = (conversation.metrics.task.compactions.clone(), message_count(conversation));
+        if let Some(compaction) = before.and_then(|before| compaction_event(&before, &after)) {
+            emit(
+                TelemetryEvent::ContextCompaction(compaction),
+                conversation,
+                event.agent.id.as_str(),
+            );
+        }
+        Ok(())
     }
 }
 
@@ -198,6 +260,10 @@ impl EventHandle<EventData<ResponsePayload>> for TelemetryHandler {
             return Ok(());
         };
         state.model_calls += 1;
+        state.pre_compaction = Some((
+            conversation.metrics.task.compactions.clone(),
+            message_count(conversation),
+        ));
         let call_id = format!("{}#{}", conversation.id, state.model_calls);
         state.last_model_call_id = Some(call_id.clone());
         let pending = state.request.take();
@@ -323,6 +389,32 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn test_a_compaction_is_reported_with_its_own_deltas_only() {
+        let before = (
+            CompactionMetrics { count: 1, tokens_before: 5_000, tokens_after: 1_000 },
+            40,
+        );
+        let after = (
+            CompactionMetrics { count: 2, tokens_before: 13_000, tokens_after: 2_500 },
+            6,
+        );
+
+        let actual = (compaction_event(&before, &after), compaction_event(&before, &before));
+
+        let expected = (
+            Some(event::ContextCompaction {
+                messages_before: 40,
+                messages_after: 6,
+                tokens_before_estimated: Some(8_000),
+                tokens_after_estimated: Some(1_500),
+                retained_content_kinds: vec![],
+            }),
+            None,
+        );
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn test_only_provider_reported_counts_are_kept() {
