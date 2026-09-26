@@ -780,9 +780,14 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Team direction:** "We are not bearing the cost of the token … just open the field." D-025/D-025a's ₹100 cap and
   the "free models only" line in D-049 are withdrawn. Nothing about the model or provider is assumed to be given in
   advance; the harness must be good on whatever model it is pointed at, and we pick the best per role.
-- **Checked live:** the OpenRouter key reaches paid frontier models (`anthropic/claude-opus-5.5`, `openai/gpt-6-sol`,
-  `google/gemini-3.8-flash` each answered a 16-token request), despite reporting $0 own credit. The key's **$50 limit**
-  is the only hard ceiling, so spend is still recorded from the execution layer, as a running total, not rationed.
+- **Checked live — and corrected the same hour:** 16-token requests to `anthropic/claude-opus-5.5`, `openai/gpt-6-sol`
+  and `google/gemini-3.8-flash` succeeded, which I first read as "paid models work". **They do not, for agent turns.**
+  The account holds **$0 credit**; OpenRouter admits a request only if its worst case (`max_tokens`) is affordable.
+  Forge asks for 20,480 output tokens, so every real turn gets `402 … can only afford 1354` (bake-off round 1: 6 of
+  9 models failed every fixture with 0 LLM calls). The key's $50 figure is a daily *limit*, not a balance.
+  **Paid models need credit added to the account.** Until then only `:free` models (50 requests/day) are callable.
+- **Harness fix from this:** a 402 with `limit_source: openrouter_credits` is recognised as an exhausted quota, so
+  `exec` says `provider quota exhausted (openrouter_credits), not retried` instead of `Invalid Status Code: 402`.
 - **Consequences:** `[A/B]` tasks get real A/Bs at k = 3 on two families (principle 6 is now met normally, not
   waived); the bake-off (MM.2) includes frontier models; the per-role routing (MM.3) is judged on success first,
   then cost.

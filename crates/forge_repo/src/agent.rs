@@ -188,6 +188,20 @@ fn parse_agent_file(content: &str) -> Result<AgentDefinition> {
     Ok(agent)
 }
 
+/// The provider and model an agent uses when its definition names none: its
+/// `roles` entry if configured (D-049), otherwise the session's.
+fn default_model_for(
+    config: &ForgeConfig,
+    session: &forge_config::ModelConfig,
+    agent_id: &str,
+) -> (ProviderId, ModelId) {
+    let chosen = config.roles.get(agent_id).unwrap_or(session);
+    (
+        ProviderId::from(chosen.provider_id.clone()),
+        ModelId::from(chosen.model_id.clone()),
+    )
+}
+
 #[async_trait::async_trait]
 impl<F: FileInfoInfra + EnvironmentInfra<Config = ForgeConfig> + DirectoryReaderInfra>
     AgentRepository for ForgeAgentRepository<F>
@@ -204,10 +218,8 @@ impl<F: FileInfoInfra + EnvironmentInfra<Config = ForgeConfig> + DirectoryReader
         Ok(agent_defs
             .into_iter()
             .map(|def| {
-                def.into_agent(
-                    ProviderId::from(session.provider_id.clone()),
-                    ModelId::from(session.model_id.clone()),
-                )
+                let (provider, model) = default_model_for(&config, &session, def.id.as_str());
+                def.into_agent(provider, model)
             })
             .collect())
     }
@@ -232,6 +244,27 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn test_default_model_for_uses_role_then_session() {
+        let session = forge_config::ModelConfig::new("open_router", "main-model");
+        let mut config = ForgeConfig::default();
+        config.roles.insert(
+            "sage".to_string(),
+            forge_config::ModelConfig::new("nvidia", "fast-model"),
+        );
+
+        let actual = (
+            default_model_for(&config, &session, "sage"),
+            default_model_for(&config, &session, "forge"),
+        );
+
+        let expected = (
+            (ProviderId::from("nvidia".to_string()), ModelId::from("fast-model".to_string())),
+            (ProviderId::from("open_router".to_string()), ModelId::from("main-model".to_string())),
+        );
+        assert_eq!(actual, expected);
+    }
 
     #[tokio::test]
     async fn test_parse_basic_agent() {
