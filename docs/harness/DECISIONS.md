@@ -541,3 +541,18 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   follow-up commit: one plain sentence is appended to a failed test run's result for environment, compile and
   timeout failures only (never for ordinary assertion failures, whose output speaks for itself), each emitting a
   `recovery` event; `FORGE_HARNESS_RECOVERY_HINTS=0` disables them. No hint suggests touching tests.
+
+## D-038 — A signal ends an exec run with evidence, not without it (2026-09-25)
+- **Context:** `exec` installed no signal handler, so SIGINT/SIGTERM took the default action. The process
+  died with no integrity check, no restore, no transcript and no bundle. The eval runner's own timeout sent
+  SIGKILL straight away. A run stopped from outside, by a runner timeout or a person, is exactly the one
+  whose evidence matters most.
+- **Decision:** `handle_exec` selects on SIGINT/SIGTERM alongside the time budget. The agent is stopped
+  the same way (the future is dropped), and the outcome is `interrupted` (exit 5, reserved by PLAN.md C5).
+  `finish`/`seal` run as on every other path, except that the final test run is skipped with a recorded
+  reason, because whoever sent the signal wants the process to end now. `run.ts` now sends SIGTERM to the
+  process group on timeout and SIGKILL only after a 30 s grace period.
+- **Verified:** `exec_integrity.rs` tampers with a test mid-run, then sends SIGTERM. The test asserts exit 5,
+  `stopped by SIGTERM`, the test restored, and a complete bundle. Separately, the runner's 5 s timeout
+  against a closed-port provider yields forge exit 5 `interrupted` with all 10 bundle files.
+- **Limit:** SIGKILL cannot be caught. A caller that skips SIGTERM still gets no evidence.

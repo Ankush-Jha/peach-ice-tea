@@ -17,7 +17,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       `context_composition`; title-generation call is unmetered.
 - [ ] **TH.5** `R-HACK-5` evidence bundle (`--evidence-dir`), transcript on every exit path, redaction (pulls T3.7 forward).
       → bundle on completed/error/time-budget paths, redacted, checksummed (D-034); `tests.json` is the harness's
-      own final run (D-037). **Open:** bundle when killed by a signal (exit 5 not implemented).
+      own final run (D-037); SIGINT/SIGTERM → exit 5 `interrupted` with the full bundle (D-038).
+      **Open:** `report.json`/`report.md` exist (TH.8), so the remaining gap is SIGKILL, which no process can catch.
 - [x] **TH.6** `R-HACK-7` verified completion: test-command detection, green-after-last-edit gate, failure classification + recovery hints.
       → detection, classification, gate (2 nudges, voluntary stops only), `test_run` + `recovery` events, final
       harness run into `tests.json`, hints for environment/compile/timeout failures (D-037). Known gap: shell-made

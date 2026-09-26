@@ -4402,20 +4402,32 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         // failure below, so it is reported and exits non-zero exactly like
         // any other exec-time error rather than propagating past the report.
         let mut timed_out = false;
+        let mut interrupted: Option<&'static str> = None;
         let run: Result<()> = match self.init_state_exec().await {
             Err(error) => Err(error),
-            Ok(()) => match max_duration_secs {
-                None => self.on_message(Some(task)).await,
-                Some(secs) => {
-                    tokio::select! {
-                        result = self.on_message(Some(task)) => result,
-                        _ = tokio::time::sleep(std::time::Duration::from_secs(secs)) => {
-                            timed_out = true;
-                            Ok(())
-                        }
+            Ok(()) => {
+                let budget = async {
+                    match max_duration_secs {
+                        Some(secs) => tokio::time::sleep(std::time::Duration::from_secs(secs)).await,
+                        None => std::future::pending().await,
+                    }
+                };
+                // harness: R-HACK-1 / R-HACK-5 — a signal stops the agent the
+                // same way the budget does, so integrity and the evidence
+                // bundle are still written. Without a handler the default
+                // action killed the process with neither.
+                tokio::select! {
+                    result = self.on_message(Some(task)) => result,
+                    _ = budget => {
+                        timed_out = true;
+                        Ok(())
+                    }
+                    signal = crate::harness_exec::shutdown_signal() => {
+                        interrupted = Some(signal);
+                        Ok(())
                     }
                 }
-            },
+            }
         };
         let elapsed_ms = started.elapsed().as_millis() as u64;
 
@@ -4425,6 +4437,9 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         // it fires, the agent was stopped mid-flight, and whatever it was
         // doing is not the outcome (R-HACK-1, D-029).
         let (outcome, error) = match (timed_out, &run, &self.state.interruption) {
+            _ if let Some(signal) = interrupted => {
+                (TaskOutcome::Interrupted, Some(format!("stopped by {signal}")))
+            }
             (true, _, _) => (
                 TaskOutcome::TimeBudget,
                 Some(format!(
@@ -4453,7 +4468,7 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             .ok()
             .and_then(|value| value.as_str().map(str::to_string))
             .unwrap_or_default();
-        let integrity = harness.finish();
+        let integrity = harness.finish(interrupted.is_some());
 
         let metrics = self.exec_task_metrics(elapsed_ms).await;
 

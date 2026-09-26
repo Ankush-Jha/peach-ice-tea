@@ -26,6 +26,9 @@ pub enum TaskOutcome {
     /// which the evidence must be able to tell apart from an error
     /// (`DECISIONS.md` D-029).
     TimeBudget,
+    /// Stopped by a signal (SIGINT/SIGTERM) from outside: a runner's hard
+    /// timeout or a person. The evidence is still written.
+    Interrupted,
 }
 
 impl TaskOutcome {
@@ -41,6 +44,7 @@ impl TaskOutcome {
             TaskOutcome::ToolFailureLimit => 2,
             TaskOutcome::RequestLimit => 3,
             TaskOutcome::TimeBudget => 4,
+            TaskOutcome::Interrupted => 5,
         }
     }
 
@@ -178,8 +182,9 @@ mod tests {
             TaskOutcome::ToolFailureLimit.exit_code(),
             TaskOutcome::RequestLimit.exit_code(),
             TaskOutcome::TimeBudget.exit_code(),
+            TaskOutcome::Interrupted.exit_code(),
         ];
-        let expected = [0, 1, 2, 3, 4];
+        let expected = [0, 1, 2, 3, 4, 5];
 
         assert_eq!(actual, expected);
     }
