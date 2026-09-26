@@ -197,3 +197,105 @@ pub fn verify_and_restore(
     let report = manifest.verify(&now.protected_files());
     if report.is_clean() { report } else { manifest.restore(&report) }
 }
+
+/// Telemetry events describing a post-run integrity check: one summary
+/// `verify` event, then one event per violation — `restored` when the
+/// original content was put back, `violation` when it could not be.
+///
+/// The summary is emitted even when the run was clean, so the log proves the
+/// check ran rather than leaving "clean" and "never checked" looking the same.
+pub fn telemetry_events(report: &IntegrityReport) -> Vec<crate::telemetry::TelemetryEvent> {
+    use crate::telemetry::TelemetryEvent;
+    use crate::telemetry::event::Integrity;
+
+    let restored = report.violations.iter().filter(|v| v.restored).count();
+    let summary = if report.is_clean() {
+        format!("{} protected files checked; all unchanged", report.checked)
+    } else {
+        format!(
+            "{} protected files checked; {} violation(s), {} restored",
+            report.checked,
+            report.violations.len(),
+            restored
+        )
+    };
+
+    std::iter::once(TelemetryEvent::Integrity(Integrity {
+        kind: "verify".to_string(),
+        path: None,
+        detail: summary,
+    }))
+    .chain(report.violations.iter().map(|violation| {
+        let kind = match violation.kind {
+            ViolationKind::Modified => "modified",
+            ViolationKind::Deleted => "deleted",
+            ViolationKind::Added => "added",
+        };
+        let (event_kind, detail) = if violation.restored {
+            ("restored", format!("{kind} during the run; restored to its pre-run state"))
+        } else {
+            ("violation", format!("{kind} during the run; could NOT be restored"))
+        };
+        TelemetryEvent::Integrity(Integrity {
+            kind: event_kind.to_string(),
+            path: Some(violation.path.clone()),
+            detail,
+        })
+    }))
+    .collect()
+}
+
+#[cfg(test)]
+mod telemetry_event_tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+    use crate::telemetry::TelemetryEvent;
+    use crate::telemetry::event::Integrity;
+
+    #[test]
+    fn test_a_clean_check_still_records_that_it_ran() {
+        let fixture = IntegrityReport { violations: vec![], checked: 3 };
+
+        let actual = telemetry_events(&fixture);
+
+        let expected = vec![TelemetryEvent::Integrity(Integrity {
+            kind: "verify".to_string(),
+            path: None,
+            detail: "3 protected files checked; all unchanged".to_string(),
+        })];
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_each_violation_is_its_own_event() {
+        let fixture = IntegrityReport {
+            violations: vec![
+                Violation { path: "tests/a.py".to_string(), kind: ViolationKind::Modified, restored: true },
+                Violation { path: "tests/b.py".to_string(), kind: ViolationKind::Deleted, restored: false },
+            ],
+            checked: 2,
+        };
+
+        let actual = telemetry_events(&fixture);
+
+        let expected = vec![
+            TelemetryEvent::Integrity(Integrity {
+                kind: "verify".to_string(),
+                path: None,
+                detail: "2 protected files checked; 2 violation(s), 1 restored".to_string(),
+            }),
+            TelemetryEvent::Integrity(Integrity {
+                kind: "restored".to_string(),
+                path: Some("tests/a.py".to_string()),
+                detail: "modified during the run; restored to its pre-run state".to_string(),
+            }),
+            TelemetryEvent::Integrity(Integrity {
+                kind: "violation".to_string(),
+                path: Some("tests/b.py".to_string()),
+                detail: "deleted during the run; could NOT be restored".to_string(),
+            }),
+        ];
+        assert_eq!(actual, expected);
+    }
+}

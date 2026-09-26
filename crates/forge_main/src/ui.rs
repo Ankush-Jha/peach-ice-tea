@@ -694,8 +694,8 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
                 self.on_info(porcelain, conversation_id).await?;
                 return Ok(());
             }
-            TopLevelCommand::Exec { task, json, max_duration_secs } => {
-                self.handle_exec(task.clone(), json, max_duration_secs).await?;
+            TopLevelCommand::Exec { task, json, max_duration_secs, telemetry } => {
+                self.handle_exec(task.clone(), json, max_duration_secs, telemetry).await?;
                 return Ok(());
             }
             TopLevelCommand::Banner => {
@@ -4347,6 +4347,7 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         mut task: String,
         json: bool,
         max_duration_secs: Option<u64>,
+        telemetry: Option<PathBuf>,
     ) -> anyhow::Result<()> {
         self.state.non_interactive = true;
 
@@ -4356,36 +4357,21 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             .await
             .map(|config| config.model.to_string());
 
-        // harness: R-HACK-2 / D-028 — activates the test-integrity guard for
-        // this process. Everything under `forge_harness::integrity` and
-        // `forge_harness::runtime` was already wired and tested, but nothing
-        // called `install`, so the guard checked a runtime that never
-        // existed and refused nothing. Defaults for now (D-019's globs);
-        // making these configurable is separate follow-up work, not a
-        // reason to leave the guard inert in the meantime.
-        let repo_root = self.state.cwd.clone();
-        let protect_globs: Vec<String> =
-            forge_harness::integrity::DEFAULT_PROTECTED_GLOBS.iter().map(|s| s.to_string()).collect();
-        let exclude_globs: Vec<String> =
-            forge_harness::integrity::DEFAULT_EXCLUDE_GLOBS.iter().map(|s| s.to_string()).collect();
-        let (protected, manifest) =
-            forge_harness::integrity::discover_and_capture(&repo_root, &protect_globs, &exclude_globs, None);
-        if let Some(notice) = forge_harness::integrity::model_notice(&protected) {
+        // harness: R-HACK-2 / R-HACK-3 / D-028 — capture the test-integrity
+        // manifest and activate the dispatch-time guard before the agent can
+        // act, and verify-and-restore after it stops (`finish`, below, on
+        // every exit path).
+        let (harness, notice) =
+            crate::harness_exec::ExecHarness::start(self.state.cwd.clone(), telemetry.as_deref());
+        if let Some(notice) = notice {
             // harness: CLAUDE.md principle 4 — withheld/restricted information
             // must be loud in plain text inside the model's context, not only
             // in a log the model never sees. Prepended to the task itself
             // (per ALIGNMENT.md/PLAN.md decision C1) rather than a separate
             // context channel, since `additional_context` is marked droppable
             // elsewhere in this codebase and this must never be dropped.
-            task = format!("{notice}
-
-{task}");
+            task = format!("{notice}\n\n{task}");
         }
-        forge_harness::runtime::install(
-            forge_harness::runtime::HarnessRuntime::new(repo_root.clone())
-                .non_interactive(true)
-                .protected(protected),
-        );
 
         let started = std::time::Instant::now();
 
@@ -4412,64 +4398,45 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         };
         let elapsed_ms = started.elapsed().as_millis() as u64;
 
-        // harness: R-HACK-1 — a wall-clock budget is a distinct way for a
-        // one-shot run to stop: it did not fail, hit a limit, or complete: the
-        // clock simply ran out. It gets its own exit code (4), following on
-        // from the existing 0 (completed) / 1 (error) / 2 (tool-failure
-        // limit) / 3 (request limit) in `TaskOutcome::exit_code`
-        // (`crates/forge_domain/src/exec_report.rs`). Built by hand rather
-        // than through `ExecReport`/`TaskOutcome`, neither of which has a
-        // variant for this outcome — adding one is a `forge_domain` edit out
-        // of scope for this piece; see the TH.1 report's hand-back. The
-        // shape matches `ExecReport`'s own JSON field-for-field so a consumer
-        // that parses the normal report also parses this one.
-        if timed_out {
-            let metrics = self.exec_task_metrics(elapsed_ms).await;
-            let mut fields = serde_json::json!({
-                "outcome": "time_budget",
-                "exit_code": 4,
-                "metrics": metrics,
-                "error": format!(
-                    "wall-clock budget of {}s exceeded",
-                    max_duration_secs.unwrap_or_default()
-                ),
-            });
-            if let Some(id) = self.state.conversation_id {
-                fields["conversation_id"] = serde_json::Value::String(id.into_string());
-            }
-            if let Some(model) = model {
-                fields["model"] = serde_json::Value::String(model);
-            }
-
-            if json {
-                // Printed directly rather than through the markdown writer so
-                // the last line of stdout is exactly this object.
-                println!("{}", serde_json::to_string(&fields)?);
-            }
-
-            self.exec_exit_code = Some(4);
-            return Ok(());
-        }
-
         // A failure to run is an outcome, not a reason to skip the report: the
         // A/B runner still needs the line, and the metrics gathered up to the
-        // failure are still true.
-        let (outcome, error) = match (&run, &self.state.interruption) {
-            (Err(error), _) => (TaskOutcome::Error, Some(exec_error_summary(error))),
-            (Ok(_), Some(InterruptionReason::MaxToolFailurePerTurnLimitReached { limit, .. })) => (
+        // failure are still true. A wall-clock budget is checked first: when
+        // it fires, the agent was stopped mid-flight, and whatever it was
+        // doing is not the outcome (R-HACK-1, D-029).
+        let (outcome, error) = match (timed_out, &run, &self.state.interruption) {
+            (true, _, _) => (
+                TaskOutcome::TimeBudget,
+                Some(format!(
+                    "wall-clock budget of {}s exceeded",
+                    max_duration_secs.unwrap_or_default()
+                )),
+            ),
+            (false, Err(error), _) => (TaskOutcome::Error, Some(exec_error_summary(error))),
+            (false, Ok(_), Some(InterruptionReason::MaxToolFailurePerTurnLimitReached { limit, .. })) => (
                 TaskOutcome::ToolFailureLimit,
                 Some(format!("tool failure limit ({limit}) reached")),
             ),
-            (Ok(_), Some(InterruptionReason::MaxRequestPerTurnLimitReached { limit })) => (
+            (false, Ok(_), Some(InterruptionReason::MaxRequestPerTurnLimitReached { limit })) => (
                 TaskOutcome::RequestLimit,
                 Some(format!("request limit ({limit}) reached")),
             ),
-            (Ok(_), None) => (TaskOutcome::Completed, None),
+            (false, Ok(_), None) => (TaskOutcome::Completed, None),
         };
+
+        // harness: R-HACK-2 — the agent has stopped on every path by now (on
+        // a timeout the `on_message` future was dropped by `select!`, which
+        // aborts the orchestrator), so nothing can write a test file after
+        // this check. A violation leaves the exit code alone (PLAN.md C5) and
+        // is reported in the JSON line instead.
+        let outcome_name = serde_json::to_value(outcome)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_string))
+            .unwrap_or_default();
+        let integrity = harness.finish(&outcome_name, elapsed_ms);
 
         let metrics = self.exec_task_metrics(elapsed_ms).await;
 
-        let mut report = ExecReport::new(outcome, metrics);
+        let mut report = ExecReport::new(outcome, metrics).integrity(integrity);
         if let Some(id) = self.state.conversation_id {
             report = report.conversation_id(id.into_string());
         }
