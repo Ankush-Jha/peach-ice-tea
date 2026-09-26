@@ -138,9 +138,8 @@ pub struct TaskMetrics {
 ///
 /// Each field is a distinct way the agent spent a turn recovering from
 /// something the harness withheld, repeated, or got wrong the first time.
-/// `first_error_recovered` is derived from the exec lifecycle (task completed
-/// with `tool_errors > 0`), not counted here; it stays zero until that piece
-/// wires it in.
+/// `first_error_recovered` is derived when the exec report is built
+/// (`ExecReport::new`: task completed with `tool_errors > 0`), not counted here.
 #[derive(Debug, Clone, Default, PartialEq, Setters, Serialize, Deserialize)]
 #[setters(into, strip_option)]
 #[serde(default)]
@@ -157,9 +156,8 @@ pub struct RecoveryEvents {
     /// file in between.
     pub reread_same_range: u64,
 
-    /// The task completed after its first tool error. Left at zero here;
-    /// derived in the exec lifecycle (TH.1), which has the outcome and
-    /// `tool_errors` in scope at the same time.
+    /// The task completed after its first tool error. Set by
+    /// `ExecReport::new`, which has the outcome and `tool_errors` together.
     pub first_error_recovered: u64,
 }
 

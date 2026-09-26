@@ -432,6 +432,14 @@ impl<
         }
 
         let truncation_path = self.dump_operation(&operation).await?;
+        // harness: T1.3 (R-OUT-3, D-060) — register every dump file, so a later
+        // `read` of one counts as `offload_read`. Nothing did before, so that
+        // counter could never move.
+        context.with_metrics(|metrics| {
+            for path in truncation_path.stdout.iter().chain(truncation_path.stderr.iter()) {
+                metrics.task.record_dump_file(path.display().to_string());
+            }
+        })?;
 
         let output = context.with_metrics(|metrics| {
             operation.into_tool_output(tool_kind, truncation_path, &env, &config, metrics)

@@ -231,8 +231,13 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> ToolReg
                 .await?;
             // harness: T1.1 (R-OUT-4) — clip MCP output like shell output, with
             // a loud recovery sentence and the full text saved for `read`.
-            let output =
+            let (output, dumps) =
                 crate::truncation::shape_mcp_output(output, &self.services.get_config()?);
+            context.with_metrics(|metrics| {
+                for path in &dumps {
+                    metrics.task.record_dump_file(path.display().to_string());
+                }
+            })?;
             let text = output
                 .values
                 .iter()

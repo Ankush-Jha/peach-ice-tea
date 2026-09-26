@@ -18,29 +18,33 @@ use super::truncate_shell::truncate_shell_output;
 /// new config field: MCP tool output is free-form text with the same shape
 /// shell output has, and every other cap in `PeachConfig` is specific to a
 /// different tool's output format.
-pub fn shape_mcp_output(output: ToolOutput, config: &PeachConfig) -> ToolOutput {
+///
+/// Returns the shaped output and the files the full text was saved to, so the
+/// caller can register them as recovery handles (R-OUT-3).
+pub fn shape_mcp_output(output: ToolOutput, config: &PeachConfig) -> (ToolOutput, Vec<PathBuf>) {
     let is_error = output.is_error;
+    let mut dumps = Vec::new();
     let values = output
         .values
         .into_iter()
-        .map(|value| shape_value(value, config))
+        .map(|value| shape_value(value, config, &mut dumps))
         .collect();
 
-    ToolOutput { is_error, values }
+    (ToolOutput { is_error, values }, dumps)
 }
 
-fn shape_value(value: ToolValue, config: &PeachConfig) -> ToolValue {
+fn shape_value(value: ToolValue, config: &PeachConfig, dumps: &mut Vec<PathBuf>) -> ToolValue {
     match value {
-        ToolValue::Text(text) => ToolValue::Text(shape_text(&text, config)),
+        ToolValue::Text(text) => ToolValue::Text(shape_text(&text, config, dumps)),
         ToolValue::AI { value, conversation_id } => {
-            ToolValue::AI { value: shape_text(&value, config), conversation_id }
+            ToolValue::AI { value: shape_text(&value, config, dumps), conversation_id }
         }
         // Images and empty values carry nothing to withhold.
         other => other,
     }
 }
 
-fn shape_text(text: &str, config: &PeachConfig) -> String {
+fn shape_text(text: &str, config: &PeachConfig, dumps: &mut Vec<PathBuf>) -> String {
     let shaped = truncate_shell_output(
         text,
         "",
@@ -62,6 +66,7 @@ fn shape_text(text: &str, config: &PeachConfig) -> String {
     // Fail open (CLAUDE.md principle 5): if the dump can't be written, still
     // return the shaped, loud output — just without a working recovery path.
     let dump_path = dump_full_text(text);
+    dumps.extend(dump_path.clone());
 
     let mut body = stdout.head;
     if let Some(tail) = stdout.tail {
@@ -135,7 +140,7 @@ mod tests {
         let fixture = ToolOutput::text("a short mcp result");
         let config = fixture_config();
 
-        let actual = shape_mcp_output(fixture, &config);
+        let (actual, _) = shape_mcp_output(fixture, &config);
 
         assert_eq!(actual.values[0].as_str().unwrap(), "a short mcp result");
     }
@@ -146,7 +151,7 @@ mod tests {
         let fixture = ToolOutput::text(lines.join("\n"));
         let config = fixture_config();
 
-        let actual = shape_mcp_output(fixture, &config);
+        let (actual, _) = shape_mcp_output(fixture, &config);
         let text = actual.values[0].as_str().unwrap();
 
         assert!(text.contains("line 1\n"));
@@ -161,7 +166,7 @@ mod tests {
         let fixture = ToolOutput::text("x".repeat(100));
         let config = fixture_config();
 
-        let actual = shape_mcp_output(fixture, &config);
+        let (actual, _) = shape_mcp_output(fixture, &config);
         let text = actual.values[0].as_str().unwrap();
 
         assert!(text.contains("were cut short at 20 characters"));
@@ -169,11 +174,26 @@ mod tests {
     }
 
     #[test]
+    fn test_the_saved_full_text_is_returned_as_a_handle() {
+        let lines: Vec<String> = (1..=20).map(|i| format!("line {i}")).collect();
+        let fixture = ToolOutput::text(lines.join("\n"));
+        let config = fixture_config();
+
+        let (output, dumps) = shape_mcp_output(fixture, &config);
+        let text = output.values[0].as_str().unwrap();
+
+        assert_eq!(dumps.len(), 1);
+        assert!(text.contains(&dumps[0].display().to_string()));
+        assert_eq!(std::fs::read_to_string(&dumps[0]).unwrap(), lines.join("\n"));
+        let _ = std::fs::remove_file(&dumps[0]);
+    }
+
+    #[test]
     fn test_error_flag_is_preserved() {
         let fixture = ToolOutput::text("boom").is_error(true);
         let config = fixture_config();
 
-        let actual = shape_mcp_output(fixture, &config);
+        let (actual, _) = shape_mcp_output(fixture, &config);
 
         assert!(actual.is_error);
     }
@@ -184,7 +204,7 @@ mod tests {
         let fixture = ToolOutput::image(image.clone());
         let config = fixture_config();
 
-        let actual = shape_mcp_output(fixture, &config);
+        let (actual, _) = shape_mcp_output(fixture, &config);
 
         assert_eq!(actual, ToolOutput::image(image));
     }
