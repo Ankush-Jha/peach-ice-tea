@@ -32,6 +32,16 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       answering §25 with code paths + telemetry fields (D-044). "Grounded in real telemetry" remains partial until a
       completed live run.
 
+## MM — Any model (D-049)
+- [ ] **MM.1** Model profiles: `openrouter-nemotron` (main) and `openrouter-routed` (main + cheap `sage`/compaction);
+      `harness/peach-ice-tea --profile`; runner key-stripping covers them.
+- [ ] **MM.2** Model bake-off: every callable model × TH.7 suite × 1 seed → `benchmarks/reports/models/`; choose the default profile.
+- [ ] **MM.3** `R-TOOL-4` per-role routing in the runtime (`harness.roles.<agent>` provider/model, compaction model on
+      another provider), failing open to the session model. **[A/B]** routed vs single-model.
+- [ ] **MM.4** Quota/outage failover: when D-040's detector sees an exhausted quota or a provider is unreachable, continue
+      on the next model in the profile's fallback list, with a `recovery` event, instead of exiting.
+- [ ] **MM.5** Second-family A/Bs for the flagged work: compact tool docs (DeepSeek arm done), T2.1, T2.6, T1.2.
+
 ## M0 — Foundations (nothing else starts until M0 is done)
 - [ ] **T0.0** Repair the eval harness so it can invoke the agent at all. 10 of 14 evals use the
       `--provider`/`--model` flags removed in `b3ec4d17a` (clap exits 2), and `todo_write_usage` uses
