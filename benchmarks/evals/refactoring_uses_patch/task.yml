@@ -20,7 +20,7 @@ run:
         }
     }
     RUSTEOF
-  - FORGE_SESSION__PROVIDER_ID=zai_coding FORGE_SESSION__MODEL_ID={{model}} FORGE_DEBUG_REQUESTS='{{dir}}/context.json' forgee -p '{{task}}'
+  - FORGE_SESSION__PROVIDER_ID={{provider}} FORGE_SESSION__MODEL_ID={{model}} FORGE_DEBUG_REQUESTS='{{dir}}/context.json' forgee -p '{{task}}'
 
 parallelism: 5
 timeout: 120
@@ -38,8 +38,7 @@ validations:
     command: "jq -e '[.messages[]?.tool_calls[]? | select(.function.name == \"patch\")] | length > 0' {{dir}}/context.json"
 
 sources:
-  - value:
-      - model: "glm-4.7"
+  - csv: ../../models.csv
   - value:
       - task: "Refactor all methods in test_files/api.rs to add error handling by changing return type from String to Result<String, Error>"
       - task: "Update test_files/api.rs methods to return Result<String, Error> instead of String"

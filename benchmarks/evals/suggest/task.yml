@@ -21,14 +21,7 @@ validations:
     command: "! grep -qE '\\{\\s*\"command\"\\s*:'"
 
 sources:
-  - value:
-      - provider: "anthropic"
-        model: "claude-sonnet-4-5-20250929"
-      - provider: "open_router"
-        model: "z-ai/glm-4.7"
-      - provider: "open_router"
-        model: "minimax/minimax-m2.1"
-
+  - csv: ../../models.csv
   - value:
       - prompt: "list all files"
       - prompt: "find all python files"
