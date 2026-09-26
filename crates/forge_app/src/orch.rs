@@ -326,6 +326,14 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
                 .handle(&response_event, &mut self.conversation)
                 .await?;
 
+            // harness: R-EVAL-2 — record the request and the usage it reported.
+            // `message.usage` is already merged across stream events, so it is
+            // this request's own total and safe to sum. Retries are handled
+            // inside `retry_with_config`, so a retried request counts once.
+            tool_context.with_metrics(|metrics| {
+                metrics.task.record_llm_call(Some(&message.usage));
+            })?;
+
             // Turn is completed, if finish_reason is 'stop'. Gemini models
             // return stop as finish reason with tool calls.
             is_complete =
@@ -348,6 +356,15 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
             if let Some(updated_context) = &self.conversation.context {
                 context = updated_context.clone();
             }
+
+            // harness: R-EVAL-2 — cumulative per-tool counts. `ToolErrorTracker`
+            // resets on success (it gates consecutive failures), so it cannot
+            // serve as the task-level error count.
+            tool_context.with_metrics(|metrics| {
+                for (_, result) in tool_call_records.iter() {
+                    metrics.task.record_tool_call(&result.name, result.is_error());
+                }
+            })?;
 
             self.error_tracker.adjust_record(&tool_call_records);
             let allowed_max_attempts = self.error_tracker.limit();
@@ -422,6 +439,17 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
 
             // Update metrics in conversation
             tool_context.with_metrics(|metrics| {
+                // harness: R-EVAL-2 — refresh wall time on every sync so the
+                // figure is correct even if the loop exits abnormally.
+                if let Some(elapsed) = metrics.duration(chrono::Utc::now()) {
+                    metrics.task.wall_ms = elapsed.as_millis() as u64;
+                }
+                // harness: this assignment overwrites the conversation's
+                // metrics wholesale, so carry over the fields that hooks —
+                // not the tool context — are the source of truth for.
+                // `CompactionHandler` writes `compactions` during the response
+                // hook and would otherwise lose it here.
+                metrics.task.compactions = self.conversation.metrics.task.compactions.clone();
                 self.conversation.metrics = metrics.clone();
             })?;
 
