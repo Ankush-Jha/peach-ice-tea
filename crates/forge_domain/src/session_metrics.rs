@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub use crate::file_operation::FileOperation;
-use crate::{Todo, TodoItem, TodoStatus};
+use crate::{TaskMetrics, Todo, TodoItem, TodoStatus};
 
 #[derive(Debug, Clone, Default, Setters, Serialize, Deserialize)]
 #[setters(into, strip_option)]
@@ -27,6 +27,13 @@ pub struct Metrics {
     /// todos that were removed from active updates.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub todos: Vec<Todo>,
+
+    // harness: R-EVAL-2 — token and call costs for the work done in this
+    // session. In non-interactive (`-p`) mode a session is exactly one task,
+    // which is the case the A/B runner measures; an interactive session that
+    // spans several user turns accumulates across all of them.
+    #[serde(default)]
+    pub task: TaskMetrics,
 }
 
 impl Metrics {
