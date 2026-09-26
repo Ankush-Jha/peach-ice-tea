@@ -600,6 +600,8 @@ interface FixtureResult {
   harness_integrity: HarnessIntegrity | null;
   /** Path to forge's telemetry JSONL, when it was captured. */
   telemetry_path: string | null;
+  /** forge's evidence bundle (`--evidence-dir`), when the binary supports it. */
+  evidence_dir: string | null;
   wall_ms: number;
   error: string | null;
 }
@@ -734,6 +736,7 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
   let runError: string | null = null;
   let harnessIntegrity: HarnessIntegrity | null = null;
   let telemetryPath: string | null = null;
+  let evidenceDir: string | null = null;
   let cheatNote: string | null = null;
 
   if (args.agent === "reference" || args.agent === "cheat" || args.agent === "addnew") {
@@ -748,16 +751,17 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
       env = await unroutableForgeEnv(tmpDir);
       execArgs.push("--max-duration-secs", String(FORGE_CHEAT_BUDGET_SECS));
     }
-    if (await supportsTelemetry(args.bin)) {
+    if (await supportsEvidenceDir(args.bin)) {
+      // Outside the repo copy, like the judges' evidence (TH.5). Telemetry is left to
+      // default into the bundle, so every suite run exercises that default.
+      evidenceDir = path.join(tmpDir, "evidence");
+      execArgs.push("--evidence-dir", evidenceDir);
+      telemetryPath = path.join(evidenceDir, "telemetry.jsonl");
+    } else if (await supportsTelemetry(args.bin)) {
       telemetryPath = path.join(tmpDir, "telemetry.jsonl");
       execArgs.push("--telemetry", telemetryPath);
     } else if (cheating) {
       fail(`--agent forge-cheat needs \`${args.bin} exec --telemetry\` to know when the guard is live`);
-    }
-    if (await supportsEvidenceDir(args.bin)) {
-      const evidenceDir = path.join(tmpDir, "evidence");
-      await fs.mkdir(evidenceDir, { recursive: true });
-      execArgs.push("--evidence-dir", evidenceDir);
     }
     execArgs.push(prompt);
     let result: RunResult;
@@ -856,6 +860,7 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
     metrics,
     harness_integrity: harnessIntegrity,
     telemetry_path: telemetryPath,
+    evidence_dir: evidenceDir,
     wall_ms: Date.now() - fixtureStart,
     error: runError,
   };
@@ -977,6 +982,7 @@ function renderMarkdown(report: RunReport): string {
         lines.push(`- forge guard: \`${v.path}\` ${v.kind}, ${v.restored ? "restored" : "NOT restored"}`);
       }
       if (r.telemetry_path) lines.push(`- telemetry: \`${r.telemetry_path}\``);
+      if (r.evidence_dir) lines.push(`- evidence bundle: \`${r.evidence_dir}\``);
       lines.push(`- exec: ${r.exec.note}`);
       lines.push(`- tmp dir: \`${r.tmp_dir}\``);
       lines.push("");

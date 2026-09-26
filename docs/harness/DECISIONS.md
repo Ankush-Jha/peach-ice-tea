@@ -460,3 +460,23 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Not yet emitted (TH.4 stays unticked):** `context_compaction` / `context_composition`, `test_run` (TH.6),
   `error` / `recovery`. The LLM call for conversation-title generation bypasses the orchestrator and is
   in neither the metrics nor telemetry.
+
+## D-034 — TH.5 evidence bundle: shape, order, and what it does not contain yet (2026-09-25)
+- **Decision:** `exec --evidence-dir <DIR>` writes `prompt.txt`, `integrity.json`, `diff.patch`, `tests.json`,
+  `transcript.json`, `exec.json`, `telemetry.jsonl` (the default location; `--telemetry` overrides it) and,
+  last, `manifest.json` with SHA-256 checksums, identity, versions, outcome and notes. The order follows PLAN.md:
+  restore comes before the diff, and the manifest comes after everything else. All three exit paths
+  (completed, error, time budget) produce the full set.
+- **Frozen prompt = the task as given.** The protected-file notice the harness prepends is harness behaviour,
+  visible in `transcript.json`, and is not part of what the team submitted.
+- **Redaction:** JSON files go through `redact_json_strings` (string leaves only), and text files go through
+  `redact`. Neither key-based redaction over the whole document nor text redaction of serialised JSON is safe:
+  the first wipes token counters, the second can corrupt JSON.
+- **Keep the bundle outside the repository** (flag help says so). If it is inside, the diff excludes it, but
+  `git status` will still show it. PLAN.md's `.git/info/exclude` idea was not adopted; writing into `.git` is
+  a side effect on the judged repository.
+- **Not yet (TH.5 stays unticked):** `tests.json` says `ran: false` until TH.6 adds a final test run.
+  `report.json`/`report.md` wait on TH.8. SIGTERM/Ctrl-C (planned exit 5) is still not routed through
+  `finish`/`seal`, so an externally killed run leaves no bundle. `run.ts` now relies on the telemetry
+  default whenever `--evidence-dir` is available, so the suite exercises it: `forge-cheat` is 3/3 with a
+  complete bundle on the time-budget path.
