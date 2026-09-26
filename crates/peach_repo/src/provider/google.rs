@@ -55,14 +55,17 @@ impl<T: HttpInfra> Google<T> {
         model: &ModelId,
         context: Context,
     ) -> ResultStream<ChatCompletionMessage, anyhow::Error> {
-        let request = Request::from(context);
-
         // Google models are specified in the URL path, not the request body
         // URL format: {base_url}/models/{model}:streamGenerateContent?alt=sse
         // The ?alt=sse query parameter is critical for proper SSE content-type
         let base_url = self.chat_url.as_str();
         let model_id_str = model.as_str();
         let model_name = model_id_str.strip_prefix("models/").unwrap_or(model_id_str);
+
+        // harness: R-HACK-6 — model-aware so Gemini 3+ gets `thinkingLevel`
+        // from the configured effort. The bare `From<Context>` sends the
+        // Gemini 2.x shape, which silently dropped the effort setting.
+        let request = Request::from_context(context, model_name);
         let full_url = format!(
             "{}/models/{}:streamGenerateContent?alt=sse",
             base_url.trim_end_matches('/'),
@@ -510,6 +513,41 @@ mod tests {
             }
         })
         .to_string()
+    }
+
+    #[tokio::test]
+    async fn test_chat_sends_thinking_level_for_gemini_3() -> anyhow::Result<()> {
+        let mut fixture = MockServer::new().await;
+        let model_id = "gemini-3.8-flash";
+        let response = format!("data: {}", create_mock_chat_response("ok"));
+        let mock = fixture
+            .mock_google_chat_stream_matching(
+                model_id,
+                vec![response],
+                mockito::Matcher::PartialJson(serde_json::json!({
+                    "generationConfig": {"thinkingConfig": {"thinkingLevel": "high"}}
+                })),
+            )
+            .await;
+        let google = create_google(&fixture.url())?;
+        let context = Context::default()
+            .reasoning(peach_domain::ReasoningConfig {
+                enabled: Some(true),
+                effort: Some(peach_domain::Effort::High),
+                max_tokens: None,
+                exclude: None,
+            })
+            .add_message(ContextMessage::user("Hi", None));
+
+        let mut stream = google
+            .chat(&ModelId::new(format!("models/{}", model_id)), context)
+            .await?;
+        while let Some(result) = stream.next().await {
+            result?;
+        }
+
+        mock.assert_async().await;
+        Ok(())
     }
 
     #[tokio::test]
