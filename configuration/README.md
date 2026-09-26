@@ -13,4 +13,5 @@ environment flags, all **off** by default until an A/B supports them: `PEACH_HAR
 `PEACH_HARNESS_LINE_NUMBERS_OFF`, `PEACH_HARNESS_PARALLEL_READONLY`, `PEACH_HARNESS_TOOL_CORRECTION`,
 `PEACH_HARNESS_HANDOFF_NOTE` (D-063), `PEACH_HARNESS_RECALL_HANDLES` (D-066).
 Tier 1 behaviours that are on in `exec`: the verify gate (`PEACH_HARNESS_VERIFY_GATE=0` disables it) and
-recovery hints (`PEACH_HARNESS_RECOVERY_HINTS=0` disables them).
+recovery hints (`PEACH_HARNESS_RECOVERY_HINTS=0` disables them). `PEACH_HARNESS_FALLBACK_MODELS` (set in a
+profile's `profile.env`) lists models to fail over to on an exhausted quota or an outage (D-072).
