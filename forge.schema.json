@@ -272,6 +272,13 @@
         }
       ]
     },
+    "roles": {
+      "description": "Model and provider per agent id (e.g. `sage`), so each role can run on\nthe model that suits it. Used when the agent's own definition names no\nprovider or model; agents without an entry use `session`.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ModelConfig"
+      }
+    },
     "sem_search_top_k": {
       "description": "Number of top results retained after re-ranking in semantic search.",
       "type": "integer",
