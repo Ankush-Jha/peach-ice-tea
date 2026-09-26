@@ -2725,6 +2725,7 @@ dependencies = [
  "peach_domain",
  "peach_eventsource",
  "peach_fs",
+ "peach_harness",
  "peach_snaps",
  "peach_stream",
  "peach_test_kit",
