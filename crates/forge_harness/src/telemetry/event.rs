@@ -329,6 +329,23 @@ pub struct Retry {
     /// known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_call_id: Option<String>,
+    /// For a failed attempt that produced a response (an empty completion),
+    /// whether the provider reported usage for it: `true` with the counts
+    /// below, `false` when it reported none — which means the attempt's cost
+    /// is unknown, not zero. Absent for failures with no response body to
+    /// bill (HTTP 429/5xx, transport errors).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_reported: Option<bool>,
+    /// Provider-reported input tokens for the failed attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<u64>,
+    /// Provider-reported output tokens (thinking included) for the failed
+    /// attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<u64>,
+    /// Provider-reported reasoning tokens for the failed attempt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_tokens: Option<u64>,
 }
 
 /// Something failed.
@@ -491,11 +508,16 @@ mod tests {
             max_attempts: Some(3),
             reason: "timeout".to_string(),
             origin_call_id: None,
+            usage_reported: None,
+            input_tokens: None,
+            output_tokens: None,
+            reasoning_tokens: None,
         };
 
         let actual = serde_json::to_value(&fixture).unwrap();
 
         assert!(actual.get("origin_call_id").is_none());
+        assert!(actual.get("usage_reported").is_none());
     }
 
     #[test]
