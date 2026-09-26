@@ -124,6 +124,10 @@ pub struct ContextSection {
     /// `(messages_before, messages_after)` per compaction, in order.
     pub compaction_messages: Vec<(u64, u64)>,
     pub tokens_reclaimed_estimated: u64,
+    /// Estimated tokens by source at the first request (system prompt, tool
+    /// definitions, task): the fixed cost every later request repeats.
+    #[serde(default)]
+    pub prompt_composition: BTreeMap<String, u64>,
 }
 
 /// One tool's usage.
@@ -244,7 +248,12 @@ pub fn build(dir: &Path) -> Report {
         refused_integrity_actions: 0,
         suppressed_prompts: 0,
     };
-    let mut context = ContextSection { compactions: 0, compaction_messages: vec![], tokens_reclaimed_estimated: 0 };
+    let mut context = ContextSection {
+        compactions: 0,
+        compaction_messages: vec![],
+        tokens_reclaimed_estimated: 0,
+        prompt_composition: BTreeMap::new(),
+    };
     let mut agents: Vec<String> = vec![];
     let mut timeline = vec![];
     let mut retry_events = 0u64;
@@ -334,7 +343,12 @@ pub fn build(dir: &Path) -> Report {
             TelemetryEvent::Error(error) => format!("error {}: {}", error.kind, error.message),
             TelemetryEvent::Recovery(recovery) => format!("recovery: {}", recovery.action),
             TelemetryEvent::TestRun(run) => format!("test run: exit {:?}", run.exit_code),
-            TelemetryEvent::ContextComposition(_) => "context composition recorded".to_string(),
+            TelemetryEvent::ContextComposition(composition) => {
+                if context.prompt_composition.is_empty() {
+                    context.prompt_composition = composition.tokens_by_source_estimated.clone();
+                }
+                "prompt composition recorded".to_string()
+            }
         };
         timeline.push(TimelineEntry { timestamp: timestamp.clone(), agent: agent_id.clone(), event: summary });
     }
@@ -503,6 +517,15 @@ pub fn render_md(report: &Report) -> String {
             )
         }
     );
+    if !c.prompt_composition.is_empty() {
+        let total: u64 = c.prompt_composition.values().sum();
+        let parts: Vec<String> = c
+            .prompt_composition
+            .iter()
+            .map(|(source, tokens)| format!("{source} {tokens} ({:.0}%)", *tokens as f64 * 100.0 / total.max(1) as f64))
+            .collect();
+        let _ = writeln!(md, "First request, estimated tokens by source: {}\n", parts.join(" · "));
+    }
 
     let _ = writeln!(md, "## Tools\n");
     if report.tools.is_empty() {
