@@ -2272,6 +2272,7 @@ dependencies = [
  "forge_domain",
  "forge_embed",
  "forge_eventsource",
+ "forge_harness",
  "forge_json_repair",
  "forge_stream",
  "forge_template",
