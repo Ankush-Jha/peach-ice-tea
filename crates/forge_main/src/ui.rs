@@ -4344,7 +4344,7 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
     // `-p` returns 0 even when the provider errored or a limit was hit.
     async fn handle_exec(
         &mut self,
-        task: String,
+        mut task: String,
         json: bool,
         max_duration_secs: Option<u64>,
     ) -> anyhow::Result<()> {
@@ -4355,6 +4355,37 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             .get_session_config()
             .await
             .map(|config| config.model.to_string());
+
+        // harness: R-HACK-2 / D-028 — activates the test-integrity guard for
+        // this process. Everything under `forge_harness::integrity` and
+        // `forge_harness::runtime` was already wired and tested, but nothing
+        // called `install`, so the guard checked a runtime that never
+        // existed and refused nothing. Defaults for now (D-019's globs);
+        // making these configurable is separate follow-up work, not a
+        // reason to leave the guard inert in the meantime.
+        let repo_root = self.state.cwd.clone();
+        let protect_globs: Vec<String> =
+            forge_harness::integrity::DEFAULT_PROTECTED_GLOBS.iter().map(|s| s.to_string()).collect();
+        let exclude_globs: Vec<String> =
+            forge_harness::integrity::DEFAULT_EXCLUDE_GLOBS.iter().map(|s| s.to_string()).collect();
+        let (protected, manifest) =
+            forge_harness::integrity::discover_and_capture(&repo_root, &protect_globs, &exclude_globs, None);
+        if let Some(notice) = forge_harness::integrity::model_notice(&protected) {
+            // harness: CLAUDE.md principle 4 — withheld/restricted information
+            // must be loud in plain text inside the model's context, not only
+            // in a log the model never sees. Prepended to the task itself
+            // (per ALIGNMENT.md/PLAN.md decision C1) rather than a separate
+            // context channel, since `additional_context` is marked droppable
+            // elsewhere in this codebase and this must never be dropped.
+            task = format!("{notice}
+
+{task}");
+        }
+        forge_harness::runtime::install(
+            forge_harness::runtime::HarnessRuntime::new(repo_root.clone())
+                .non_interactive(true)
+                .protected(protected),
+        );
 
         let started = std::time::Instant::now();
 
