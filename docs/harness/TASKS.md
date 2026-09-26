@@ -27,7 +27,10 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [x] **TH.8** `R-HACK-4` standard report generator (`forge report`).
       → `forge_harness::report`, golden from `fixtures/evidence_min`; generated in every bundle (D-035).
       Organizer `report.schema.json` adapter waits on publication (D-020).
-- [ ] **TH.9** `R-HACK-9` submission layout, README, `documentation/ARCHITECTURE.md`, prompt template; `harness/peach-ice-tea` entry command and the `peach-ice-tea` harness identity constant (D-023).
+- [x] **TH.9** `R-HACK-9` submission layout, README, `documentation/ARCHITECTURE.md`, prompt template; `harness/peach-ice-tea` entry command and the `peach-ice-tea` harness identity constant (D-023).
+      → wrapper (gemini-only, evidence always, budget, key hygiene), build/check scripts, §32 tree, README, ARCHITECTURE
+      answering §25 with code paths + telemetry fields (D-044). "Grounded in real telemetry" remains partial until a
+      completed live run.
 
 ## M0 — Foundations (nothing else starts until M0 is done)
 - [ ] **T0.0** Repair the eval harness so it can invoke the agent at all. 10 of 14 evals use the
