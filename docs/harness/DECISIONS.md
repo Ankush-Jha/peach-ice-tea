@@ -1136,3 +1136,32 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   - The diff assumes forge's single-summary compaction shape. A future stage that rewrites differently (S0/S1
     stubs, T3.5/T3.6) must write its own events rather than rely on the diff. That is the point of recording
     compaction events at the source, and it is noted for those tasks.
+
+## D-066 — T3.3: results a compaction summarises away get recall handles read with `read`, not a new tool (flagged) (2026-09-26)
+- **Problem (R-CTX-3):** forge's summary keeps *that* a call ran (`**Execute:** cargo test`) but not what it returned.
+  After compaction the only way back to a result is re-running the call, which is S2's "just re-run it" flaw and
+  impossible for anything non-idempotent.
+- **Decision: no new tool.** The spec names `recall(handle, start_line?, end_line?, pattern?)`. `read` already takes
+  a path and a line range, and `fs_search` a pattern, so a handle that is a *file* gives the same four parameters
+  through tools every model already uses well. A new tool would touch the catalog, descriptions, executor and every
+  tool-definition snapshot, and add a tool to learn, against HACKATHON §21 ("more tools ≠ better") and principle 8.
+  The artifact store (T3.1) stays the durable copy; the handle file is its readable face.
+- **Built (`compaction_pipeline::recall`):**
+  - When S3 runs, every tool result in the old view that is gone from the new one is written to a
+    `forge_recall_*.txt` file.
+  - The summary gains a **RECOVERABLE RESULTS** section: tool, call id, `read <path> (N lines)`, and the instruction
+    to read or search it instead of re-running the call. That makes the withheld output loud (principle 4).
+  - Handles are registered as dump files, so reading one counts as `offload_read`.
+  - `FORGE_HARNESS_RECALL_HANDLES=1`, **default off**: it adds text to every summary and changes what the model is
+    likely to do next, so it waits for an A/B (principle 6).
+- **Bug found by the behaviour test:** `offload_read` stayed 0 even though the read happened. The hook registered
+  the handles on `conversation.metrics`, but the orchestrator replaces those metrics wholesale with the tool
+  context's copy every iteration, the same trap `compactions` already had a carve-out for. **Fix:**
+  `TaskMetrics::absorb_dump_files` merges the hook's handles into the tool context's copy at that sync point.
+- **Proof (R-CTX-3's acceptance):**
+  - A scripted run echoes `MARKER_ONE`, and compaction summarises it away.
+  - A `Turn::FromRequest` reads the handle named in the summary.
+  - The next request holds `MARKER_ONE` again, and `offload_read ≥ 1`.
+  - Without the flag, no section appears.
+  - Unit tests: only results that left the view get handles with their full text; section format; the pipeline
+    lists every handle below the summary.

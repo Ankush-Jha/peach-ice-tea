@@ -530,6 +530,8 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
                 // `CompactionHandler` writes `compactions` during the response
                 // hook and would otherwise lose it here.
                 metrics.task.compactions = self.conversation.metrics.task.compactions.clone();
+                // Likewise recall handles the compaction hook registered (D-066).
+                metrics.task.absorb_dump_files(&self.conversation.metrics.task);
                 self.conversation.metrics = metrics.clone();
             })?;
 
