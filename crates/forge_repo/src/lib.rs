@@ -8,6 +8,7 @@ mod fs_snap;
 mod fuzzy_search;
 mod provider;
 mod skill;
+mod thread_event;
 mod validation;
 
 mod proto_generated {
@@ -16,3 +17,4 @@ mod proto_generated {
 
 // Only expose forge_repo container
 pub use forge_repo::*;
+pub use thread_event::ThreadEventRepositoryImpl;

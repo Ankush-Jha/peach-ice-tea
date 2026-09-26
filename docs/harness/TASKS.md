@@ -120,7 +120,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       real-binary test (D-042). Unticked pending A/B.
 
 ## M3 — Context engine
-- [ ] **T3.1** `R-CTX-1` migrations + `thread_events` + `artifacts` + repository + replay test.
+- [x] **T3.1** `R-CTX-1` migrations + `thread_events` + `artifacts` + repository + replay test.
+      → domain events + replay, SQLite repo with content-addressed artifacts, cap and GC; byte-exact replay test (D-064).
 - [ ] **T3.2** `R-CTX-1` write path: orchestrator appends all events; `conversations.context`
       becomes projection; old conversations still resume.
 - [ ] **T3.3** `R-CTX-3` `recall` tool over artifacts; stub format with handles.
