@@ -1717,3 +1717,34 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
     in `thread_events`, and the tool is absent by default.
 - **A/B:** T3.14, pending. Like T3.10, it needs runs long enough to compact, so both arms use a low
   `FORGE_COMPACT__MESSAGE_THRESHOLD`.
+
+## D-088 — The runtime verification gate ships on by default (TH.10, R-HACK-10) (2026-09-27)
+- **A/B, 6 fixtures × 1 seed per family, on the NIM pool (development only):**
+
+  | Model (family) | Success base → cand | Input tokens | LLM calls | Wall time | Report |
+  |---|---|---|---|---|---|
+  | Kimi K3 (Moonshot) | **0/6 → 5/6** | +224% | +191% | +220% | `2026-09-26-runtime-verify-gate-nim-kimi.md` |
+  | Muse Glimmer 30B (Meta) | 6/6 → 6/6 | −2.1% | ±0% | −11.6% | `2026-09-26-runtime-verify-gate-nim-muse.md` |
+
+  - **Kimi (base):** in 5 of 6 runs it declared done after one call without fixing anything (D-085 saw the same).
+  - **Kimi (candidate):** the gate ran in every run and sent the real failure back. Four runs then succeeded; in
+    three of them the gate had to run a second time. `node-feature` used both attempts and still failed, and the
+    cap let it end instead of looping.
+  - **Kimi's cost:** tokens went up because the runs now do the task. Principle 1 optimises the completed task,
+    so paying more to succeed where the base produced nothing is a gain.
+  - **Muse:** the gate ran once per run, passed each time, and added no model call.
+- **Principle 6 is met:** two families, no success loss, one large gain, and no cost regression on the model that
+  already succeeds. `runtime_verify_gate = true` in `.forge.toml`; `FORGE_RUNTIME_VERIFY_GATE=false` restores the
+  soft gate (D-037). The gate still fails open with no exec runtime or no test command, so interactive use is
+  unchanged.
+- **Tests:** the scripted-model helper pins the gate off as a baseline. Those conversations model a stop being
+  accepted; with the gate on, their unfixed fixtures would draw extra turns they do not script. Two things keep
+  the gate covered:
+  - The gate's own tests set it explicitly.
+  - New `test_the_hard_gate_is_on_by_default` unsets the variable to check the shipped default.
+
+  No assertion was weakened. Separately, `make check`'s `forge-cheat` integrity run passed 6/6 on the new binary:
+  it never reaches a voluntary stop, so the gate is not involved.
+- **Caveat:** 1 seed per family, so the confidence intervals are wide (Kimi's candidate, 44–97%). The size of the
+  Kimi effect (0 → 5) and its mechanism, visible in every bundle, carry the decision. The graded Gemini model is
+  not measured yet; a Gemini arm joins the compact-docs check at the next quota reset.
