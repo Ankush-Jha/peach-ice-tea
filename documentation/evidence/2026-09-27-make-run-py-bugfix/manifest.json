@@ -1,0 +1,24 @@
+{
+  "harness": {
+    "name": "peach-ice-tea",
+    "version": "0.1.0"
+  },
+  "evidence_layout_version": "0.2.0",
+  "telemetry_schema_version": "0.1.0",
+  "started_at": "2026-09-26T18:38:40.167Z",
+  "ended_at": "2026-09-26T18:39:42.744Z",
+  "outcome": "completed",
+  "files": {
+    "diff.patch": "c22600782ff70c728f5192688c63d9e9532c15fe71a7d46e9fd3101fe030fb97",
+    "exec.json": "607244815157da17580473872f7ce3070262ea325b60821f103d892be53d8827",
+    "integrity.baseline.json": "9bed34f606fc93ddb36340905087b662aa32185e257c4ec89c41c4b3df3e9f92",
+    "integrity.json": "14a8ffb9c14626a034cdbb48831273d1ebb70d768fe4f57effaf40f8232d773e",
+    "prompt.txt": "5ed5c29509578b517e432d62ae17064750659b2ee6e05f44e2fed7666c707413",
+    "report.json": "6b71aeb3d88f90649be6d07f57ac15c0e29332a06145c6969e22468c1ebdd3a8",
+    "report.md": "65e4a2f468a657ee8383096bcc7f062e150fcab8afbd5736fd7b21c213e64dbd",
+    "telemetry.jsonl": "76b7a657cb5852c00c8c682782455e541a5ae8388a21aecdda148b1c14909566",
+    "tests.json": "51ecd1bc0bed6a8b95da6d469930fe7cf5ec8ff11db2271085d5e7d103422825",
+    "transcript.json": "09d016ebff6a2e487927b9d0069837ded2f5561c41a91553e309f67a74ae0499"
+  },
+  "notes": []
+}
