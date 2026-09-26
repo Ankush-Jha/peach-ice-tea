@@ -1,0 +1,9 @@
+# Development profile — NOT for a judged run: the hackathon fixes the model to Gemini and
+# prohibits unauthorised external models (HACKATHON.md §6, §31; D-017, D-036).
+# Uses forge's built-in `deepseek` provider (api.deepseek.com, OpenAI wire shape); models are
+# discovered from its /models endpoint, so only the session is set here. The direct-API id is
+# `deepseek-flash` (other gateways in provider.json call it `deepseek-v4-flash`); `deepseek-v4-pro`
+# is the larger model. Checked against api-docs.deepseek.com on 2026-09-25.
+[session]
+provider_id = "deepseek"
+model_id = "deepseek-flash"
