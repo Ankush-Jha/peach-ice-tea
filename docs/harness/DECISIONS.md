@@ -238,3 +238,15 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   forever — a guaranteed correctness score of zero.
 - **Decision:** the evaluation profile never asks. Destructive-operation safety in that profile comes from R-HACK-2's
   runtime guards and the evaluation sandbox the organizers provide, not from prompts. T4.1 stays interactive-only.
+
+## D-023 — The harness is named "Peach Ice Tea" (2026-09-22)
+- **Context:** the team named the harness. §30's evaluation record carries a harness name and version, and the name
+  is what judges see in the README, the entry command, the transcript and the report.
+- **Decision:** product name **Peach Ice Tea**; machine slug `peach-ice-tea`. It is used for: the README and
+  `documentation/`; the entry command `harness/peach-ice-tea` (the wrapper script D-021 already places in `harness/`);
+  the harness identity field in telemetry, the evidence manifest and the report (`name = "peach-ice-tea"` plus version).
+  It is defined once, as a constant, so nothing hard-codes the string twice.
+- **Not renamed:** the Rust crates (`peach_*`) and the `peach` binary, because renaming them breaks every upstream merge
+  (D-004), and upstream's user-facing "Peach" strings (banner, prompts), which are numerous and churn with every
+  release. The README states plainly that Peach Ice Tea is built on a Peach Ice Tea fork — which also answers ALIGNMENT §4
+  Q1 honestly rather than obscuring it. Rebranding the binary and banner is a later, separate decision if wanted.

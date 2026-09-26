@@ -16,7 +16,7 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [ ] **TH.6** `R-HACK-7` verified completion: test-command detection, green-after-last-edit gate, failure classification + recovery hints.
 - [ ] **TH.7** `R-HACK-8` local hackathon-shaped evaluation suite and runner (replaces T0.5 as primary suite).
 - [ ] **TH.8** `R-HACK-4` standard report generator (`peach report`).
-- [ ] **TH.9** `R-HACK-9` submission layout, README, `documentation/ARCHITECTURE.md`, prompt template.
+- [ ] **TH.9** `R-HACK-9` submission layout, README, `documentation/ARCHITECTURE.md`, prompt template; `harness/peach-ice-tea` entry command and the `peach-ice-tea` harness identity constant (D-023).
 
 ## M0 — Foundations (nothing else starts until M0 is done)
 - [ ] **T0.0** Repair the eval harness so it can invoke the agent at all. 10 of 14 evals use the
