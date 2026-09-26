@@ -153,6 +153,38 @@ pub fn unattended_followup_answer(question: &str) -> Option<String> {
     Some(answer)
 }
 
+/// What the model is told when the permission policy stops a tool call in an
+/// unattended run. Upstream's text says the user denied it; there is no user,
+/// and "denied" invites asking again (CLAUDE.md principle 4).
+pub const UNATTENDED_PERMISSION_REFUSAL: &str = "Not run: the permission policy (permissions.yaml) \
+does not allow this operation without approval, and this run is unattended, so no person is present \
+to approve it. Do not retry it; find another way, or finish without it and say what was not done.";
+
+/// Whether an unattended run must refuse an operation the permission policy
+/// wants a person to confirm, instead of asking. Records the refusal in
+/// telemetry.
+///
+/// Asking blocks until the run's budget under a terminal (reproduced under a
+/// pseudo-TTY: `time_budget`, task not done), and forever without a budget.
+/// Refusing, not allowing, because whoever wrote a `confirm` rule wanted a
+/// person to decide, and none is present (D-022).
+///
+/// # Arguments
+/// * `detail` - What would have been asked, kept in telemetry.
+pub fn refuse_permission_prompt(detail: &str) -> bool {
+    if !is_non_interactive() {
+        return false;
+    }
+    crate::telemetry::emit(crate::telemetry::TelemetryEvent::PromptSuppressed(
+        crate::telemetry::event::PromptSuppressed {
+            prompt_kind: "permission".to_string(),
+            detail: detail.to_string(),
+            default_action: Some("refused".to_string()),
+        },
+    ));
+    true
+}
+
 /// Whether an unattended run must refuse a project's untrusted MCP servers
 /// instead of asking to trust them. Records the refusal in telemetry.
 ///
@@ -240,6 +272,7 @@ mod tests {
             None
         );
         assert!(!is_non_interactive());
+        assert!(!refuse_permission_prompt("How would you like to proceed?"));
     }
 
     #[test]
