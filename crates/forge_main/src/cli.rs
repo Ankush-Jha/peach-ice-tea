@@ -112,6 +112,14 @@ pub enum TopLevelCommand {
         /// restore. Off by default.
         #[arg(long, value_name = "FILE")]
         telemetry: Option<PathBuf>,
+
+        /// Write the run's evidence bundle to this directory: the prompt,
+        /// transcript, telemetry, integrity result, repository diff, exec
+        /// outcome and a checksum manifest (R-HACK-5). Keep it outside the
+        /// repository being worked on. Telemetry goes to
+        /// `<DIR>/telemetry.jsonl` unless `--telemetry` says otherwise.
+        #[arg(long, value_name = "DIR")]
+        evidence_dir: Option<PathBuf>,
     },
 
     /// Manage agents.

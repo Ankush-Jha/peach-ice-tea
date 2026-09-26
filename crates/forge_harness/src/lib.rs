@@ -6,6 +6,7 @@
 //! `forge_app`, to keep the dependency graph acyclic.
 
 pub mod identity;
+pub mod evidence;
 pub mod integrity;
 pub mod redact;
 pub mod runtime;

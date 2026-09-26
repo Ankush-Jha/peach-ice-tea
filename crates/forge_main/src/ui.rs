@@ -694,8 +694,12 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
                 self.on_info(porcelain, conversation_id).await?;
                 return Ok(());
             }
-            TopLevelCommand::Exec { task, json, max_duration_secs, telemetry } => {
-                self.handle_exec(task.clone(), json, max_duration_secs, telemetry).await?;
+            TopLevelCommand::Exec { task, json, max_duration_secs, telemetry, evidence_dir } => {
+                let outputs = crate::harness_exec::ExecOutputs {
+                    evidence_dir: evidence_dir.as_deref(),
+                    telemetry: telemetry.as_deref(),
+                };
+                self.handle_exec(task.clone(), json, max_duration_secs, outputs).await?;
                 return Ok(());
             }
             TopLevelCommand::Banner => {
@@ -4347,7 +4351,7 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         mut task: String,
         json: bool,
         max_duration_secs: Option<u64>,
-        telemetry: Option<PathBuf>,
+        outputs: crate::harness_exec::ExecOutputs<'_>,
     ) -> anyhow::Result<()> {
         self.state.non_interactive = true;
 
@@ -4361,8 +4365,8 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         // manifest and activate the dispatch-time guard before the agent can
         // act, and verify-and-restore after it stops (`finish`, below, on
         // every exit path).
-        let (harness, notice) =
-            crate::harness_exec::ExecHarness::start(self.state.cwd.clone(), telemetry.as_deref());
+        let (mut harness, notice) =
+            crate::harness_exec::ExecHarness::start(self.state.cwd.clone(), &task, outputs);
         if let Some(notice) = notice {
             // harness: CLAUDE.md principle 4 — withheld/restricted information
             // must be loud in plain text inside the model's context, not only
@@ -4432,7 +4436,7 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             .ok()
             .and_then(|value| value.as_str().map(str::to_string))
             .unwrap_or_default();
-        let integrity = harness.finish(&outcome_name, elapsed_ms);
+        let integrity = harness.finish();
 
         let metrics = self.exec_task_metrics(elapsed_ms).await;
 
@@ -4446,6 +4450,23 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
         if let Some(error) = error {
             report = report.error(error);
         }
+
+        // harness: R-HACK-5 — the transcript is written on every exit path,
+        // not only on completion like the interactive auto-dump.
+        let transcript = match self.state.conversation_id {
+            Some(id) => match self.api.conversation(&id).await.ok().flatten() {
+                Some(conversation) => {
+                    let related = self.fetch_related_conversations(&conversation).await;
+                    Some(serde_json::json!({
+                        "conversation": conversation,
+                        "related_conversations": related,
+                    }))
+                }
+                None => None,
+            },
+            None => None,
+        };
+        harness.seal(transcript, &report, &outcome_name, elapsed_ms);
 
         if json {
             // Printed directly rather than through the markdown writer so the
