@@ -8,7 +8,9 @@
 //! (S1) and relevance scoring (S2) - are `[A/B]` tasks (T3.5, T3.6, T3.9) and
 //! join as new variants of [`Stage`] ahead of `Summarize`.
 
-use peach_domain::{Compact, Context, Environment};
+pub mod handoff;
+
+use peach_domain::{Compact, Context, ContextMessage, Environment};
 
 use crate::compact::Compactor;
 
@@ -48,6 +50,8 @@ pub struct Pipeline {
     stages: Vec<Stage>,
     /// Token count at or below which later stages are skipped.
     target_tokens: usize,
+    /// Placed at the top of the summary S3 writes (R-CTX-6, [`handoff`]).
+    handoff_note: Option<String>,
 }
 
 impl Pipeline {
@@ -59,7 +63,17 @@ impl Pipeline {
     /// * `environment` - The environment the summary template renders with.
     /// * `target_tokens` - Stop once the context is at or below this size.
     pub fn new(compact: Compact, environment: Environment, target_tokens: usize) -> Self {
-        Self { stages: vec![Stage::Summarize(Compactor::new(compact, environment))], target_tokens }
+        Self {
+            stages: vec![Stage::Summarize(Compactor::new(compact, environment))],
+            target_tokens,
+            handoff_note: None,
+        }
+    }
+
+    /// Sets the handoff note placed at the top of the S3 summary.
+    pub fn handoff_note(mut self, note: Option<String>) -> Self {
+        self.handoff_note = note;
+        self
     }
 
     /// Runs the stages in order until the context is at or below the target;
@@ -75,10 +89,27 @@ impl Pipeline {
             if !is_last && stage_reached != "none" && *context.token_count() <= self.target_tokens {
                 break;
             }
+            let before = context.messages.clone();
             context = stage.apply(context)?;
             stage_reached = stage.name();
+            if matches!(stage, Stage::Summarize(_))
+                && let Some(note) = &self.handoff_note
+            {
+                prepend_to_new_summary(&mut context, &before, note);
+            }
         }
         Ok(PipelineOutcome { context, stage_reached })
+    }
+}
+
+/// Puts `note` at the top of the one message S3 added: the summary is the
+/// message that was not in the context before the stage ran.
+fn prepend_to_new_summary(context: &mut Context, before: &[peach_domain::MessageEntry], note: &str) {
+    let summary = context.messages.iter_mut().find(|entry| !before.contains(entry));
+    if let Some(entry) = summary
+        && let ContextMessage::Text(text) = &mut **entry
+    {
+        text.content = format!("{note}\n\n{}", text.content);
     }
 }
 
@@ -137,6 +168,25 @@ mod tests {
         }
         // Guards the guard: identical no-ops would prove nothing.
         assert!(compacted >= 2, "only {compacted} fixture(s) were actually compacted");
+    }
+
+    #[test]
+    fn test_the_handoff_note_tops_the_summary_and_nothing_else_changes() {
+        let compact = Compact::new().retention_window(2usize).eviction_window(0.5);
+        let fixture = fixture_contexts().remove(2);
+        let plain = Pipeline::new(compact.clone(), fixture_environment(), 0).run(fixture.clone()).unwrap().context;
+
+        let actual = Pipeline::new(compact, fixture_environment(), 0)
+            .handoff_note(Some("HANDOFF NOTE test".to_string()))
+            .run(fixture.clone())
+            .unwrap()
+            .context;
+
+        let changed: Vec<usize> = (0..plain.messages.len()).filter(|&i| plain.messages[i] != actual.messages[i]).collect();
+        assert_eq!(changed.len(), 1, "exactly the summary should differ");
+        let ContextMessage::Text(text) = &*actual.messages[changed[0]] else { panic!("summary is not text") };
+        let ContextMessage::Text(plain_text) = &*plain.messages[changed[0]] else { panic!("summary is not text") };
+        assert_eq!(text.content, format!("HANDOFF NOTE test\n\n{}", plain_text.content));
     }
 
     #[test]
