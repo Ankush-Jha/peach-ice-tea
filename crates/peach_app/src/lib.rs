@@ -58,3 +58,6 @@ pub use workspace_status::*;
 pub mod domain {
     pub use peach_domain::*;
 }
+
+#[cfg(test)]
+mod tool_docs_tests;

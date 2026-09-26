@@ -556,3 +556,28 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   `stopped by SIGTERM`, the test restored, and a complete bundle. Separately, the runner's 5 s timeout
   against a closed-port provider yields peach exit 5 `interrupted` with all 10 bundle files.
 - **Limit:** SIGKILL cannot be caught. A caller that skips SIGTERM still gets no evidence.
+
+## D-025a — The ₹100 cap is per API key, not per project (2026-09-25)
+- **Correction from the team:** the ₹100 ceiling applies to the current Gemini key only; further keys will be
+  supplied later. D-025's standing rules still hold per key: estimate before every live call, record actual
+  tokens from the execution layer, and ask before exceeding a key's cap. Spend so far on this key: D-032's run,
+  about ₹11 metered, ₹22 upper bound.
+
+## D-039 — Cut the fixed per-request cost, behind flags, measured offline (2026-09-25)
+- **Measurement (free dry run, closed-port Gemini, `PEACH_DEBUG_REQUESTS`):** a first agent request is 50,773
+  bytes: tools 38,296, system prompt 11,835, contents 435. Tool descriptions are about 70% of the tool
+  bytes. `todo_write` alone is 11.5 KB, of which 6.3 KB is `<example>` blocks; `task` is 6.6 KB, with 1.3 KB
+  of examples. The rest is rules (`shell` 3.8 KB, `multi_patch` 2.4 KB) plus schemas (`fs_search`'s 2.5 KB).
+- **`PEACH_HARNESS_COMPACT_TOOL_DOCS=1`:** removes `<example>` blocks, and headings left empty, from the
+  rendered tool descriptions. Nothing is paraphrased. Result: **50,773 → 42,944 bytes (−15.4%) on every
+  request, retries included.** A catalog-wide test checks the invariant: nothing is added or reworded, and
+  every line outside an example survives. An end-to-end test checks the smaller request and that rules
+  survive. Schemas are untouched, and the snapshots are unchanged.
+- **`PEACH_HARNESS_LINE_NUMBERS_OFF=1` (T1.2):** flips only the *default* of `read.show_line_numbers`, so an
+  explicit request for numbers is honoured (end-to-end test). This saves bytes on `read` results, which
+  compound as context grows. It does not reduce the fixed per-request cost, which is why it was measured
+  separately.
+- **Both default off** (principle 6; no A/B yet). Not trimmed: rule text (`shell`, `multi_patch`) and the
+  system prompt, which also contains examples; that is T6.2, an `[A/B]` task. Worth knowing for the A/B:
+  in D-032 the model called `todo_write` 4 times on a one-line bug, and the removed examples are the ones
+  urging proactive use.

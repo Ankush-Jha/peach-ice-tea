@@ -108,6 +108,19 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> PeachAp
         let tool_resolver = ToolResolver::new(all_tool_definitions);
         let tool_definitions: Vec<ToolDefinition> =
             tool_resolver.resolve(&agent).into_iter().cloned().collect();
+        // harness: D-039 — drop worked examples from tool descriptions, which
+        // are re-sent with every request. Off unless the flag is set.
+        let tool_definitions = if peach_harness::tool_docs::enabled() {
+            tool_definitions
+                .into_iter()
+                .map(|mut definition| {
+                    definition.description = peach_harness::tool_docs::compact(&definition.description);
+                    definition
+                })
+                .collect()
+        } else {
+            tool_definitions
+        };
         let max_tool_failure_per_turn = agent.max_tool_failure_per_turn.unwrap_or(3);
 
         let current_time = Local::now();

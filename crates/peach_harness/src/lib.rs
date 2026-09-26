@@ -13,4 +13,5 @@ pub mod report;
 pub mod runtime;
 pub mod scorer;
 pub mod telemetry;
+pub mod tool_docs;
 pub mod verify;

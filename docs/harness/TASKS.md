@@ -74,6 +74,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 ## M1 — Output shaping (cheap, measurable wins)
 - [ ] **T1.1** `R-OUT-4` loud-truncation audit across read/shell/fetch/search/MCP + snapshots.
 - [ ] **T1.2** `R-OUT-1` line numbers off by default; update fs_read.md / fs_patch.md. **[A/B]**
+      → behind `PEACH_HARNESS_LINE_NUMBERS_OFF=1` (default off; explicit `show_line_numbers` honoured), D-039.
+      Related, not a task yet: `PEACH_HARNESS_COMPACT_TOOL_DOCS=1` cuts 15.4% of every request.
 - [ ] **T1.3** `R-EVAL-2` recovery events (`offload_read`, `rerun_same_command`, `reread_same_range`)
       and `R-OUT-3` stable handles on every withheld output.
 - [ ] **T1.4** `R-OUT-2` classifier + search regrouping (lossless parts only). **[A/B]**

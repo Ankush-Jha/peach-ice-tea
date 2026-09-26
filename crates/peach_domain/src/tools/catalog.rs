@@ -94,10 +94,6 @@ pub struct TaskInput {
     pub session_id: Option<String>,
 }
 
-fn default_true() -> bool {
-    true
-}
-
 /// Status of a todo item
 #[derive(
     Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Display, AsRefStr, EnumIter, Default,
@@ -215,8 +211,16 @@ pub struct FSRead {
 
     /// If true, prefixes each line with its line index (starting at 1).
     /// Defaults to true.
-    #[serde(default = "default_true")]
+    #[serde(default = "default_show_line_numbers")]
     pub show_line_numbers: bool,
+}
+
+/// harness: T1.2 / R-OUT-1 — the default for `FSRead::show_line_numbers`
+/// when the model does not set it: `true`, unless
+/// `PEACH_HARNESS_LINE_NUMBERS_OFF=1`. An explicit value from the model is
+/// always honoured. Off by default until an A/B supports it (principle 6).
+fn default_show_line_numbers() -> bool {
+    std::env::var("PEACH_HARNESS_LINE_NUMBERS_OFF").map_or(true, |value| value != "1")
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema, ToolDescription, PartialEq)]
