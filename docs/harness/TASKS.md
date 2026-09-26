@@ -12,7 +12,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       → a test per path, the last two under a real TTY: permission confirm refused (D-053), continue-anyway → `request_limit`.
 - [x] **TH.2** `R-HACK-2` test-integrity guard: protected-path manifest, tool + shell refusal, loud notice to the model, post-run verify + restore.
       → complete with mixed files: test sections of package.json/pyproject/Cargo/setup.cfg flagged as `test_config_changed` (D-054).
-- [ ] **TH.3** `R-HACK-6` Gemini first: capture thoughts/cached tokens, tool-schema compatibility, reasoning-effort mapping, Gemini registry.
+- [x] **TH.3** `R-HACK-6` Gemini first: capture thoughts/cached tokens, tool-schema compatibility, reasoning-effort mapping, Gemini registry.
+      → all items verified in code (D-055); "Gemini-only" superseded by D-049; max_tokens left at 20480 on the evidence.
 - [x] **TH.4** `R-HACK-3` telemetry event stream (`TelemetrySink`, internal schema, organizer adapter stub).
       → wired (D-033): run, agent_state, model_call, tool_call, retry (with billed usage), context_compaction,
       integrity, prompt_suppressed, test_run (TH.6), recovery, error, context_composition (D-047); sink redacts;
@@ -86,7 +87,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       todo usage, verification, truncation awareness). Must be green on baseline.
       Note: R-EVAL-4 also requires tests gated on R-LOOP-1/R-LOOP-2/R-CTX-3, which land in M2/M3 —
       those are tracked separately as T3.13, not here (`RECON.md` §5).
-- [ ] **T0.8** `R-TOOL-1` schema-rule unit test over all tool definitions.
+- [x] **T0.8** `R-TOOL-1` schema-rule unit test over all tool definitions.
+      → flat-schema rule enforced catalog-wide; `required`-before-`properties` deferred with reason (D-055).
 - [ ] **T0.9** `R-EVAL-3` per-tool micro-eval template + CI job reporting per-tool error rate by model.
       Every task below that adds or changes a tool must add its micro-eval and follow `R-TOOL-2` naming.
 
