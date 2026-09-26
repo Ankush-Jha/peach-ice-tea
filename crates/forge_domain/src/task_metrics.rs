@@ -49,9 +49,13 @@ pub struct TaskMetrics {
 
     /// Reasoning tokens billed by models that charge for extended thinking.
     ///
-    /// Only populated for providers whose response carries it; zero elsewhere,
-    /// which is indistinguishable from a model that did no reasoning. Treat a
-    /// zero as "unknown" unless the provider is known to report it.
+    /// Populated for OpenAI-shaped providers, which report it under
+    /// `completion_tokens_details` (Chat Completions) or
+    /// `output_tokens_details` (Responses). Anthropic's native API folds
+    /// thinking into its output tokens and reports no separate figure, so this
+    /// reads zero there — indistinguishable from a model that did no
+    /// reasoning. Treat zero as "unknown" unless the provider is known to
+    /// report it.
     pub reasoning_tokens: u64,
 
     /// Provider-reported cost in USD, summed across responses. `None` when no
@@ -120,6 +124,7 @@ impl TaskMetrics {
             self.input_tokens += token_value(usage.prompt_tokens);
             self.output_tokens += token_value(usage.completion_tokens);
             self.cached_input_tokens += token_value(usage.cached_tokens);
+            self.reasoning_tokens += token_value(usage.reasoning_tokens);
             if let Some(cost) = usage.cost {
                 self.cost = Some(self.cost.unwrap_or(0.0) + cost);
             }
@@ -163,6 +168,7 @@ mod tests {
             completion_tokens: TokenCount::Actual(completion),
             total_tokens: TokenCount::Actual(prompt + completion),
             cached_tokens: TokenCount::Actual(cached),
+            reasoning_tokens: TokenCount::Actual(0),
             cost: None,
         }
     }
@@ -232,6 +238,18 @@ mod tests {
 
         assert_eq!(fixture.total_tool_calls(), 3);
         assert_eq!(fixture.total_tool_errors(), 2);
+    }
+
+    #[test]
+    fn test_reasoning_tokens_accumulate() {
+        let mut fixture = usage_fixture(10, 200, 0);
+        fixture.reasoning_tokens = TokenCount::Actual(150);
+
+        let mut actual = TaskMetrics::default();
+        actual.record_llm_call(Some(&fixture));
+        actual.record_llm_call(Some(&fixture));
+
+        assert_eq!(actual.reasoning_tokens, 300);
     }
 
     #[test]

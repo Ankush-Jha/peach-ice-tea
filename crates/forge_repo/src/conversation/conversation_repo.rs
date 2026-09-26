@@ -739,6 +739,7 @@ mod tests {
                     phase: None,
                 }),
                 usage: Some(Usage {
+                    reasoning_tokens: Default::default(),
                     prompt_tokens: forge_domain::TokenCount::Actual(100),
                     completion_tokens: forge_domain::TokenCount::Actual(50),
                     total_tokens: forge_domain::TokenCount::Actual(150),

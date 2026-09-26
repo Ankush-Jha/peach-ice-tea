@@ -242,6 +242,7 @@ impl From<&forge_domain::Usage> for UsageRecord {
 impl From<UsageRecord> for forge_domain::Usage {
     fn from(record: UsageRecord) -> Self {
         forge_domain::Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: record.prompt_tokens.into(),
             completion_tokens: record.completion_tokens.into(),
             total_tokens: record.total_tokens.into(),

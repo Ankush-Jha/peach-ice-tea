@@ -80,6 +80,8 @@ pub struct ResponseUsage {
     pub total_tokens: usize,
     pub cost: Option<f64>,
     pub prompt_tokens_details: Option<PromptTokenDetails>,
+    #[serde(default)]
+    pub completion_tokens_details: Option<CompletionTokenDetails>,
     pub cost_details: Option<CostDetails>,
 }
 
@@ -112,6 +114,16 @@ impl CostDetails {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PromptTokenDetails {
     pub cached_tokens: usize,
+}
+
+// harness: R-EVAL-2 — providers report extended-thinking cost here. Without
+// this the field is silently dropped by serde and every reasoning-token count
+// reads as zero, which would make R-LOOP-3's progressive-reasoning A/B
+// unevaluable.
+#[derive(Debug, Default, Deserialize, Serialize, Clone)]
+pub struct CompletionTokenDetails {
+    #[serde(default)]
+    pub reasoning_tokens: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -266,6 +278,10 @@ impl From<ResponseUsage> for Usage {
             cached_tokens: usage
                 .prompt_tokens_details
                 .map(|token_details| TokenCount::Actual(token_details.cached_tokens))
+                .unwrap_or_default(),
+            reasoning_tokens: usage
+                .completion_tokens_details
+                .map(|token_details| TokenCount::Actual(token_details.reasoning_tokens))
                 .unwrap_or_default(),
             cost,
         }
@@ -543,6 +559,7 @@ impl TryFrom<Response> for ChatCompletionMessage {
                         StringOrF64::String(s) => s.parse().unwrap_or(0.0),
                     };
                     msg.usage = Some(Usage {
+                        reasoning_tokens: Default::default(),
                         prompt_tokens: TokenCount::Actual(0),
                         completion_tokens: TokenCount::Actual(0),
                         total_tokens: TokenCount::Actual(0),
@@ -868,6 +885,7 @@ mod tests {
 
         // CostOnly events now include the cost in the usage
         let expected = ChatCompletionMessage::default().usage(Usage {
+            reasoning_tokens: Default::default(),
             prompt_tokens: TokenCount::Actual(0),
             completion_tokens: TokenCount::Actual(0),
             total_tokens: TokenCount::Actual(0),
@@ -913,6 +931,7 @@ mod tests {
     fn test_response_usage_cost_priority_chain() {
         // Priority 1: cost field (non-zero) beats everything
         let fixture_cost_wins = ResponseUsage {
+            completion_tokens_details: None,
             prompt_tokens: 100,
             completion_tokens: 50,
             total_tokens: 150,
@@ -930,6 +949,7 @@ mod tests {
 
         // Priority 2: upstream_inference_cost beats partial costs
         let fixture_upstream_wins = ResponseUsage {
+            completion_tokens_details: None,
             prompt_tokens: 100,
             completion_tokens: 50,
             total_tokens: 150,
@@ -948,6 +968,7 @@ mod tests {
         // Priority 3: partial costs are summed when upstream_inference_cost is
         // None
         let fixture_partial_sum = ResponseUsage {
+            completion_tokens_details: None,
             prompt_tokens: 100,
             completion_tokens: 50,
             total_tokens: 150,
@@ -966,6 +987,7 @@ mod tests {
         // Priority 4: when upstream_inference_cost is 0 then compute it from
         // other parameters.
         let fixture = ResponseUsage {
+            completion_tokens_details: None,
             prompt_tokens: 100,
             completion_tokens: 50,
             total_tokens: 150,
@@ -985,6 +1007,7 @@ mod tests {
     #[test]
     fn test_zero_cost_should_fallback_to_cost_details() {
         let fixture = ResponseUsage {
+            completion_tokens_details: None,
             prompt_tokens: 100,
             completion_tokens: 50,
             total_tokens: 150,
@@ -1004,6 +1027,7 @@ mod tests {
     #[test]
     fn test_near_zero_cost_should_fallback_to_cost_details() {
         let fixture = ResponseUsage {
+            completion_tokens_details: None,
             prompt_tokens: 100,
             completion_tokens: 50,
             total_tokens: 150,
@@ -1119,5 +1143,51 @@ mod tests {
             "Should parse NVIDIA choice: {:?}",
             actual.err()
         );
+    }
+}
+
+#[cfg(test)]
+mod harness_reasoning_token_tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    /// Shape taken verbatim from a live OpenRouter response. Before
+    /// `completion_tokens_details` existed on `ResponseUsage`, serde dropped it
+    /// and every reasoning-token count read as zero.
+    #[test]
+    fn test_reasoning_tokens_are_parsed_from_completion_token_details() {
+        let fixture = r#"{
+            "prompt_tokens": 8,
+            "completion_tokens": 200,
+            "total_tokens": 208,
+            "cost": 0.000099,
+            "prompt_tokens_details": { "cached_tokens": 4 },
+            "completion_tokens_details": { "reasoning_tokens": 150 }
+        }"#;
+
+        let usage: ResponseUsage = serde_json::from_str(fixture).unwrap();
+        let actual = forge_domain::Usage::from(usage);
+
+        assert_eq!(
+            actual.reasoning_tokens,
+            forge_domain::TokenCount::Actual(150)
+        );
+        assert_eq!(actual.cached_tokens, forge_domain::TokenCount::Actual(4));
+    }
+
+    /// A provider that omits the block entirely must still parse.
+    #[test]
+    fn test_usage_without_completion_token_details_parses() {
+        let fixture = r#"{
+            "prompt_tokens": 8,
+            "completion_tokens": 5,
+            "total_tokens": 13
+        }"#;
+
+        let usage: ResponseUsage = serde_json::from_str(fixture).unwrap();
+        let actual = forge_domain::Usage::from(usage);
+
+        assert_eq!(actual.reasoning_tokens, forge_domain::TokenCount::Actual(0));
     }
 }
