@@ -35,13 +35,15 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       `DECISIONS.md`, confirm `cargo check` and `cargo insta test` pass on a clean clone,
       document the local dev loop in `docs/harness/DEV.md`.
       → forked from `304bf3b`; 2678 tests pass, 0 fail; `docs/harness/DEV.md`; D-008/D-009.
-- [ ] **T0.2** `R-EVAL-2` task metrics struct + population + persistence (no recovery events yet).
-- [ ] **T0.3** `R-PROTO-7` minimal `peach exec` (non-interactive flag + JSON metrics line + exit code).
+- [x] **T0.2** `R-EVAL-2` task metrics struct + population + persistence (no recovery events yet).
+      → `peach_domain/src/task_metrics.rs`; reviewed adversarially, 2 blocking + 4 should-fix found and fixed.
+- [x] **T0.3** `R-PROTO-7` minimal `peach exec` (non-interactive flag + JSON metrics line + exit code).
       Protocol streaming comes later; this unblocks the A/B runner.
       Re-scoped by D-010: `peach -p` already exists and reuses `Orchestrator::run`, so this adds a
       machine-readable output layer and an outcome-aware exit code to that path. `-p` currently always
       exits 0; map `ChatResponse::Interrupt`'s existing `MaxToolFailurePerTurnLimitReached` /
       `MaxRequestPerTurnLimitReached` reasons onto exit codes rather than inventing new state.
+      → done and reviewed; remaining autonomy gaps (followup gating, non-interactive init) belong to TH.1.
 - [ ] **T0.4** `R-EVAL-1` A/B runner over the existing 14 evals (depends T0.0, T0.2, T0.3).
 - [ ] **T0.5** `R-EVAL-1` TermBench 2.0 subset suite via Harbor (pick ~30 tasks stratified by
       category; record the list in `benchmarks/suites/termbench-subset.txt`).
