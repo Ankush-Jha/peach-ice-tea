@@ -1198,3 +1198,23 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
      `_HANDOFF_NOTE` and `_RECALL_HANDLES`. The last two need tasks long enough to compact: add
      `PEACH_COMPACT__MESSAGE_THRESHOLD=12` to both arms. Flip a flag to default on only if success is not lower on
      both families. `offload_read` is now real (D-060), so the recovery column finally means something.
+
+## D-069 — Cost stance reversed: free-tier models only; a new Makefile evaluation contract (2026-09-27)
+- **Context:** D-050 ("open the field, cost is not the constraint") is withdrawn by the team. Direction now:
+  "we don't have to spend money on API keys, so we want to go with the free version." This is not a return to
+  D-025's ₹100 cap — it is stricter: no paid spend at all, free-tier only.
+- **Consequence for the bake-off:** the round-2 plan in D-068 (9 models × 6 fixtures × k=3, ~$80–150) is
+  cancelled as written. Scope down to free-tier-only models (`:free` on OpenRouter), most plausibly `nvidia/
+  nemotron-3-ultra-550b-a55b:free` — already D-051's default, since it was the one model with a full passing
+  record with no credit. Round 2 becomes: compare only the free-tier models against each other, within the
+  50-requests/day account limit, spread across days if one day's allowance is insufficient. No frontier
+  paid models (Opus, GPT, Gemini via OpenRouter) are in scope unless a future direction reverses this again.
+- **The expiring key (D-068):** still needs replacing/regenerating before 2026-09-27 17:46 UTC regardless of
+  this decision — a free-tier key still needs to exist and be valid. Regenerating a key costs nothing.
+- **New organizer document:** `docs/harness/MAKEFILE_EVAL.md` records a Makefile-based evaluation contract
+  supplied by the team (`~/Downloads/AI Harness Submission.md`), treated as authoritative alongside
+  `HACKATHON.md` for submission mechanics. Requires a root `Makefile` (`setup`/`run`/`test`/`clean`), credential
+  via a fixed `AI_API_KEY` env var (never hard-coded anywhere committed), text-only model (already true), and
+  a model prescribed by the committee at evaluation time without source changes. See that file for the
+  interpretation of "launch then supply the issue" (stdin + a `PROMPT=` override into the existing one-shot
+  `peach exec` path) and how `AI_API_KEY` maps onto whichever profile variable is currently selected.
