@@ -127,6 +127,12 @@ async fn run() -> Result<()> {
     })?;
     ui.run().await;
 
+    // harness: R-PROTO-7 — `exec` reports how the task ended through the exit
+    // code. Every other command keeps exiting 0 here, as before.
+    if let Some(code) = ui.exec_exit_code() {
+        std::process::exit(code);
+    }
+
     Ok(())
 }
 
