@@ -51,8 +51,8 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
       → D-086. Telemetry schema 0.2.0; report tallies recoveries by cause. Observability only, no A/B needed.
 - [x] **BR.3** Tier 3.2 `write_note` scratchpad tool kept outside `Context.messages` (`R-CTX-10`).
       → D-087; flagged off, A/B tracked as T3.14. D-067's concern does not apply: notes live in metrics and the event log, not the repo.
-- [ ] **BR.4** Tier 3.3 remove 6 dead schema structs from `catalog.rs`.
-      → not started (Tier 3, cleanup only).
+- [x] **BR.4** Tier 3.3 remove 6 dead schema structs from `catalog.rs`.
+      → closed without removal (D-089): `AgentInput` is live; the other five cost no tokens, and deleting upstream code only adds merge risk.
 
 ## MM — Any model (D-049)
 - [x] **MM.1** Model profiles: `openrouter-nemotron` (main) and `openrouter-routed` (main + cheap `sage`/compaction);

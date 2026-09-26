@@ -1748,3 +1748,11 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
 - **Caveat:** 1 seed per family, so the confidence intervals are wide (Kimi's candidate, 44–97%). The size of the
   Kimi effect (0 → 5) and its mechanism, visible in every bundle, carry the decision. The graded Gemini model is
   not measured yet; a Gemini arm joins the compact-docs check at the next quota reset.
+
+## D-089 — Brief Tier 3.3: the "dead" catalog structs stay (2026-09-27)
+- **Audit:** of the six structs the brief listed in `catalog.rs`:
+  - `AgentInput` is **live**. `tool_registry.rs:212` parses every agent-as-tool call with it.
+  - `FetchInput`, `FSListInput`, `FSFileInfoInput`, `UndoInput` and `SelectInput` are referenced nowhere else.
+- **Decision: leave them.** They are never serialised to a model, so they cost no tokens and change no behaviour.
+  They are also upstream code: deleting them gains nothing measurable and adds merge conflicts whenever upstream
+  touches that part of the file (principle 8). If upstream removes them, the merge takes that for free.
