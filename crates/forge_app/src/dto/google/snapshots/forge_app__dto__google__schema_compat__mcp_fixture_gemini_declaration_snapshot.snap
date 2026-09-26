@@ -1,0 +1,46 @@
+---
+source: crates/forge_app/src/dto/google/schema_compat.rs
+expression: rendered
+---
+{
+  "name": "mcp_fixture",
+  "parameters": {
+    "properties": {
+      "location": {},
+      "metadata": {
+        "type": "object"
+      },
+      "mode": {
+        "anyOf": [
+          {
+            "enum": [
+              "fast",
+              "slow"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "priority": {
+        "nullable": true,
+        "type": "integer"
+      },
+      "status": {
+        "enum": [
+          "active"
+        ]
+      },
+      "website": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "location",
+      "status"
+    ],
+    "type": "object"
+  }
+}
