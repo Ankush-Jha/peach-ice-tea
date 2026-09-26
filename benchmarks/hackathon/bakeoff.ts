@@ -13,6 +13,8 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import { spawn } from "child_process";
 
+import { wilson } from "./ab.ts";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..");
 const RUN_TS = path.join(HERE, "run.ts");
@@ -27,6 +29,10 @@ export interface Pricing {
 
 export interface FixtureRun {
   fixture: string;
+  seed: number;
+  /** The run never got a fair try: the provider refused for account reasons (no credit, exhausted quota).
+   * Excluded from success rates, and counted separately, so an account limit is never read as a model result. */
+  blocked: boolean;
   success: boolean;
   outcome: string;
   llm_calls: number;
@@ -39,7 +45,9 @@ export interface FixtureRun {
 export interface ModelSummary {
   model: string;
   successes: number;
+  /** Runs that reached a fair outcome (not blocked). */
   runs: number;
+  blocked: number;
   llm_calls: number;
   input_tokens: number;
   output_tokens: number;
@@ -53,12 +61,14 @@ export function runCost(run: FixtureRun, price: Pricing): number {
   return uncached * price.prompt + run.cached_input_tokens * price.cacheRead + run.output_tokens * price.completion;
 }
 
-export function summarise(model: string, runs: FixtureRun[], price: Pricing | undefined): ModelSummary {
-  const sum = (f: (r: FixtureRun) => number) => runs.reduce((acc, r) => acc + f(r), 0);
+export function summarise(model: string, all: FixtureRun[], price: Pricing | undefined): ModelSummary {
+  const runs = all.filter((r) => !r.blocked);
+  const sum = (f: (r: FixtureRun) => number) => all.reduce((acc, r) => acc + f(r), 0);
   return {
     model,
     successes: runs.filter((r) => r.success).length,
     runs: runs.length,
+    blocked: all.length - runs.length,
     llm_calls: sum((r) => r.llm_calls),
     input_tokens: sum((r) => r.input_tokens),
     output_tokens: sum((r) => r.output_tokens),
@@ -67,10 +77,16 @@ export function summarise(model: string, runs: FixtureRun[], price: Pricing | un
   };
 }
 
-/** Success first (principle 1), then cost, then wall time. */
+/** A provider refusal for account reasons, from forge's own exec error (D-040, D-050). */
+export function isAccountLimit(execError: string | undefined): boolean {
+  return /provider quota exhausted|Invalid Status Code: 402/.test(execError ?? "");
+}
+
+/** Models with any fair run first; then success rate (principle 1), then cost, then wall time. */
 export function rank(rows: ModelSummary[]): ModelSummary[] {
   return [...rows].sort(
     (a, b) =>
+      Number(b.runs > 0) - Number(a.runs > 0) ||
       b.successes / Math.max(1, b.runs) - a.successes / Math.max(1, a.runs) ||
       (a.usd ?? Infinity) - (b.usd ?? Infinity) ||
       a.wall_ms - b.wall_ms,
@@ -116,9 +132,15 @@ function runModel(model: string, args: string[], logPath: string): Promise<strin
     child.on("close", async () => {
       await fs.writeFile(logPath, Buffer.concat(chunks));
       const match = /report: (\S+\.json)/.exec(out);
-      resolve(match ? match[1] : null);
+      resolve(match?.[1] ?? null);
     });
   });
+}
+
+function successCell(r: ModelSummary): string {
+  if (r.runs === 0) return "–";
+  const [lo, hi] = wilson(r.successes, r.runs);
+  return `${r.successes}/${r.runs} [${Math.round(lo * 100)}–${Math.round(hi * 100)}%]`;
 }
 
 function render(rows: ModelSummary[], perFixture: Map<string, FixtureRun[]>, meta: Record<string, string>): string {
@@ -126,31 +148,36 @@ function render(rows: ModelSummary[], perFixture: Map<string, FixtureRun[]>, met
   const lines = [
     `# Model bake-off — ${meta.label}`,
     "",
-    `Profile \`openrouter\` · suite \`${meta.suite}\` · 1 seed · ${meta.timestamp} · harness at \`${meta.commit}\``,
+    `Profile \`openrouter\` · suite \`${meta.suite}\` · ${meta.seeds} seed(s) · ${meta.timestamp} · harness at \`${meta.commit}\``,
     "",
     "Ranked by success, then cost, then wall time. Cost is OpenRouter's list price applied to forge's own token counts.",
     "",
-    "| Model | Success | LLM calls | Input tok | Output tok | Wall s | Est. USD |",
-    "|---|---|---|---|---|---|---|",
+    "Blocked = the provider refused for account reasons (no credit, exhausted quota); excluded from success.",
+    "",
+    "| Model | Success (95% CI) | Blocked | LLM calls | Input tok | Output tok | Wall s | Est. USD |",
+    "|---|---|---|---|---|---|---|---|",
     ...rows.map(
       (r) =>
-        `| \`${r.model}\` | ${r.successes}/${r.runs} | ${r.llm_calls} | ${r.input_tokens.toLocaleString("en")} | ${r.output_tokens.toLocaleString("en")} | ${(r.wall_ms / 1000).toFixed(0)} | ${r.usd === null ? "?" : r.usd.toFixed(3)} |`,
+        `| \`${r.model}\` | ${successCell(r)} | ${r.blocked} | ${r.llm_calls} | ${r.input_tokens.toLocaleString("en")} | ${r.output_tokens.toLocaleString("en")} | ${(r.wall_ms / 1000).toFixed(0)} | ${r.usd === null ? "?" : r.usd.toFixed(3)} |`,
     ),
     "",
-    "## Per fixture (✓ pass / ✗ fail, LLM calls)",
+    "## Per fixture (✓ pass / ✗ fail / ⊘ blocked, LLM calls; one cell per seed)",
     "",
     `| Model | ${fixtures.join(" | ")} |`,
     `|---|${fixtures.map(() => "---").join("|")}|`,
     ...rows.map((r) => {
       const runs = perFixture.get(r.model) ?? [];
       const cells = fixtures.map((f) => {
-        const run = runs.find((x) => x.fixture === f);
-        return run ? `${run.success ? "✓" : "✗"} ${run.llm_calls}${run.success ? "" : ` (${run.outcome})`}` : "–";
+        const seeds = runs.filter((x) => x.fixture === f);
+        if (seeds.length === 0) return "–";
+        return seeds
+          .map((run) => (run.blocked ? "⊘" : `${run.success ? "✓" : "✗"} ${run.llm_calls}${run.success ? "" : ` (${run.outcome})`}`))
+          .join(", ");
       });
       return `| \`${r.model}\` | ${cells.join(" | ")} |`;
     }),
     "",
-    "One seed per model: a single failure is weak evidence. Use this to shortlist, then A/B the shortlist at k = 3.",
+    `${meta.seeds} seed(s) per model. With one seed a single failure is weak evidence: shortlist, then rerun at k = 3.`,
     "",
   ];
   return lines.join("\n");
@@ -161,17 +188,22 @@ async function main() {
   let models: string[] = [];
   let suite = "all";
   let label = "bakeoff";
+  let seeds = 1;
   const passThrough: string[] = [];
   for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
+    const a = argv[i] ?? "";
     const next = () => argv[++i] ?? fail(`${a} requires a value`);
     if (a === "--models") models = next().split(",").map((m) => m.trim()).filter(Boolean);
     else if (a === "--suite") suite = next();
     else if (a === "--label") label = next();
-    else if (["--bin", "--max-requests", "--max-duration-secs", "--timeout-ms"].includes(a)) passThrough.push(a, next());
-    else fail(`unknown argument ${a} (use --models a,b --suite s --label l [--bin p] [--max-requests n] ...)`);
+    else if (a === "--seeds") seeds = Number(next());
+    else if (["--bin", "--max-requests", "--max-duration-secs", "--timeout-ms"].includes(a)) {
+      const value = next();
+      passThrough.push(a, value);
+    } else fail(`unknown argument ${a} (use --models a,b --suite s --label l [--bin p] [--max-requests n] ...)`);
   }
   if (models.length === 0) fail("--models is required");
+  if (!Number.isInteger(seeds) || seeds < 1) fail("--seeds must be a positive integer");
   if (!process.env.OPENROUTER_API_KEY) fail("OPENROUTER_API_KEY is not set");
 
   const prices = await pricing();
@@ -181,29 +213,43 @@ async function main() {
   const logDir = path.join(REPORTS_DIR, "logs", `${stamp}-${label}`);
   await fs.mkdir(logDir, { recursive: true });
 
+  // Models in parallel; each model's seeds in sequence, so one model never competes with itself for rate limit.
   const reportPaths = await Promise.all(
-    models.map((m) => {
+    models.map(async (m) => {
       const slug = m.replace(/[^A-Za-z0-9.-]+/g, "_");
-      console.log(`[bakeoff] start ${m}`);
-      return runModel(m, ["--suite", suite, "--label", `bakeoff-${label}-${slug}`, ...passThrough], path.join(logDir, `${slug}.log`)).then(
-        (p) => {
-          console.log(`[bakeoff] done  ${m}${p ? "" : " (no report)"}`);
-          return p;
-        },
-      );
+      const paths: (string | null)[] = [];
+      for (let seed = 1; seed <= seeds; seed++) {
+        console.log(`[bakeoff] start ${m} s${seed}`);
+        const p = await runModel(
+          m,
+          ["--suite", suite, "--label", `bakeoff-${label}-${slug}-s${seed}`, ...passThrough],
+          path.join(logDir, `${slug}-s${seed}.log`),
+        );
+        console.log(`[bakeoff] done  ${m} s${seed}${p ? "" : " (no report)"}`);
+        paths.push(p);
+      }
+      return paths;
     }),
   );
 
   const perFixture = new Map<string, FixtureRun[]>();
   const rows: ModelSummary[] = [];
   for (const [i, model] of models.entries()) {
-    const reportPath = reportPaths[i];
     const runs: FixtureRun[] = [];
-    if (reportPath) {
+    for (const [s, reportPath] of (reportPaths[i] ?? []).entries()) {
+      if (!reportPath) continue;
       const report = JSON.parse(await fs.readFile(reportPath, "utf8"));
       for (const f of report.fixtures ?? []) {
+        const execError = f.evidence_dir
+          ? await fs
+              .readFile(path.join(f.evidence_dir, "exec.json"), "utf8")
+              .then((t) => JSON.parse(t).error as string | undefined)
+              .catch(() => undefined)
+          : undefined;
         runs.push({
           fixture: f.fixture,
+          seed: s + 1,
+          blocked: !f.success && isAccountLimit(execError),
           success: Boolean(f.success),
           outcome: f.exec?.outcome ?? f.error ?? "?",
           llm_calls: f.metrics?.llm_calls ?? 0,
@@ -225,7 +271,7 @@ async function main() {
     c.on("close", () => resolve(s.trim() || "unknown"));
   });
   const ranked = rank(rows);
-  const md = render(ranked, perFixture, { label, suite, timestamp: new Date().toISOString(), commit });
+  const md = render(ranked, perFixture, { label, suite, seeds: String(seeds), timestamp: new Date().toISOString(), commit });
   const base = path.join(REPORTS_DIR, `${stamp.slice(0, 8)}-${label}`);
   await fs.writeFile(`${base}.md`, md);
   await fs.writeFile(`${base}.json`, JSON.stringify({ label, suite, commit, ranked, perFixture: Object.fromEntries(perFixture) }, null, 2));
