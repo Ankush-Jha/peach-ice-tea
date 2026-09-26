@@ -718,3 +718,17 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   is deliberately untouched, because it drives compaction thresholds.
 - **Still open for the judged model:** the same run on Gemini needs the paid key (D-040). This run gives
   the first real evidence that the whole pipeline works, but not Gemini-specific evidence.
+
+## D-047 — The last defined telemetry events are emitted: `error` and `context_composition` (T6.1) (2026-09-25)
+- **`error`:** when a run ends in anything but `completed`, `seal()` emits `error{kind: <outcome>, message,
+  recoverable: false, source: "exec"}` before `run_end`. Until now the reason lived only in `exec.json`
+  (HACKATHON §15, "Agent: errors").
+- **`context_composition` (T6.1):** emitted once per conversation, at its first request. It gives estimated
+  tokens by role and by source (`system_prompt`, `tool_definitions`, `user_prompt`, `tool_results`,
+  `assistant`), the fixed cost every later request repeats. The report shows it as "First request,
+  estimated tokens by source". An end-to-end test asserts that tool definitions are the largest source,
+  matching D-039's byte measurement.
+- **Build hygiene:** this change was built and tested with `CARGO_TARGET_DIR=target/alt`, so the A/B then
+  running from `target/debug/forge` never had its binary replaced mid-run.
+- TH.4 is ticked: every event in `event.rs` is now emitted. What remains is the organizer adapter, blocked
+  on the unpublished schema (D-020).
