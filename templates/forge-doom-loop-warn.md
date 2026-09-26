@@ -1,0 +1,1 @@
+[SYSTEM WARNING] The exact same `{{tool_name}}` call (identical arguments) has now run {{occurrences}} times in a row. It ran again this time, but if this isn't intentional, stop and change your approach — different arguments, a different tool, or a different plan — before calling it again.

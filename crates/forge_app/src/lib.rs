@@ -8,6 +8,7 @@ mod command_generator;
 mod compact;
 mod compaction_pipeline;
 mod data_gen;
+mod doom_loop_escalation;
 pub mod dto;
 mod error;
 mod file_tracking;

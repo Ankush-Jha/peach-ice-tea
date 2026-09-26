@@ -1787,3 +1787,18 @@ fn test_a_failed_over_run_is_scored_exactly_like_one_that_was_not() {
     assert_eq!(plain_models, vec!["scripted-model".to_string()]);
     assert_eq!(failover_models, vec!["scripted-model".to_string(), "fallback-model".to_string()]);
 }
+
+#[test]
+fn test_the_doom_loop_ladder_ends_an_exec_run_with_its_own_outcome() {
+    // R-LOOP-5 (D-082): four identical calls with the flag on end the run with
+    // exit 6 and a named outcome, not a hang or a generic error.
+    let project = project_with_a_test();
+    let same = || Turn::Tool("shell", serde_json::json!({"command": "echo same", "description": "same"}));
+    let model = ScriptedModel::start(vec![same(), same(), same(), same(), Turn::Text("unreachable")]);
+
+    let run = run_exec_with_env(project.path(), &model, None, &[("FORGE_HARNESS_DOOM_LOOP_ESCALATION", "1")]);
+
+    assert_eq!(run.exit_code, Some(6), "report: {}", run.report);
+    assert_eq!(run.report["outcome"], "doom_loop_escalation");
+    assert_eq!(model.requests().len(), 4, "the run must stop after the fourth identical call");
+}

@@ -4305,12 +4305,16 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
                 writer.finish()?;
                 self.spinner.stop(None)?;
 
-                let title = match reason {
+                let title = match &reason {
                     InterruptionReason::MaxRequestPerTurnLimitReached { limit } => {
                         format!("Maximum request ({limit}) per turn achieved")
                     }
                     InterruptionReason::MaxToolFailurePerTurnLimitReached { limit, .. } => {
                         format!("Maximum tool failure limit ({limit}) reached for this turn")
+                    }
+                    // harness: R-LOOP-5 (D-082)
+                    InterruptionReason::DoomLoopEscalation { tool_name, occurrences } => {
+                        format!("`{tool_name}` called with identical arguments {occurrences} times in a row")
                     }
                 };
 
@@ -4455,6 +4459,10 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
             (false, Ok(_), Some(InterruptionReason::MaxRequestPerTurnLimitReached { limit })) => (
                 TaskOutcome::RequestLimit,
                 Some(format!("request limit ({limit}) reached")),
+            ),
+            (false, Ok(_), Some(InterruptionReason::DoomLoopEscalation { occurrences, .. })) => (
+                TaskOutcome::DoomLoopEscalation,
+                Some(format!("doom-loop escalation after {occurrences} identical calls")),
             ),
             (false, Ok(_), None) => (TaskOutcome::Completed, None),
         };
