@@ -1035,3 +1035,29 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Flaky upstream test:** `test_fs_create_overwrite` has now failed in 3 full runs (D-054 root cause, a
   global colour-flag race). Still not modified, per the guardrail. If it keeps recurring, the fix belongs upstream
   in `todo_fmt`'s colour guard.
+
+## D-063 — T3.10: a deterministic handoff note tops the compaction summary, behind a flag (2026-09-26)
+- **Why (R-CTX-6):** forge's S3 summary paraphrases the evicted turns. Four kinds of fact must survive exactly or the
+  agent re-does or undoes work: what is left to do, what the user insisted on, what has already been changed, and
+  what last failed.
+- **Built:** `compaction_pipeline::handoff::handoff_note(context, todos, changed_files)`, pure and deterministic,
+  with no model. It has four sections, each omitted when empty:
+  - the todo list with statuses;
+  - user messages containing must, never, always, don't, do not, only, should not or required, kept verbatim
+    (≤ 600 characters each, the newest 8), matched as whole words (so "commonly" ≠ "only"), with earlier notes
+    skipped so they do not nest;
+  - files changed so far (`file_operations` that are not reads);
+  - the last shell command with a non-zero `exit_code`, with an output excerpt.
+
+  `Pipeline::handoff_note` puts it at the top of the one message S3 adds, found as the message that was not in the
+  context before the stage. "Open questions" from R-CTX-6 is not built: it cannot be derived deterministically,
+  and the spec reserves a model only for polish.
+- **Flag:** `FORGE_HARNESS_HANDOFF_NOTE=1`, **default off**. It changes what the model sees after every compaction,
+  so it waits for an A/B like the other flags (principle 6). The A/B only means something on tasks long enough to
+  compact (T3.12's ≥ 60-turn suite), or on the six fixtures with a lowered message threshold.
+- **Proof:**
+  - Unit: the exact note text for a mixed context; no note when there is nothing to hand off; whole-word markers.
+  - Pipeline: with a note, exactly one message (the summary) differs from the plain run, and it is the note plus
+    the plain summary.
+  - End to end: a compacting run whose prompt says "you must not rename add" has "HANDOFF NOTE" and that sentence
+    in its later requests with the flag, and no note without it.

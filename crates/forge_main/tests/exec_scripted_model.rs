@@ -1371,3 +1371,32 @@ fn test_reading_a_truncated_output_back_counts_as_an_offload_read() {
     assert!(read_back.contains("250"), "the dump file was not read back");
     assert_eq!(run.report["metrics"]["recovery"]["offload_read"], 1, "report: {}", run.report);
 }
+
+/// Runs a task that compacts (tiny message threshold) and whose user prompt
+/// states a constraint, returning the requests the model received.
+fn compacting_run(extra_env: &[(&str, &str)]) -> Vec<String> {
+    let project = project_with_a_test();
+    let echo = |text: &'static str| {
+        Turn::Tool("shell", serde_json::json!({"command": format!("echo {text}"), "description": "echo"}))
+    };
+    let model = ScriptedModel::start(vec![echo("one"), echo("two"), echo("three"), echo("four"), Turn::Text("Done.")]);
+    let mut env = vec![("FORGE_COMPACT__MESSAGE_THRESHOLD", "6"), ("FORGE_COMPACT__RETENTION_WINDOW", "2")];
+    env.extend_from_slice(extra_env);
+
+    let run = run_exec_full(project.path(), &model, None, &env, "fix add; you must not rename add", &[]);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    model.requests()
+}
+
+#[test]
+fn test_the_handoff_note_survives_compaction_only_with_the_flag() {
+    let with_flag = compacting_run(&[("FORGE_HARNESS_HANDOFF_NOTE", "1")]);
+    let without = compacting_run(&[]);
+
+    let has_note = |requests: &[String]| requests.iter().any(|body| body.contains("HANDOFF NOTE"));
+    assert!(has_note(&with_flag), "no handoff note after compaction with the flag");
+    assert!(!has_note(&without), "a handoff note appeared without the flag");
+    let last = with_flag.last().unwrap();
+    assert!(last.contains("you must not rename add"), "the user's constraint was not kept verbatim");
+}

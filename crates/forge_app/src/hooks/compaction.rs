@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use forge_domain::{Agent, Conversation, Environment, EventData, EventHandle, ResponsePayload};
 use tracing::{debug, info};
 
-use crate::compaction_pipeline::Pipeline;
+use crate::compaction_pipeline::{Pipeline, handoff};
 
 /// Hook handler that performs context compaction when needed
 ///
@@ -40,11 +40,24 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionHandler {
                 info!(agent_id = %self.agent.id, "Compaction triggered by hook");
                 // harness: R-CTX-2 (T3.4) — staged pipeline; today its only
                 // stage is the `Compactor` this called directly before.
+                // harness: R-CTX-6 (T3.10) — exact facts on top of the summary;
+                // off unless FORGE_HARNESS_HANDOFF_NOTE=1 (D-063).
+                let note = handoff::enabled().then(|| {
+                    let changed: Vec<String> = conversation
+                        .metrics
+                        .file_operations
+                        .iter()
+                        .filter(|(_, op)| op.tool != forge_domain::ToolKind::Read)
+                        .map(|(path, _)| path.clone())
+                        .collect();
+                    handoff::handoff_note(context, &conversation.metrics.todos, &changed)
+                });
                 let outcome = Pipeline::new(
                     self.agent.compact.clone(),
                     self.environment.clone(),
                     self.agent.compact.token_threshold.unwrap_or(0),
                 )
+                .handoff_note(note.flatten())
                 .run(context.clone())?;
                 debug!(stage = outcome.stage_reached, "Compaction pipeline finished");
                 let compacted = outcome.context;
