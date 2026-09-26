@@ -1,5 +1,5 @@
 # Any-model profile (D-049, D-050): peach's built-in `open_router` provider. The model is chosen per run with
-# PEACH_SESSION__MODEL_ID (bake-off, A/Bs); the default below is replaced by MM.2's winner.
+# PEACH_SESSION__MODEL_ID (bake-off, A/Bs); the default is the best model that runs today (D-051); MM.2 round 2 replaces it.
 [session]
 provider_id = "open_router"
-model_id = "anthropic/claude-opus-5.5"
+model_id = "nvidia/nemotron-3-ultra-550b-a55b:free"

@@ -791,3 +791,14 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Consequences:** `[A/B]` tasks get real A/Bs at k = 3 on two families (principle 6 is now met normally, not
   waived); the bake-off (MM.2) includes frontier models; the per-role routing (MM.3) is judged on success first,
   then cost.
+
+## D-051 — Bake-off round 1: only account limits failed; Nemotron Ultra is the default for now (2026-09-26)
+- **Round 1** (`benchmarks/reports/models/20260926-round1.md`): 9 models × 6 fixtures × 1 seed through the real
+  binary. Six models (Fable 5.1, Opus 5.5, GPT-6 Sol, Gemini 3.8 Flash, Grok 4.7, Qwen 3.8 Max) got 402 on every
+  first request: no credit (D-050). Every run that reached a model passed (Nemotron 5/5 + smoke, GLM 4/4, DeepSeek
+  Pro 1/1). Spend: **$0.065** total.
+- **Decision:** the `openrouter` profile and the `harness/peach-ice-tea` default use
+  `nvidia/nemotron-3-ultra-550b-a55b:free`, the one model with a full passing record that runs without credit.
+  Cost: 40 calls / 684k input tokens for 5 fixtures, about 2× GLM 5.3's calls, so it is the default because it
+  runs, not because it is efficient. When credit exists, round 2 reruns all nine and the shortlist gets k = 3.
+- **Limit found:** the free tier is 50 requests/day across all free models; one six-fixture suite needs ~50.
