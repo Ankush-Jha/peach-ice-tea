@@ -26,6 +26,8 @@ pub struct Orchestrator<S> {
     error_tracker: ToolErrorTracker,
     hook: Arc<Hook>,
     config: forge_config::ForgeConfig,
+    /// harness: T2.1 — run consecutive read-only tool calls concurrently.
+    parallel_readonly: bool,
 }
 
 impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orchestrator<S> {
@@ -45,6 +47,7 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
             models: Default::default(),
             error_tracker: Default::default(),
             hook: Arc::new(Hook::default()),
+            parallel_readonly: false,
         }
     }
 
@@ -96,62 +99,76 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
             .map(|tool| &tool.name)
             .collect::<HashSet<_>>();
 
-        // Process non-task tool calls sequentially (preserving UI notifier
-        // handshake and hooks).
+        // Process non-task tool calls in order (preserving UI notifier
+        // handshake and hooks). harness: T2.1 — with `parallel_readonly`, a
+        // run of two or more read-only calls executes concurrently; its
+        // starts, hooks and ends still happen one by one, in order.
+        let segments = if self.parallel_readonly {
+            crate::tool_concurrency::segments(&other_calls, |call| &call.name)
+        } else {
+            (0..other_calls.len()).map(|index| (false, index..index + 1)).collect()
+        };
         let mut other_results: Vec<(ToolCallFull, ToolResult)> =
             Vec::with_capacity(other_calls.len());
-        for tool_call in &other_calls {
-            // Send the start notification for system tools and not agent as a
-            // tool
-            let is_system_tool = system_tools.contains(&tool_call.name);
-            if is_system_tool {
-                let notifier = Arc::new(Notify::new());
-                self.send(ChatResponse::ToolCallStart {
-                    tool_call: (*tool_call).clone(),
-                    notifier: notifier.clone(),
-                })
-                .await?;
-                // Wait for the UI to acknowledge it has rendered the tool
-                // header before we execute the tool. This
-                // prevents tool stdout from appearing before
-                // the tool name is printed.
-                notifier.notified().await;
-            }
+        for (_concurrent, range) in segments {
+            let batch = &other_calls[range];
+            for tool_call in batch {
+                // Send the start notification for system tools and not agent
+                // as a tool
+                if system_tools.contains(&tool_call.name) {
+                    let notifier = Arc::new(Notify::new());
+                    self.send(ChatResponse::ToolCallStart {
+                        tool_call: (*tool_call).clone(),
+                        notifier: notifier.clone(),
+                    })
+                    .await?;
+                    // Wait for the UI to acknowledge it has rendered the tool
+                    // header before we execute the tool. This
+                    // prevents tool stdout from appearing before
+                    // the tool name is printed.
+                    notifier.notified().await;
+                }
 
-            // Fire the ToolcallStart lifecycle event
-            let toolcall_start_event = LifecycleEvent::ToolcallStart(EventData::new(
-                self.agent.clone(),
-                self.agent.model.clone(),
-                ToolcallStartPayload::new((*tool_call).clone()),
-            ));
-            self.hook
-                .handle(&toolcall_start_event, &mut self.conversation)
-                .await?;
-
-            // Execute the tool
-            let tool_result = self
-                .services
-                .call(&self.agent, tool_context, (*tool_call).clone())
-                .await;
-
-            // Fire the ToolcallEnd lifecycle event (fires on both success and
-            // failure)
-            let toolcall_end_event = LifecycleEvent::ToolcallEnd(EventData::new(
-                self.agent.clone(),
-                self.agent.model.clone(),
-                ToolcallEndPayload::new((*tool_call).clone(), tool_result.clone()),
-            ));
-            self.hook
-                .handle(&toolcall_end_event, &mut self.conversation)
-                .await?;
-
-            // Send the end notification for system tools and not agent as a
-            // tool
-            if is_system_tool {
-                self.send(ChatResponse::ToolCallEnd(tool_result.clone()))
+                // Fire the ToolcallStart lifecycle event
+                let toolcall_start_event = LifecycleEvent::ToolcallStart(EventData::new(
+                    self.agent.clone(),
+                    self.agent.model.clone(),
+                    ToolcallStartPayload::new((*tool_call).clone()),
+                ));
+                self.hook
+                    .handle(&toolcall_start_event, &mut self.conversation)
                     .await?;
             }
-            other_results.push(((*tool_call).clone(), tool_result));
+
+            // Execute the tools: one at a time unless this is a read-only
+            // batch, in which case together. Results keep the call order.
+            let tool_results: Vec<ToolResult> = join_all(
+                batch
+                    .iter()
+                    .map(|tool_call| self.services.call(&self.agent, tool_context, (*tool_call).clone())),
+            )
+            .await;
+
+            for (tool_call, tool_result) in batch.iter().zip(tool_results) {
+                // Fire the ToolcallEnd lifecycle event (fires on both success
+                // and failure)
+                let toolcall_end_event = LifecycleEvent::ToolcallEnd(EventData::new(
+                    self.agent.clone(),
+                    self.agent.model.clone(),
+                    ToolcallEndPayload::new((*tool_call).clone(), tool_result.clone()),
+                ));
+                self.hook
+                    .handle(&toolcall_end_event, &mut self.conversation)
+                    .await?;
+
+                // Send the end notification for system tools and not agent as
+                // a tool
+                if system_tools.contains(&tool_call.name) {
+                    self.send(ChatResponse::ToolCallEnd(tool_result.clone()))
+                        .await?;
+                }
+                other_results.push(((*tool_call).clone(), tool_result));
+            }
         }
 
         // Reconstruct results in the original order of tool_calls.

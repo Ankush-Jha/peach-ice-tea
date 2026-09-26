@@ -84,6 +84,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 
 ## M2 — Orchestration
 - [ ] **T2.1** `R-LOOP-1` concurrency classes + concurrent read-only batches; add behaviour test. **[A/B]**
+      → built behind `FORGE_HARNESS_PARALLEL_READONLY=1` (default off) with overlap/order specs and a real-binary
+      test (D-041). Unticked pending A/B.
 - [ ] **T2.2** `R-LOOP-2` job registry + `run_in_background` for shell + `job_output` / `job_wait`.
 - [ ] **T2.3** `R-LOOP-2` batched completion delivery in tool-result format + keep-alive when the
       model stops with jobs running; background subagents. **[A/B]**
