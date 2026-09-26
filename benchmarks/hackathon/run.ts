@@ -56,6 +56,7 @@ const PROFILES_DIR = path.join(REPO_ROOT, "configuration", "profiles");
 const PROVIDER_KEY_VARS = [
   "GEMINI_API_KEY",
   "DEEPSEEK_API_KEY",
+  "NVIDIA_API_KEY",
   "OPENROUTER_API_KEY",
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
@@ -742,6 +743,15 @@ async function unroutableForgeEnv(tmpDir: string): Promise<NodeJS.ProcessEnv> {
   return { ...process.env, FORGE_CONFIG: configDir, FORGE_TEST_BOGUS_KEY: "bogus-key-value" };
 }
 
+/** forge migrates provider keys from the environment into
+ * `<FORGE_CONFIG>/.credentials.json` (D-015). The runner's config dir lives next to the
+ * fixture copy and is left behind for debugging, so without this the key would persist on
+ * disk after every profile run (D-043). Resolved with `path.join` on the run's own tmpDir,
+ * never matched by string prefix. */
+async function removeMigratedCredentials(tmpDir: string): Promise<void> {
+  await fs.rm(path.join(tmpDir, "forge-config", ".credentials.json"), { force: true });
+}
+
 /** Resolves once forge has logged `run_start`, i.e. once its integrity manifest exists. */
 async function waitForRunStart(telemetryPath: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -877,11 +887,13 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
       }
       result = await running;
     } catch (err) {
+      await removeMigratedCredentials(tmpDir);
       fail(
         `could not invoke forge ("${args.bin} exec --json ..."): ${(err as Error).message}. ` +
           `Set PEACH_ICE_TEA_BIN or pass --bin to point at the built binary.`,
       );
     }
+    await removeMigratedCredentials(tmpDir);
     const parsed = lastJsonLine(result.stdout);
     const extracted = extractMetrics(parsed);
     harnessIntegrity = extractHarnessIntegrity(parsed);
