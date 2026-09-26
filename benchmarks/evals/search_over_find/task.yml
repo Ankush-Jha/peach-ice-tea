@@ -1,6 +1,6 @@
 run:
   - git clone --depth=1 --branch main https://github.com/Ankush-Jha/peach-ice-tea .
-  - PEACH_SESSION__PROVIDER_ID=open_router PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
+  - PEACH_SESSION__PROVIDER_ID={{provider}} PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
 parallelism: 10
 timeout: 180
 early_exit: true
@@ -43,9 +43,7 @@ validations:
       ' {{dir}}/context.json
 
 sources:
-  - value:
-      - model: "anthropic/claude-sonnet-4.5"
-      - model: "z-ai/glm-4.6:exacto"
+  - csv: ../../models.csv
   - value:
       # File discovery tasks - should use fs_search, NOT find command
       - task: "I need to merge service and app crates. Tell me what files exist in the crates/ directory."

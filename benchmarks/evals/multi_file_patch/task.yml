@@ -1,7 +1,7 @@
 run:
   # Clone into `tmp/task` dir
   - git clone --depth=1 --branch main https://github.com/Ankush-Jha/peach-ice-tea .
-  - PEACH_SESSION__PROVIDER_ID=open_router PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
+  - PEACH_SESSION__PROVIDER_ID={{provider}} PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
 parallelism: 50
 timeout: 120
 early_exit: true
@@ -16,6 +16,5 @@ validations:
     type: shell
     command: "jq -e '[.messages[]?.tool_calls[]? | select(.function.name == \"patch\")] | length >= 3' {{dir}}/context.json"
 sources:
-  - value:
-      - model: "openai/gpt-5.2"
+  - csv: ../../models.csv
   - csv: multi_file_patch_tasks.csv

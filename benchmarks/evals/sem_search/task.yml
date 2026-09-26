@@ -3,7 +3,7 @@ run:
   - git clone --depth=1 --branch main https://github.com/Ankush-Jha/peach-ice-tea .
   - peach workspace init --yes
   - peach workspace sync
-  - PEACH_DEBUG_REQUESTS='{{dir}}/context.jsonl' PEACH_SESSION__PROVIDER_ID=open_router PEACH_SESSION__MODEL_ID={{model}} peach -p '{{task}}'
+  - PEACH_DEBUG_REQUESTS='{{dir}}/context.jsonl' PEACH_SESSION__PROVIDER_ID={{provider}} PEACH_SESSION__MODEL_ID={{model}} peach -p '{{task}}'
 parallelism: 8
 timeout: 60
 early_exit: true
@@ -15,9 +15,7 @@ validations:
     type: shell
     command: "python3 -c \"\nimport sys\nlog = open('{{dir}}/task.log').read().splitlines()\ntask_line = next((i for i, l in enumerate(log) if '[Agent]' in l), None)\nsearch_line = next((i for i, l in enumerate(log) if 'Codebase Search' in l), None)\nif task_line is None: sys.exit(0)\nif search_line is None: sys.exit(1)\nsys.exit(0 if search_line < task_line else 1)\n\""
 sources:
-  - value:
-      # - model: "x-ai/grok-code-fast-1"
-      - model: "anthropic/claude-sonnet-4.6"
+  - csv: ../../models.csv
   - value:
       # # Location questions - "where is"
       # - task: "Where is the code that transforms messages between different AI provider formats?"

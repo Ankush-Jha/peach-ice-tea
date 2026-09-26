@@ -6,7 +6,7 @@ run:
   # Clone into `tmp/task` dir
   - git clone --depth=1 --branch main https://github.com/Ankush-Jha/peach-ice-tea .
   - peache workspace sync
-  - PEACH_SESSION__PROVIDER_ID=open_router PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
+  - PEACH_SESSION__PROVIDER_ID={{provider}} PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
 
 parallelism: 30
 timeout: 120
@@ -75,9 +75,7 @@ validations:
         --should-avoid '{{should_avoid}}'
 
 sources:
-  - value:
-      - model: "anthropic/claude-sonnet-4.5"
-
+  - csv: ../../models.csv
   - value:
       # Implementation-focused queries - complex but naturally phrased
       - task: "How does workspace sync detect which files need re-embedding?"

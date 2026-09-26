@@ -1,7 +1,7 @@
 run:
   - git clone --depth=1 --branch main https://github.com/Ankush-Jha/peach-ice-tea .
   - mkdir ../test-dir && cd ../test-dir
-  - PEACH_SESSION__PROVIDER_ID=open_router PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
+  - PEACH_SESSION__PROVIDER_ID={{provider}} PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
 parallelism: 5
 timeout: 120
 early_exit: false  # We want to see all cases, not just the first success
@@ -34,9 +34,7 @@ validations:
       ' {{dir}}/context.json
 
 sources:
-  - value:
-      - model: "anthropic/claude-sonnet-4.5"
-      - model: "z-ai/glm-4.6:exacto"
+  - csv: ../../models.csv
   - value:
       - task: "clean ~/tailcall"
       - task: "format code in ~/task/crates/peach_domain"

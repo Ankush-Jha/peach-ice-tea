@@ -45,8 +45,4 @@ validations:
     command: "! grep -qE '`(feat|fix|refactor|chore|docs|style|test|perf)\\('"
 
 sources:
-  - value:
-      - provider: "anthropic"
-        model: "claude-sonnet-4-5-20250929"
-      - provider: "open_router"
-        model: "z-ai/glm-4.7"
+  - csv: ../../models.csv
