@@ -999,3 +999,24 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   the first real measurement.
 - **T1.3 ticked.** Handles: shell, fetch and MCP dump to a file; read's truncation points at the file itself with a
   line range; search's points at a re-run with an offset.
+
+## D-061 — The heuristic scorer ignored whether a result was still being talked about; T3.8 closed (2026-09-26)
+- **Gap:** R-CTX-4 specifies `HeuristicScorer` as: keep errors, **results whose paths or identifiers appear in later
+  assistant or user text**, and non-idempotent commands; drop successful idempotent reads that were never
+  referenced. The implementation had recency, status, size and re-runnability, but no reference signal.
+  `ToolCallSummary` had no field for it. So a large `read` of the file the agent was actively fixing scored like
+  an unused read and would have been truncated. That is the compaction failure principle 1 warns about: it costs
+  a re-read.
+- **Fix:**
+  - `ToolCallSummary.referenced_later` (serde default `false`, builder setter);
+  - `plan::is_referenced_later(input_preview, later_text)`, a pure function. It takes path-like tokens from the
+    call's input (containing `/`, or a name with an extension, at least 4 characters) and matches each in full or
+    by file name, since models write `stats.py`, not `/repo/src/stats.py`. Plain words (`echo hi`) never match;
+  - in the heuristic, a referenced call gets a 0.8 floor on both scores, above the 0.5 threshold, so its decision
+    is `Keep`.
+- **Tests:** matching by full path and by file name; no match for plain words or 3-character names; a referenced
+  20 kB read is `Keep` while the identical unreferenced read is not. The existing fake-scorer tests (failing scorer
+  keeps everything, a missing answer keeps that call, pinning, redaction before scoring, stats) already covered the
+  rest of T3.8.
+- **Not wired yet (by design):** the compaction pipeline that builds summaries and calls a scorer is T3.4. The
+  builder must compute `referenced_later` from the messages after each call. **T3.8 ticked.**
