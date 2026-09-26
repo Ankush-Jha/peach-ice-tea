@@ -360,16 +360,25 @@ pub struct UrlMetadata {
 impl From<UsageMetadata> for peach_domain::Usage {
     fn from(usage: UsageMetadata) -> Self {
         let prompt_tokens = usage.prompt_token_count.unwrap_or_default() as usize;
-        let completion_tokens = usage.candidates_token_count.unwrap_or_default() as usize;
+        let candidates_tokens = usage.candidates_token_count.unwrap_or_default() as usize;
         let cached_tokens = usage.cached_content_token_count.unwrap_or_default() as usize;
         let total_tokens = usage.total_token_count.unwrap_or_default() as usize;
+        // harness: R-HACK-6 — Gemini reports thinking separately from
+        // candidates (`totalTokenCount` sums prompt + candidates + thoughts),
+        // unlike OpenAI where reasoning tokens are a subset of completion
+        // tokens. Dropping this under-reported Gemini output spend, on the very
+        // model the harness is evaluated against. Fold thoughts into
+        // `completion_tokens` so output is comparable across providers, and
+        // keep the raw figure in `reasoning_tokens`.
+        let reasoning_tokens = usage.thoughts_token_count.unwrap_or_default() as usize;
 
         peach_domain::Usage {
             prompt_tokens: TokenCount::Actual(prompt_tokens),
-            completion_tokens: TokenCount::Actual(completion_tokens),
+            completion_tokens: TokenCount::Actual(candidates_tokens + reasoning_tokens),
             total_tokens: TokenCount::Actual(total_tokens),
             cached_tokens: TokenCount::Actual(cached_tokens),
-            ..Default::default()
+            reasoning_tokens: TokenCount::Actual(reasoning_tokens),
+            cost: None,
         }
     }
 }
@@ -787,5 +796,75 @@ mod tests {
         let usage = msg.usage.unwrap();
         assert_eq!(usage.prompt_tokens, TokenCount::Actual(10));
         assert_eq!(usage.completion_tokens, TokenCount::Actual(20));
+    }
+}
+
+#[cfg(test)]
+mod harness_gemini_usage_tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    fn usage_fixture() -> UsageMetadata {
+        serde_json::from_value(serde_json::json!({
+            "promptTokenCount": 1000,
+            "candidatesTokenCount": 200,
+            "thoughtsTokenCount": 317,
+            "cachedContentTokenCount": 800,
+            "totalTokenCount": 1517
+        }))
+        .unwrap()
+    }
+
+    /// Gemini reports thinking separately from candidates, so output tokens
+    /// must include it or Gemini spend is under-reported.
+    #[test]
+    fn test_thoughts_are_counted_as_output_and_kept_as_reasoning() {
+        let actual = peach_domain::Usage::from(usage_fixture());
+
+        let expected = peach_domain::Usage {
+            prompt_tokens: TokenCount::Actual(1000),
+            completion_tokens: TokenCount::Actual(517),
+            total_tokens: TokenCount::Actual(1517),
+            cached_tokens: TokenCount::Actual(800),
+            reasoning_tokens: TokenCount::Actual(317),
+            cost: None,
+        };
+
+        assert_eq!(actual, expected);
+    }
+
+    /// prompt + completion equals the total Gemini itself reports, which is the
+    /// arithmetic check that thinking is not double counted.
+    #[test]
+    fn test_prompt_plus_completion_matches_the_reported_total() {
+        let fixture = peach_domain::Usage::from(usage_fixture());
+
+        let prompt = match fixture.prompt_tokens {
+            TokenCount::Actual(v) | TokenCount::Approx(v) => v,
+        };
+        let completion = match fixture.completion_tokens {
+            TokenCount::Actual(v) | TokenCount::Approx(v) => v,
+        };
+        let total = match fixture.total_tokens {
+            TokenCount::Actual(v) | TokenCount::Approx(v) => v,
+        };
+
+        assert_eq!(prompt + completion, total);
+    }
+
+    #[test]
+    fn test_usage_without_thoughts_is_unchanged() {
+        let fixture: UsageMetadata = serde_json::from_value(serde_json::json!({
+            "promptTokenCount": 10,
+            "candidatesTokenCount": 5,
+            "totalTokenCount": 15
+        }))
+        .unwrap();
+
+        let actual = peach_domain::Usage::from(fixture);
+
+        assert_eq!(actual.completion_tokens, TokenCount::Actual(5));
+        assert_eq!(actual.reasoning_tokens, TokenCount::Actual(0));
     }
 }

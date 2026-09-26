@@ -269,6 +269,16 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> PeachAp
         // Update the conversation with the compacted context
         conversation.context = Some(compacted_context);
 
+        // harness: R-EVAL-2 — the automatic path records this in
+        // `CompactionHandler`; the manual `/compact` command reached here
+        // without recording anything, so a manually compacted session
+        // under-reported its compactions.
+        conversation
+            .metrics
+            .task
+            .compactions
+            .record(original_token_count as u64, compacted_tokens as u64);
+
         // Save the updated conversation
         self.services.upsert_conversation(conversation).await?;
 

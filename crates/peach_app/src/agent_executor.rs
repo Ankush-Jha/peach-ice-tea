@@ -76,6 +76,13 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> AgentEx
                 .await?;
             conversation
         };
+        // harness: R-EVAL-2 — a conversation's metrics are cumulative across
+        // every run of it. `task_input.session_id` lets the model resume a
+        // subagent conversation, so absorbing the total afterwards would count
+        // that conversation's earlier runs again. Snapshot here and absorb only
+        // the difference.
+        let metrics_before = conversation.metrics.task.clone();
+
         // Execute the request through the PeachApp
         let app = crate::PeachApp::new(self.services.clone());
         let mut response_stream = app
@@ -138,8 +145,9 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> AgentEx
             .await
         {
             Ok(Some(finished)) => {
+                let spent = finished.metrics.task.since(&metrics_before);
                 ctx.with_metrics(|metrics| {
-                    metrics.task.absorb_subagent(&finished.metrics.task);
+                    metrics.task.absorb_subagent(&spent);
                 })?;
             }
             Ok(None) => {
