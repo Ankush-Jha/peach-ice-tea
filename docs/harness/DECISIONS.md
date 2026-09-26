@@ -1801,3 +1801,20 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
   optional tool. The flag stays off, and the Nemotron 3.5 arm is still running. If no family uses the tool, the
   next step is a one-line mention in the agent prompt, a behaviour change measured with its own A/B, before
   judging the mechanism.
+
+## D-092 — Local web UI for running tasks, watching them live, and browsing evidence (2026-09-27)
+- **What it's for:** `make ui` starts a small Node HTTP server (`harness/ui/server.ts`) so a task can be
+  started, watched, and its evidence browsed from a browser instead of memorizing CLI flags — useful for a live
+  demo or for an evaluator who prefers it to the stdin/`PROMPT=` path. It does not replace or change `make run`'s
+  one-shot contract: it shells out to the same `harness/run-task` entry point every `make run` uses, so there is
+  no second execution path to keep in sync.
+- **Safety, checked before shipping:** binds `127.0.0.1` only; every request must present a loopback `Host`
+  header and every `POST` a matching `Origin` (defends DNS rebinding and CSRF); provider keys never reach the
+  browser, only whether one is set; evidence/report file serving is path-checked against its root (`within()`);
+  one run at a time (the free tiers this harness targets cannot afford parallel runs anyway); Stop sends SIGINT
+  to the run's own process group, so it exits 5 with a complete evidence bundle exactly like a terminal Ctrl-C.
+- **Proof:** `harness/ui/lib.test.ts`, 5/5 (key-to-provider matching, automatic profile selection, path
+  containment, profile model ordering, telemetry line-splitting under partial writes). Smoke-tested live: started
+  the server, hit `/api/status`, got a real profile list and the harness binary's path back.
+- **Not yet run against a live evaluator or judge, and no A/B** — it is a convenience layer, not a behaviour
+  change to the harness itself, so principle 6 does not apply the way it does to a flag inside the agent loop.

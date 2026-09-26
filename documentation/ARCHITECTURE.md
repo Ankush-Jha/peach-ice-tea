@@ -38,11 +38,14 @@ flowchart LR
   *Real run:* 5 `model_call` events; the first returned two `tool_call_ids`, and both `tool_call` events carry
   `origin_call_id` `…#1` pointing back to it. Every call's `finish_reason` was `tool_calls` until the last
   (`end_turn`).
-- **How is completion decided?** When the model stops calling tools, the End hooks run. The **verification gate**
-  (`hooks/verify_gate.rs`, D-037) sends an agent that edited without a passing test run back, at most twice. After
-  it stops, the harness runs the tests itself. *Real run:* `test_run` with `origin: agent`, `exit_code: 0`,
-  `passed: 4`, then `test_run` with `origin: harness_final`, `passed: 4, failed: 0`. The report's pass/fail comes
-  from the second, not from the agent's claim.
+- **How is completion decided?** When the model stops calling tools, the End hooks run. As of D-088, the
+  **runtime verification gate** (`hooks/runtime_verify_gate.rs`, R-HACK-10) is on by default: before a voluntary
+  stop is accepted, the harness runs the real test command itself and, on failure, sends the real output back as
+  the next turn — up to twice — rather than trusting the model's report at all. With the flag off, the older
+  **soft gate** (`hooks/verify_gate.rs`, D-037) only nudges an agent that edited without a passing run, at most
+  twice, and still trusts it once it stops. Either way, the harness's own final test run is what the report's
+  pass/fail comes from. *Real run:* `test_run` with `origin: agent`, `exit_code: 0`, `passed: 4`, then `test_run`
+  with `origin: harness_final`, `passed: 4, failed: 0`.
 - **What happens when stuck?** The doom-loop detector, the tool-failure limit (exit 2), the request limit (exit 3),
   the wall-clock budget (exit 4) and signals (exit 5) all end the run with a full evidence bundle; SIGKILL leaves a
   provisional `incomplete` manifest and the restore baseline (D-056). Nothing can wait on a person: `followup`, MCP
@@ -65,7 +68,7 @@ flowchart LR
   - S0 supersedes stale results (D-075);
   - S1 offloads large old results to handles (D-074);
   - S2 cuts by relevance score (D-077);
-  - S3 is forge's summary.
+  - S3 is the harness's summary.
 
   A soft trigger at ¾ of the threshold runs only S0–S1 (D-076). All of these are flagged until an A/B; the default
   is S3 alone, identical to upstream (golden test). *Real run:* 14,086 estimated context tokens at the last call,
@@ -75,12 +78,14 @@ flowchart LR
   `read <path> (the complete output)`, and reading it counts as `offload_read` (D-060). Summarised-away results
   can be listed with handles (D-066), and an exact handoff note can top the summary (D-063).
 - **How is state retained?** Todos; `conversations.context` as the working view; and an **append-only event log**
-  that keeps every message a compaction removed (`thread_events` + content-addressed `artifacts`, D-064/D-065). The
-  evidence bundle's `transcript.json` is written on every exit path (D-034).
+  that keeps every message a compaction removed (`thread_events` + content-addressed `artifacts`, D-064/D-065).
+  A model-authored scratchpad (`write_note`, D-087) sits outside this entirely: notes live in
+  `Metrics.notes`, never in `Context.messages`, so the compaction pipeline cannot see or drop them — flagged off,
+  pending an A/B. The evidence bundle's `transcript.json` is written on every exit path (D-034).
 
 ## Tools
 
-- **Why these tools?** Forge's catalog (read, fs_search, write, patch, multi_patch, shell, fetch, todo, task): flat
+- **Why these tools?** The harness's catalog (read, fs_search, write, patch, multi_patch, shell, fetch, todo, task): flat
   schemas with `required` fields (T0.8), checked for Gemini compatibility (TH.3). We added no tools: recall reuses
   `read` on handle files (D-066; HACKATHON §21, "more tools ≠ better").
 - **How does the model choose?** From the descriptions. *Real run:* `read` ×2 (both requested in one model call; run in order, since parallel reads are a flag, D-041),

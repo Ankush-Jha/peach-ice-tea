@@ -6,6 +6,7 @@
 #   make run REPO=... PROMPT="Fix ..."   # or give it inline
 #   make test                    # the local hackathon suite, live (spends model requests)
 #   make check                   # offline checks, no key and no model needed
+#   make ui                      # local web UI: run tasks, watch them live, browse evidence (D-092)
 #   make clean                   # remove build output and evidence
 #
 # Variables: PROFILE (default: chosen from AI_API_KEY's shape, else gemini; D-081), MODEL (override the
@@ -27,10 +28,10 @@ REPO ?= $(CURDIR)
 
 export PROFILE MODEL PROMPT REPO TEST_COMMAND EVIDENCE_DIR MAX_DURATION_SECS
 
-.PHONY: help setup run test check clean
+.PHONY: help setup run test check clean ui
 
 help:
-	@sed -n '2,15p' $(HARNESS)/Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '2,16p' $(HARNESS)/Makefile | sed 's/^# \{0,1\}//'
 
 setup:
 	@command -v cargo >/dev/null || { \
@@ -96,10 +97,16 @@ test:
 	  cd $(HARNESS) && node benchmarks/hackathon/run.ts --agent forge --profile $$PROFILE --bin $(BIN) --suite all
 
 check:
-	@cd $(HARNESS) && npx tsx --test benchmarks/hackathon/*.test.ts
+	@cd $(HARNESS) && npx tsx --test benchmarks/hackathon/*.test.ts harness/ui/*.test.ts
 	@cd $(HARNESS) && node benchmarks/hackathon/run.ts --agent reference --suite all
 	@test ! -x $(BIN) || (cd $(HARNESS) && node benchmarks/hackathon/run.ts --agent forge-cheat --bin $(BIN) --suite all)
 	@$(HARNESS)/harness/check-layout.sh
+
+# Binds 127.0.0.1 only. Keys come from this shell's environment (export AI_API_KEY or a
+# profile's own variable first); the page only learns which profiles have one.
+ui:
+	@test -x $(BIN) || test -x $(HARNESS)/target/debug/forge || { echo "ui: no harness binary; run make setup first" >&2; exit 1; }
+	@UI_DEFAULT_REPO="$(if $(filter $(HARNESS),$(abspath $(REPO))),,$(abspath $(REPO)))" node $(HARNESS)/harness/ui/server.ts
 
 clean:
 	@cd $(HARNESS) && cargo clean
