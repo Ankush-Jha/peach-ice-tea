@@ -13,8 +13,8 @@ use peach_domain::{
 use peach_template::Element;
 
 use crate::truncation::{
-    Stderr, Stdout, TruncationMode, truncate_fetch_content, truncate_search_output,
-    truncate_shell_output,
+    Stderr, Stdout, TruncationMode, recovery_notice, truncate_fetch_content,
+    truncate_search_output, truncate_shell_output,
 };
 use crate::utils::{compute_hash, format_display_path};
 use crate::{
@@ -25,8 +25,11 @@ use crate::{
 #[derive(Debug, Default, Setters)]
 #[setters(into, strip_option)]
 pub struct TempContentFiles {
-    stdout: Option<PathBuf>,
-    stderr: Option<PathBuf>,
+    // `pub(crate)` so `tool_executor.rs` can read these paths back (plain
+    // field access, distinct from the `Setters`-generated builder methods of
+    // the same name) to record them as recovery dump files (R-OUT-3, T1.3).
+    pub(crate) stdout: Option<PathBuf>,
+    pub(crate) stderr: Option<PathBuf>,
 }
 
 #[derive(Debug, derive_more::From)]
@@ -97,6 +100,10 @@ pub trait StreamElement {
     fn head_end_line(&self) -> usize;
     fn tail_start_line(&self) -> Option<usize>;
     fn tail_end_line(&self) -> Option<usize>;
+    /// Lines whose characters were clipped mid-line (`max_stdout_line_chars`).
+    /// R-OUT-4: this field already existed on `Stdout`/`Stderr` but nothing
+    /// read it, so per-line clipping never got a loud recovery sentence.
+    fn truncated_lines_count(&self) -> usize;
 }
 
 impl StreamElement for Stdout {
@@ -126,6 +133,10 @@ impl StreamElement for Stdout {
 
     fn tail_end_line(&self) -> Option<usize> {
         self.tail_end_line
+    }
+
+    fn truncated_lines_count(&self) -> usize {
+        self.truncated_lines_count
     }
 }
 
@@ -157,6 +168,10 @@ impl StreamElement for Stderr {
     fn tail_end_line(&self) -> Option<usize> {
         self.tail_end_line
     }
+
+    fn truncated_lines_count(&self) -> usize {
+        self.truncated_lines_count
+    }
 }
 
 /// Helper function to create stdout or stderr elements with consistent
@@ -170,6 +185,11 @@ fn create_stream_element<T: StreamElement>(
     }
 
     let mut elem = Element::new(stream.stream_name()).attr("total_lines", stream.total_lines());
+
+    let hidden_lines = stream
+        .tail_start_line()
+        .map(|tail_start| tail_start.saturating_sub(stream.head_end_line() + 1))
+        .unwrap_or(0);
 
     elem = if let Some(((tail, tail_start), tail_end)) = stream
         .tail_content()
@@ -192,6 +212,37 @@ fn create_stream_element<T: StreamElement>(
 
     if let Some(path) = full_output_path {
         elem = elem.attr("full_output", path.display());
+    }
+
+    // R-OUT-4: loud truncation. `full_output` above is an XML attribute a
+    // model can skim past; state the same recovery path in the model-visible
+    // body too, for both ways a stream can be withheld: whole lines cut from
+    // the middle, and individual lines clipped at the character cap.
+    let mut notices = Vec::new();
+    if hidden_lines > 0 {
+        let recovery = match full_output_path {
+            Some(path) => format!(
+                "Full output: read {} (lines {}-{}).",
+                path.display(),
+                stream.head_end_line() + 1,
+                stream.tail_start_line().unwrap_or(0).saturating_sub(1)
+            ),
+            None => "Re-run with a command that produces less output.".to_string(),
+        };
+        notices.push(recovery_notice(hidden_lines as u64, "lines", &recovery));
+    }
+    if stream.truncated_lines_count() > 0 {
+        let recovery = match full_output_path {
+            Some(path) => format!("Full output: read {}.", path.display()),
+            None => "the full output was not saved".to_string(),
+        };
+        notices.push(format!(
+            "{count} line(s) above were cut short at the character limit. {recovery}",
+            count = stream.truncated_lines_count(),
+        ));
+    }
+    if !notices.is_empty() {
+        elem = elem.append(Element::new("truncated").text(notices.join(" ")));
     }
 
     Some(elem)
@@ -269,7 +320,7 @@ impl ToolOperation {
                 } else {
                     content.to_string()
                 };
-                let elm = Element::new("file")
+                let mut elm = Element::new("file")
                     .attr("path", &input.file_path)
                     .attr(
                         "display_lines",
@@ -277,6 +328,37 @@ impl ToolOperation {
                     )
                     .attr("total_lines", output.info.total_lines)
                     .cdata(content);
+
+                // R-OUT-4: loud truncation. `display_lines`/`total_lines`
+                // above are XML attributes a model can skim past; state the
+                // same gap in the model-visible body, with the exact FsRead
+                // call that recovers it. Computed directly from the range
+                // rather than `FileInfo::is_partial`, which is always true
+                // for any 1-based `start_line` and so cannot tell a partial
+                // read from a full one (found during this audit; not fixed
+                // here since `peach_domain/src/file.rs` isn't owned by this
+                // piece).
+                let hidden_before = output.info.start_line.saturating_sub(1);
+                let hidden_after = output.info.total_lines.saturating_sub(output.info.end_line);
+                let hidden = hidden_before + hidden_after;
+                if hidden > 0 {
+                    let recovery = if hidden_after > 0 {
+                        format!(
+                            "Full output: read {} with start_line={} to continue from where this left off.",
+                            input.file_path,
+                            output.info.end_line + 1
+                        )
+                    } else {
+                        format!(
+                            "Full output: read {} with end_line={} to see the earlier lines.",
+                            input.file_path,
+                            output.info.start_line.saturating_sub(1)
+                        )
+                    };
+                    elm = elm.append(
+                        Element::new("truncated").text(recovery_notice(hidden, "lines", &recovery)),
+                    );
+                }
 
                 // Track read operations
                 tracing::info!(
@@ -393,6 +475,35 @@ impl ToolOperation {
                         TruncationMode::Full => {}
                     };
                     elm = elm.cdata(truncated_output.data.join("\n"));
+
+                    // R-OUT-4: loud truncation. `reason`/`total_lines` above
+                    // are XML attributes; state how many matches were
+                    // withheld and the exact call to page through the rest
+                    // in the model-visible body too. `fs_search` has no
+                    // temp-file dump (unlike Shell/NetFetch): its own
+                    // `offset` parameter already re-runs the search starting
+                    // past what was shown, so that is the real recovery
+                    // path.
+                    let withheld = truncated_output.total.saturating_sub(truncated_output.end);
+                    if withheld > 0 {
+                        // harness: when nothing at all fits (a single match
+                        // larger than the byte cap), paging is not a recovery
+                        // path — re-running at the same offset returns exactly
+                        // this result again, so advising it would send the
+                        // model round a loop. Say what actually works instead.
+                        let recovery = if truncated_output.end == truncated_output.start {
+                            "The first match alone exceeds the size limit. Narrow the pattern, or read the file directly with a line range.".to_string()
+                        } else {
+                            format!(
+                                "Full output: run fs_search again with offset={} to continue from where this left off.",
+                                truncated_output.end
+                            )
+                        };
+                        elm = elm.append(
+                            Element::new("truncated")
+                                .text(recovery_notice(withheld as u64, "matches", &recovery)),
+                        );
+                    }
 
                     peach_domain::ToolOutput::text(elm)
                 }
@@ -575,12 +686,20 @@ impl ToolOperation {
                     .attr("content_type", content_type);
 
                 elm = elm.append(Element::new("body").cdata(truncated_content.content));
-                if let Some(path) = content_files.stdout {
-                    elm = elm.append(Element::new("truncated").text(
-                        format!(
-                            "Content is truncated to {} chars, remaining content can be read from path: {}",
-                            config.max_fetch_chars, path.display())
-                    ));
+
+                // R-OUT-4: loud truncation, in the standard wording used by
+                // every other tool. `start_char`/`end_char`/`total_chars`
+                // above are XML attributes; state the same gap and the exact
+                // recovery call in the model-visible body too.
+                let withheld = output.content.len().saturating_sub(config.max_fetch_chars);
+                if let Some(path) = content_files.stdout
+                    && withheld > 0
+                {
+                    let recovery = format!("Full output: read {}.", path.display());
+                    elm = elm.append(
+                        Element::new("truncated")
+                            .text(recovery_notice(withheld as u64, "chars", &recovery)),
+                    );
                 }
 
                 peach_domain::ToolOutput::text(elm)

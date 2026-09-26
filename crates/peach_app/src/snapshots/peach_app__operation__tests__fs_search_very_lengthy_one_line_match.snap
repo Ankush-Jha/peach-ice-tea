@@ -11,4 +11,5 @@ expression: to_value(actual)
   glob="*.txt"
   reason="Results truncated due to exceeding the 1049 bytes size limit. Please use a more specific search pattern"
 ><![CDATA[]]>
+<truncated>1 more matches not shown. The first match alone exceeds the size limit. Narrow the pattern, or read the file directly with a line range.</truncated>
 </search_results>

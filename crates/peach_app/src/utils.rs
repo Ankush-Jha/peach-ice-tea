@@ -595,6 +595,42 @@ fn normalize_gemini_schema_subset_keywords(map: &mut serde_json::Map<String, ser
     }
 }
 
+/// Folds a JSON Schema `oneOf` into `anyOf` (merging with any existing
+/// `anyOf` array), since Gemini's function-declaration Schema documents
+/// `anyOf` but has no `oneOf` equivalent. MCP tool schemas commonly use
+/// `oneOf`; left unconverted it would survive sanitization as a key Gemini
+/// doesn't recognize (R-HACK-6, TH.3).
+fn fold_one_of_into_any_of(map: &mut serde_json::Map<String, serde_json::Value>) {
+    let Some(one_of) = map.remove("oneOf") else {
+        return;
+    };
+
+    match map.get_mut("anyOf") {
+        Some(serde_json::Value::Array(any_of)) => match one_of {
+            serde_json::Value::Array(mut one_of_items) => any_of.append(&mut one_of_items),
+            other => any_of.push(other),
+        },
+        _ => {
+            map.insert("anyOf".to_string(), one_of);
+        }
+    }
+}
+
+/// Returns true if `format` is one Gemini's function-declaration Schema
+/// documents for `type_str`. Gemini's OpenAPI-3.0-style schema only supports
+/// `int32`/`int64` for `integer`, `float`/`double` for `number`, and
+/// `enum`/`date-time` for `string`; every other JSON Schema `format` (e.g.
+/// `uint32`, `uri`, `email`) is unsupported and must be dropped rather than
+/// sent, since Gemini rejects the whole request otherwise (R-HACK-6, TH.3).
+fn is_supported_gemini_format(type_str: &str, format: &str) -> bool {
+    matches!(
+        (type_str, format),
+        ("integer", "int32" | "int64")
+            | ("number", "float" | "double")
+            | ("string", "enum" | "date-time")
+    )
+}
+
 /// Sanitizes a JSON schema for Google/Gemini API compatibility.
 ///
 /// The Gemini API uses OpenAPI 3.0-style function declarations rather than raw
@@ -623,10 +659,19 @@ fn normalize_gemini_schema_subset_keywords(map: &mut serde_json::Map<String, ser
 ///   style).
 /// - **Nullable types**: `{ "type": ["string", "null"] }` is converted to `{
 ///   "type": "string", "nullable": true }` (OpenAPI 3.0 style).
+/// - **Unsupported `format` values are rejected**: Gemini only documents
+///   `int32`/`int64` for `integer`, `float`/`double` for `number`, and
+///   `enum`/`date-time` for `string`. Any other format (`uint32`, `uri`,
+///   `email`, etc.) is dropped; the `type` and other keywords are kept.
+/// - **`oneOf` is rejected**: Gemini's Schema documents `anyOf` but not
+///   `oneOf`. `oneOf` branches are folded into `anyOf` (merging with any
+///   existing `anyOf`), the same way `const`/type-array/anyOf-null handling
+///   below already normalizes other JSON Schema combinators MCP tools use.
 pub fn sanitize_gemini_schema(schema: &mut serde_json::Value) {
     match schema {
         serde_json::Value::Object(map) => {
             normalize_gemini_schema_subset_keywords(map);
+            fold_one_of_into_any_of(map);
 
             // Convert const to enum
             if let Some(const_value) = map.remove("const")
@@ -754,6 +799,22 @@ pub fn sanitize_gemini_schema(schema: &mut serde_json::Value) {
                         other => other.clone(),
                     })
                     .collect();
+            }
+
+            // R-HACK-6/TH.3: Gemini's function-declaration Schema only
+            // documents int32/int64 for INTEGER, float/double for NUMBER, and
+            // enum/date-time for STRING. Any other `format` (e.g. `uint32`,
+            // used by fs_search's numeric args, or `uri`/`email` from JSON
+            // Schema/MCP tools) risks a 400 on every request in a one-shot
+            // evaluation, so unsupported values are dropped rather than
+            // passed through. Type must already be settled (string, not an
+            // array) by this point.
+            if let Some(format) = map.get("format").and_then(|v| v.as_str()) {
+                let type_str = map.get("type").and_then(|v| v.as_str());
+                let supported = type_str.is_some_and(|t| is_supported_gemini_format(t, format));
+                if !supported {
+                    map.remove("format");
+                }
             }
 
             // Handle array schemas: ensure items field is present
@@ -2236,7 +2297,10 @@ mod tests {
     }
 
     #[test]
-    fn test_gemini_preserves_description_and_format() {
+    fn test_gemini_preserves_description_and_drops_unsupported_format() {
+        // R-HACK-6/TH.3: "email" is not one of Gemini's supported STRING
+        // formats (enum, date-time), so it must be dropped even though
+        // descriptions and other keywords survive untouched.
         let mut schema = json!({
             "type": "object",
             "description": "A user object",
@@ -2266,7 +2330,14 @@ mod tests {
             schema["properties"]["name"]["description"],
             "The user's full name"
         );
-        assert_eq!(schema["properties"]["email"]["format"], "email");
+        assert!(
+            schema["properties"]["email"]
+                .as_object()
+                .unwrap()
+                .get("format")
+                .is_none(),
+            "unsupported string format 'email' must be dropped"
+        );
         assert_eq!(
             schema["properties"]["email"]["description"],
             "The user's email address"
@@ -2327,7 +2398,6 @@ mod tests {
                 },
                 "url": {
                     "description": "URL to fetch",
-                    "format": "uri",
                     "minLength": 1,
                     "type": "string"
                 }
@@ -2736,10 +2806,18 @@ mod tests {
         sanitize_gemini_schema(&mut schema);
 
         let value = &schema["properties"]["value"];
-        // oneOf should not have extra type or items added
+        // A combinator node should not have extra type or items added.
         assert!(!value.as_object().unwrap().contains_key("type"));
         assert!(!value.as_object().unwrap().contains_key("items"));
-        assert!(value.as_object().unwrap().contains_key("oneOf"));
+        // harness: R-HACK-6 — `oneOf` is now folded into `anyOf`. Gemini's
+        // function-declaration Schema documents `anyOf` and has no `oneOf`, so
+        // passing it through risked rejection of the whole request. The
+        // branches are preserved, so the model still sees every option.
+        assert!(!value.as_object().unwrap().contains_key("oneOf"));
+        assert_eq!(
+            value["anyOf"],
+            json!([{ "type": "string" }, { "type": "boolean" }])
+        );
     }
 
     #[test]
@@ -2877,5 +2955,144 @@ mod tests {
 
         assert_eq!(schema["type"], "object");
         assert_eq!(schema["properties"]["name"]["type"], "string");
+    }
+
+    /// R-HACK-6/TH.3: table test over every `(type, format)` pair Gemini's
+    /// function-declaration Schema does and doesn't document, so a new
+    /// unsupported format (like the `uint32` `fs_search` used to send) can't
+    /// slip through unnoticed.
+    #[test]
+    fn test_is_supported_gemini_format_table() {
+        let cases = [
+            // supported
+            ("integer", "int32", true),
+            ("integer", "int64", true),
+            ("number", "float", true),
+            ("number", "double", true),
+            ("string", "enum", true),
+            ("string", "date-time", true),
+            // unsupported
+            ("integer", "uint32", false),
+            ("integer", "int16", false),
+            ("number", "int32", false),
+            ("string", "uri", false),
+            ("string", "email", false),
+            ("string", "date", false),
+            ("boolean", "int32", false),
+        ];
+
+        for (type_str, format, expected) in cases {
+            let actual = is_supported_gemini_format(type_str, format);
+            assert_eq!(
+                actual, expected,
+                "is_supported_gemini_format({type_str:?}, {format:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_gemini_drops_unsupported_uint32_format_from_fs_search_style_field() {
+        // fs_search and friends declare rg-style numeric args as `u32`,
+        // which schemars renders as `format: "uint32"`. Gemini rejects that
+        // format outright, which would 400 on every request.
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "head_limit": {
+                    "type": "integer",
+                    "format": "uint32",
+                    "minimum": 0
+                }
+            }
+        });
+
+        sanitize_gemini_schema(&mut schema);
+
+        let head_limit = schema["properties"]["head_limit"].as_object().unwrap();
+        assert!(
+            !head_limit.contains_key("format"),
+            "uint32 is not a Gemini-supported integer format"
+        );
+        assert_eq!(head_limit["type"], "integer");
+        assert_eq!(head_limit["minimum"], 0);
+    }
+
+    #[test]
+    fn test_gemini_keeps_supported_int32_format() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "end_line": {
+                    "type": "integer",
+                    "format": "int32"
+                }
+            }
+        });
+
+        sanitize_gemini_schema(&mut schema);
+
+        assert_eq!(schema["properties"]["end_line"]["format"], "int32");
+    }
+
+    #[test]
+    fn test_gemini_keeps_supported_date_time_format() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string",
+                    "format": "date-time"
+                }
+            }
+        });
+
+        sanitize_gemini_schema(&mut schema);
+
+        assert_eq!(schema["properties"]["created_at"]["format"], "date-time");
+    }
+
+    /// R-HACK-6/TH.3: Gemini's Schema documents `anyOf` but not `oneOf`
+    /// (common in MCP tool schemas). Left alone it would survive as an
+    /// unsupported key, so it's folded into `anyOf`.
+    #[test]
+    fn test_gemini_folds_one_of_into_any_of() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "oneOf": [
+                        { "type": "string", "enum": ["fast", "slow"] },
+                        { "type": "integer" }
+                    ]
+                }
+            }
+        });
+
+        sanitize_gemini_schema(&mut schema);
+
+        let mode = schema["properties"]["mode"].as_object().unwrap();
+        assert!(!mode.contains_key("oneOf"), "oneOf must not survive");
+        let any_of = mode["anyOf"].as_array().unwrap();
+        assert_eq!(any_of.len(), 2);
+    }
+
+    #[test]
+    fn test_gemini_folds_one_of_into_existing_any_of() {
+        let mut schema = json!({
+            "type": "object",
+            "properties": {
+                "value": {
+                    "anyOf": [{ "type": "string" }],
+                    "oneOf": [{ "type": "integer" }]
+                }
+            }
+        });
+
+        sanitize_gemini_schema(&mut schema);
+
+        let value = schema["properties"]["value"].as_object().unwrap();
+        assert!(!value.contains_key("oneOf"));
+        let any_of = value["anyOf"].as_array().unwrap();
+        assert_eq!(any_of.len(), 2);
     }
 }

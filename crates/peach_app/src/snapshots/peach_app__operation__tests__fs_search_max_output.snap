@@ -20,4 +20,5 @@ foo.txt:7:Match line 7: Test
 foo.txt:8:Match line 8: Test
 foo.txt:9:Match line 9: Test
 foo.txt:10:Match line 10: Test]]>
+<truncated>40 more matches not shown. Full output: run fs_search again with offset=10 to continue from where this left off.</truncated>
 </search_results>

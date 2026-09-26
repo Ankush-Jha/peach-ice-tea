@@ -39,5 +39,6 @@ stdout line 24
 stdout line 25
 ]]>
 </tail>
+<truncated>5 more lines not shown. Full output: read /tmp/stdout_content.txt (lines 11-15).</truncated>
 </stdout>
 </shell_output>

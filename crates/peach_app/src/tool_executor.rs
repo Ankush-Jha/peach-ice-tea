@@ -18,6 +18,31 @@ pub struct ToolExecutor<S> {
     services: Arc<S>,
 }
 
+/// Whether a shell stream needs a temp-file dump before it is shaped for
+/// display (R-OUT-3, R-OUT-4).
+///
+/// Line-count truncation (`prefix_lines`/`suffix_lines`) is the obvious case.
+/// But a stream can also be withheld one line at a time: a single line
+/// longer than `max_line_chars` gets clipped mid-line even when the stream
+/// as a whole is short. Before this, only the line-count case created a
+/// dump, so a clipped line with no line-count truncation had no recovery
+/// path at all — found during the T1.1 audit.
+fn stream_needs_dump(
+    content: &str,
+    prefix_lines: usize,
+    suffix_lines: usize,
+    max_line_chars: usize,
+) -> bool {
+    let total_lines = content.lines().count();
+    let line_count_truncated = total_lines > prefix_lines.saturating_add(suffix_lines);
+    let has_clipped_line = content
+        .lines()
+        .any(|line| line.chars().count() > max_line_chars);
+
+    line_count_truncated || has_clipped_line
+}
+
+
 impl<
     S: FsReadService
         + ImageReadService
@@ -84,12 +109,18 @@ impl<
             }
             ToolOperation::Shell { output } => {
                 let config = self.services.get_config()?;
-                let stdout_lines = output.output.stdout.lines().count();
-                let stderr_lines = output.output.stderr.lines().count();
-                let stdout_truncated =
-                    stdout_lines > config.max_stdout_prefix_lines + config.max_stdout_suffix_lines;
-                let stderr_truncated =
-                    stderr_lines > config.max_stdout_prefix_lines + config.max_stdout_suffix_lines;
+                let stdout_truncated = stream_needs_dump(
+                    &output.output.stdout,
+                    config.max_stdout_prefix_lines,
+                    config.max_stdout_suffix_lines,
+                    config.max_stdout_line_chars,
+                );
+                let stderr_truncated = stream_needs_dump(
+                    &output.output.stderr,
+                    config.max_stdout_prefix_lines,
+                    config.max_stdout_suffix_lines,
+                    config.max_stdout_line_chars,
+                );
 
                 let mut files = TempContentFiles::default();
 
@@ -159,7 +190,7 @@ impl<
                 let output = self
                     .services
                     .read(
-                        normalized_path,
+                        normalized_path.clone(),
                         input
                             .range
                             .as_ref()
@@ -173,14 +204,25 @@ impl<
                     )
                     .await?;
 
+                // T1.3 (R-EVAL-2): `offload_read` if this is one of our own
+                // truncation dump files, `reread_same_range` if this exact
+                // range on this path was already the most recent read.
+                context.with_metrics(|metrics| {
+                    metrics
+                        .task
+                        .record_read(&normalized_path, output.info.start_line, output.info.end_line)
+                })?;
+
                 (input, output).into()
             }
             ToolCatalog::Write(input) => {
                 let normalized_path = self.normalize_path(input.file_path.clone());
                 let output = self
                     .services
-                    .write(normalized_path, input.content.clone(), input.overwrite)
+                    .write(normalized_path.clone(), input.content.clone(), input.overwrite)
                     .await?;
+                // Breaks the `reread_same_range` chain for this path (T1.3).
+                context.with_metrics(|metrics| metrics.task.record_write(&normalized_path))?;
                 (input, output).into()
             }
             ToolCatalog::FsSearch(input) => {
@@ -236,7 +278,9 @@ impl<
             }
             ToolCatalog::Remove(input) => {
                 let normalized_path = self.normalize_path(input.path.clone());
-                let output = self.services.remove(normalized_path).await?;
+                let output = self.services.remove(normalized_path.clone()).await?;
+                // Breaks the `reread_same_range` chain for this path (T1.3).
+                context.with_metrics(|metrics| metrics.task.record_write(&normalized_path))?;
                 (input, output).into()
             }
             ToolCatalog::Patch(input) => {
@@ -244,25 +288,28 @@ impl<
                 let output = self
                     .services
                     .patch(
-                        normalized_path,
+                        normalized_path.clone(),
                         input.old_string.clone(),
                         input.new_string.clone(),
                         input.replace_all,
                     )
                     .await?;
+                context.with_metrics(|metrics| metrics.task.record_write(&normalized_path))?;
                 (input, output).into()
             }
             ToolCatalog::MultiPatch(input) => {
                 let normalized_path = self.normalize_path(input.file_path.clone());
                 let output = self
                     .services
-                    .multi_patch(normalized_path, input.edits.clone())
+                    .multi_patch(normalized_path.clone(), input.edits.clone())
                     .await?;
+                context.with_metrics(|metrics| metrics.task.record_write(&normalized_path))?;
                 (input, output).into()
             }
             ToolCatalog::Undo(input) => {
                 let normalized_path = self.normalize_path(input.path.clone());
-                let output = self.services.undo(normalized_path).await?;
+                let output = self.services.undo(normalized_path.clone()).await?;
+                context.with_metrics(|metrics| metrics.task.record_write(&normalized_path))?;
                 (input, output).into()
             }
             ToolCatalog::Shell(input) => {
@@ -271,6 +318,8 @@ impl<
                     .map(|p| p.display().to_string())
                     .unwrap_or_else(|| self.services.get_environment().cwd.display().to_string());
                 let normalized_cwd = self.normalize_path(cwd);
+                // `rerun_same_command` within the last five LLM calls (T1.3).
+                context.with_metrics(|metrics| metrics.task.record_shell_command(&input.command))?;
                 let output = self
                     .services
                     .execute(
@@ -384,5 +433,39 @@ impl<
         context.with_metrics(|metrics| {
             operation.into_tool_output(tool_kind, truncation_path, &env, &config, metrics)
         })
+    }
+}
+
+#[cfg(test)]
+mod stream_needs_dump_tests {
+
+    use super::*;
+
+    #[test]
+    fn test_short_content_does_not_need_a_dump() {
+        let actual = stream_needs_dump("line 1\nline 2", 10, 10, 2000);
+        assert!(!actual);
+    }
+
+    #[test]
+    fn test_too_many_lines_needs_a_dump() {
+        let content = (1..=10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let actual = stream_needs_dump(&content, 2, 2, 2000);
+        assert!(actual);
+    }
+
+    #[test]
+    fn test_a_single_long_line_needs_a_dump_even_under_the_line_cap() {
+        // Three short lines: well under any line-count cap, but one
+        // exceeds the per-line character cap.
+        let content = format!("short\n{}\nshort", "x".repeat(50));
+        let actual = stream_needs_dump(&content, 10, 10, 20);
+        assert!(actual);
+    }
+
+    #[test]
+    fn test_empty_content_does_not_need_a_dump() {
+        let actual = stream_needs_dump("", 10, 10, 2000);
+        assert!(!actual);
     }
 }

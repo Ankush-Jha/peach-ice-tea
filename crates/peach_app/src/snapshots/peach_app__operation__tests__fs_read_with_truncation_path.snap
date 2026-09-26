@@ -7,4 +7,5 @@ expression: to_value(actual)
   display_lines="1-100"
   total_lines="200"
 ><![CDATA[1:Truncated content]]>
+<truncated>100 more lines not shown. Full output: read /home/user/large_file.txt with start_line=101 to continue from where this left off.</truncated>
 </file>

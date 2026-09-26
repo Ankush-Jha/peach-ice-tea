@@ -1920,4 +1920,130 @@ mod tests {
         );
         assert!(matches!(actual.unwrap(), ToolCatalog::Patch(_)));
     }
+
+    /// T0.8 flat-schema rule (R-TOOL-1): a nested object schema with its own
+    /// `required` is a red flag for Gemini/OpenAI-style function calling,
+    /// which is more reliable with flat argument schemas. Today's three
+    /// legitimate exceptions are array-of-object arguments, where the
+    /// `required` describes the shape of each array element, not a nested
+    /// argument object a model has to reason about navigating into. Found by
+    /// walking every `ToolCatalog` schema below its root (not by trusting a
+    /// list): `multi_patch.edits[]`, `todo_write.todos[]` and
+    /// `sem_search.queries[]`. Any new nested `required` schema must be
+    /// added here deliberately.
+    #[test]
+    fn test_t0_8_flat_schema_rule_nested_required_is_allowlisted() {
+        const ALLOWLIST: &[(&str, &str)] = &[
+            ("multi_patch", "edits[]"),
+            ("todo_write", "todos[]"),
+            ("sem_search", "queries[]"),
+        ];
+
+        fn walk(
+            value: &serde_json::Value,
+            path: &str,
+            is_root: bool,
+            found: &mut Vec<String>,
+        ) {
+            let serde_json::Value::Object(map) = value else {
+                return;
+            };
+
+            if !is_root && map.contains_key("required") {
+                found.push(path.to_string());
+            }
+
+            if let Some(serde_json::Value::Object(properties)) = map.get("properties") {
+                for (key, sub_schema) in properties {
+                    walk(sub_schema, key, false, found);
+                }
+            }
+
+            if let Some(items) = map.get("items") {
+                walk(items, &format!("{path}[]"), false, found);
+            }
+        }
+
+        let mut violations: Vec<(String, String)> = Vec::new();
+        let mut all_found: Vec<(String, String)> = Vec::new();
+
+        for tool in ToolCatalog::iter() {
+            let definition = tool.definition();
+            let tool_name = definition.name.to_string();
+            let schema_value = serde_json::to_value(&definition.input_schema)
+                .expect("tool schema must serialize to JSON");
+
+            let mut found_paths = Vec::new();
+            walk(&schema_value, "", true, &mut found_paths);
+
+            for path in found_paths {
+                let is_allowlisted = ALLOWLIST
+                    .iter()
+                    .any(|(t, p)| *t == tool_name && *p == path);
+                if !is_allowlisted {
+                    violations.push((tool_name.clone(), path.clone()));
+                }
+                all_found.push((tool_name.clone(), path));
+            }
+        }
+
+        assert!(
+            violations.is_empty(),
+            "unexpected nested `required` schema(s) (T0.8/R-TOOL-1 flat-schema \
+             rule): {violations:?}. If this is intentional, add it to \
+             ALLOWLIST above deliberately."
+        );
+
+        // Keep the allowlist honest: every entry must still correspond to a
+        // real nested schema, so a removed tool argument doesn't leave a
+        // stale exception nobody notices.
+        for (tool_name, path) in ALLOWLIST {
+            assert!(
+                all_found
+                    .iter()
+                    .any(|(t, p)| t == tool_name && p == path),
+                "allowlisted nested `required` at {tool_name}.{path} no longer \
+                 exists; remove it from ALLOWLIST"
+            );
+        }
+    }
+
+    /// T0.8 documenting test (not an enforced rule): records where `required`
+    /// currently sits relative to `properties` in Peach's own tool schemas.
+    /// R-TOOL-1's evidence for putting `required` *before* `properties` is
+    /// GPT-specific; OSS Peach does not implement that ordering today, and
+    /// this test exists only to notice if that silently changes (deferred
+    /// per the orchestrator's decision log, not decided in this test).
+    #[test]
+    fn test_t0_8_required_currently_orders_after_properties() {
+        let checked: Vec<(String, usize, usize)> = ToolCatalog::iter()
+            .filter_map(|tool| {
+                let definition = tool.definition();
+                let json = serde_json::to_string(&definition.input_schema)
+                    .expect("tool schema must serialize to JSON");
+                let properties_at = json.find("\"properties\"");
+                let required_at = json.find("\"required\"");
+                match (properties_at, required_at) {
+                    (Some(p), Some(r)) => Some((definition.name.to_string(), p, r)),
+                    _ => None,
+                }
+            })
+            .collect();
+
+        assert!(
+            !checked.is_empty(),
+            "expected at least one tool schema with both `properties` and `required`"
+        );
+
+        for (name, properties_at, required_at) in checked {
+            assert!(
+                properties_at < required_at,
+                "{name}: expected `required` to currently come after \
+                 `properties` (properties@{properties_at}, \
+                 required@{required_at}). If this now fails, `required` moved \
+                 before `properties` on the wire and R-TOOL-1's \
+                 deferred-ordering decision should be revisited."
+            );
+        }
+    }
 }

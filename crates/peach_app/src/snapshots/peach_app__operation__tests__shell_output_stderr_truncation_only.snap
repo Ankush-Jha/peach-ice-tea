@@ -39,5 +39,6 @@ stderr line 24
 stderr line 25
 ]]>
 </tail>
+<truncated>5 more lines not shown. Full output: read /tmp/stderr_content.txt (lines 11-15).</truncated>
 </stderr>
 </shell_output>

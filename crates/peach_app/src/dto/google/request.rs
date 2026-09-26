@@ -1,5 +1,5 @@
 use derive_setters::Setters;
-use peach_domain::{Context, ContextMessage};
+use peach_domain::{Context, ContextMessage, Effort, ReasoningConfig};
 use serde::Serialize;
 
 #[derive(Serialize, Default, Setters)]
@@ -59,7 +59,7 @@ pub struct GenerationConfig {
     pub image_config: Option<serde_json::Value>,
 }
 
-#[derive(Serialize, Setters)]
+#[derive(Serialize, Setters, Debug, PartialEq)]
 #[setters(into, strip_option)]
 #[serde(rename_all = "camelCase")]
 pub struct ThinkingConfig {
@@ -71,7 +71,7 @@ pub struct ThinkingConfig {
     pub include_thoughts: Option<bool>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum Level {
     Minimal,
@@ -298,8 +298,90 @@ pub struct SafetySetting {
     pub threshold: String,
 }
 
+/// Maps a Gemini model id and the domain `ReasoningConfig` to the
+/// `ThinkingConfig` Peach sends on the wire (TH.3, R-HACK-6).
+///
+/// Gemini 3 and later report thinking effort through `thinking_level`;
+/// sending `thinking_budget` alongside it is rejected by the API, so the two
+/// fields are never both set for those models. Gemini 3 also has no way to
+/// disable thinking, so when `effort` is unset this returns `None` rather
+/// than guessing a level — the API's own default applies. Gemini 2.x keeps
+/// using `thinking_budget`, unchanged from before this mapping existed.
+///
+/// The overall on/off gate (`reasoning.enabled == Some(true)`) is preserved
+/// exactly as it was before this function existed; only the *shape* of the
+/// thinking config sent once reasoning is on depends on the model and
+/// effort.
+pub fn thinking_for(model_id: &str, reasoning: &ReasoningConfig) -> Option<ThinkingConfig> {
+    if reasoning.enabled != Some(true) {
+        return None;
+    }
+
+    if is_gemini_3_or_later(model_id) {
+        let level = match reasoning.effort {
+            // Gemini 3 cannot disable thinking; there is no wire
+            // representation for "no thinking config" here beyond omitting
+            // it entirely, which is what an unset effort does above.
+            None => return None,
+            Some(Effort::High) | Some(Effort::XHigh) | Some(Effort::Max) => Level::High,
+            Some(Effort::Medium) => Level::Medium,
+            Some(Effort::Low) | Some(Effort::Minimal) => Level::Low,
+            // `Effort::None` is an explicit opt-out, which Gemini 3 has no
+            // equivalent for; Low is the closest available level.
+            Some(Effort::None) => Level::Low,
+        };
+
+        Some(ThinkingConfig {
+            thinking_level: Some(level),
+            thinking_budget: None,
+            include_thoughts: Some(true),
+        })
+    } else {
+        Some(ThinkingConfig {
+            thinking_level: None,
+            thinking_budget: reasoning.max_tokens.map(|t| t as i32),
+            include_thoughts: Some(true),
+        })
+    }
+}
+
+/// Returns true when `model_id` names Gemini 3 or a later major version
+/// (e.g. `gemini-3-pro-preview`, `gemini-3.8-flash`, a hypothetical
+/// `gemini-4-*`). Anything else — including unversioned ids like
+/// `gemini-pro` and non-Gemini ids — is treated as pre-3 so the existing
+/// `thinking_budget` behaviour is the fail-open default (CLAUDE.md
+/// principle 5).
+fn is_gemini_3_or_later(model_id: &str) -> bool {
+    model_id
+        .strip_prefix("gemini-")
+        .and_then(|rest| {
+            let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            digits.parse::<u32>().ok()
+        })
+        .is_some_and(|major| major >= 3)
+}
+
+impl Request {
+    /// Builds a Google/Gemini request from context and the model id being
+    /// called. TH.3/R-HACK-6: the reasoning-effort mapping (`thinking_level`
+    /// vs `thinking_budget`) depends on the model generation, so the model
+    /// id must be known. Prefer this over the bare `From<Context>` impl,
+    /// which predates a model id being available at the call site and keeps
+    /// sending `thinking_budget` unconditionally (the Gemini 2.x shape) as
+    /// its fail-open default.
+    pub fn from_context(context: Context, model_id: &str) -> Self {
+        Self::build(context, Some(model_id))
+    }
+}
+
 impl From<Context> for Request {
     fn from(context: Context) -> Self {
+        Request::build(context, None)
+    }
+}
+
+impl Request {
+    fn build(context: Context, model_id: Option<&str>) -> Self {
         // Extract system instruction from ALL system messages
         let system_parts: Vec<Part> = context
             .messages
@@ -394,19 +476,10 @@ impl From<Context> for Request {
                 }
                 _ => None,
             }),
-            thinking_config: context.reasoning.and_then(|reasoning| {
-                reasoning.enabled.and_then(|enabled| {
-                    if enabled {
-                        Some(ThinkingConfig {
-                            thinking_level: None,
-                            thinking_budget: reasoning.max_tokens.map(|t| t as i32),
-                            include_thoughts: Some(true),
-                        })
-                    } else {
-                        None
-                    }
-                })
-            }),
+            thinking_config: context
+                .reasoning
+                .as_ref()
+                .and_then(|reasoning| thinking_for(model_id.unwrap_or(""), reasoning)),
             ..Default::default()
         });
 
@@ -981,5 +1054,166 @@ mod tests {
             }
             _ => panic!("Expected FunctionResponse part"),
         }
+    }
+
+    #[test]
+    fn test_is_gemini_3_or_later_table() {
+        let cases = [
+            ("gemini-3-pro-preview", true),
+            ("gemini-3.8-flash", true),
+            ("gemini-3.8-flash-preview-11-2025", true),
+            ("gemini-4-pro", true),
+            ("gemini-10-flash", true),
+            ("gemini-2.0-flash", false),
+            ("gemini-2.5-pro", false),
+            ("gemini-1.5-flash", false),
+            ("gemini-pro", false),
+            ("", false),
+            ("claude-sonnet-4-5", false),
+        ];
+
+        for (model_id, expected) in cases {
+            let actual = is_gemini_3_or_later(model_id);
+            assert_eq!(actual, expected, "is_gemini_3_or_later({model_id:?})");
+        }
+    }
+
+    /// TH.3/R-HACK-6 table test: every (model, reasoning) branch of
+    /// `thinking_for`, including the rule that `thinking_level` and
+    /// `thinking_budget` are never both set.
+    #[test]
+    fn test_thinking_for_table() {
+        fn reasoning(
+            enabled: Option<bool>,
+            effort: Option<Effort>,
+            max_tokens: Option<usize>,
+        ) -> ReasoningConfig {
+            ReasoningConfig { enabled, effort, max_tokens, exclude: None }
+        }
+
+        const GEMINI_3: &str = "gemini-3.8-flash";
+        const GEMINI_2: &str = "gemini-2.0-flash";
+
+        // Not enabled at all -> no thinking config, regardless of model.
+        assert_eq!(
+            thinking_for(GEMINI_3, &reasoning(None, Some(Effort::High), None)),
+            None
+        );
+        assert_eq!(
+            thinking_for(GEMINI_3, &reasoning(Some(false), Some(Effort::High), None)),
+            None
+        );
+        assert_eq!(
+            thinking_for(GEMINI_2, &reasoning(None, None, Some(8000))),
+            None
+        );
+
+        // Gemini 3: effort unset -> no config (can't disable thinking, so
+        // sending nothing is the only option).
+        assert!(thinking_for(GEMINI_3, &reasoning(Some(true), None, None)).is_none());
+
+        // Gemini 3: effort mapping.
+        let level_of = |effort: Effort| {
+            thinking_for(GEMINI_3, &reasoning(Some(true), Some(effort), None))
+                .expect("effort is set, so a thinking config must be sent")
+                .thinking_level
+                .expect("gemini 3 must use thinking_level")
+        };
+        assert!(matches!(level_of(Effort::High), Level::High));
+        assert!(matches!(level_of(Effort::XHigh), Level::High));
+        assert!(matches!(level_of(Effort::Max), Level::High));
+        assert!(matches!(level_of(Effort::Medium), Level::Medium));
+        assert!(matches!(level_of(Effort::Low), Level::Low));
+        assert!(matches!(level_of(Effort::Minimal), Level::Low));
+        // No Gemini-3 equivalent of an explicit opt-out; nearest is Low.
+        assert!(matches!(level_of(Effort::None), Level::Low));
+
+        // Gemini 3: thinking_budget must never be set alongside
+        // thinking_level.
+        let gemini_3_config =
+            thinking_for(GEMINI_3, &reasoning(Some(true), Some(Effort::High), Some(8000)))
+                .unwrap();
+        assert!(gemini_3_config.thinking_level.is_some());
+        assert!(gemini_3_config.thinking_budget.is_none());
+
+        // Gemini 2.x: thinking_budget from max_tokens, thinking_level never
+        // set, regardless of effort.
+        let gemini_2_config =
+            thinking_for(GEMINI_2, &reasoning(Some(true), Some(Effort::High), Some(8000)))
+                .unwrap();
+        assert!(gemini_2_config.thinking_level.is_none());
+        assert_eq!(gemini_2_config.thinking_budget, Some(8000));
+
+        let gemini_2_no_budget =
+            thinking_for(GEMINI_2, &reasoning(Some(true), None, None)).unwrap();
+        assert!(gemini_2_no_budget.thinking_level.is_none());
+        assert_eq!(gemini_2_no_budget.thinking_budget, None);
+
+        // Every branch above: the two fields are never both `Some`.
+        for model_id in [GEMINI_3, GEMINI_2] {
+            for effort in [
+                None,
+                Some(Effort::None),
+                Some(Effort::Minimal),
+                Some(Effort::Low),
+                Some(Effort::Medium),
+                Some(Effort::High),
+                Some(Effort::XHigh),
+                Some(Effort::Max),
+            ] {
+                let effort_label = format!("{effort:?}");
+                if let Some(config) =
+                    thinking_for(model_id, &reasoning(Some(true), effort, Some(8000)))
+                {
+                    assert!(
+                        !(config.thinking_level.is_some() && config.thinking_budget.is_some()),
+                        "thinking_level and thinking_budget both set for {model_id} / {effort_label}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// `Request::from_context` (with a known model id) picks
+    /// `thinking_level` for Gemini 3; the bare `From<Context>` impl (no
+    /// model id) falls back to the pre-TH.3 `thinking_budget` shape.
+    #[test]
+    fn test_request_from_context_uses_thinking_level_for_gemini_3() {
+        let context = Context::default().reasoning(ReasoningConfig {
+            enabled: Some(true),
+            effort: Some(Effort::High),
+            max_tokens: None,
+            exclude: None,
+        });
+
+        let request = Request::from_context(context, "gemini-3.8-flash");
+        let thinking_config = request
+            .generation_config
+            .expect("generation config must be present")
+            .thinking_config
+            .expect("thinking config must be present when reasoning is enabled");
+
+        assert!(matches!(thinking_config.thinking_level, Some(Level::High)));
+        assert_eq!(thinking_config.thinking_budget, None);
+    }
+
+    #[test]
+    fn test_request_from_trait_impl_falls_back_to_thinking_budget() {
+        let context = Context::default().reasoning(ReasoningConfig {
+            enabled: Some(true),
+            effort: Some(Effort::High),
+            max_tokens: Some(4096),
+            exclude: None,
+        });
+
+        let request = Request::from(context);
+        let thinking_config = request
+            .generation_config
+            .expect("generation config must be present")
+            .thinking_config
+            .expect("thinking config must be present when reasoning is enabled");
+
+        assert_eq!(thinking_config.thinking_level, None);
+        assert_eq!(thinking_config.thinking_budget, Some(4096));
     }
 }
