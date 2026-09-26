@@ -628,3 +628,19 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   then a green test run. Results arrive in the model's order.
 - **A/B design for when budget exists:** TH.7 suite, Gemini, k = 3. Ship if success is not lower and wall
   time or LLM calls drop. The effect is largest on exploration-heavy tasks with several reads per turn.
+
+## D-042 — T2.6 pre-dispatch argument correction, behind a flag (2026-09-25)
+- **What was already there (not duplicated):** tool-name case/whitespace normalisation, type coercion to the
+  schema (`forge_json_repair::coerce_to_schema`), serde aliases such as `path`→`file_path`, and resolution of
+  relative paths against cwd.
+- **The gap:** tool schemas use `deny_unknown_fields`, so a misnamed key (`filePath`, `contents`, `old`/`new`)
+  fails the call outright, and recovering costs a full model round trip.
+- **Decision:** `FORGE_HARNESS_TOOL_CORRECTION=1` (default off, unticked until an A/B) renames an unknown key
+  to a schema property only when that is unambiguous: an exact camelCase/kebab→snake match, a small alias
+  table, or the *single* property within edit distance 2. It never overwrites a key that is present and
+  leaves everything else to the normal error. Built-in tools only; MCP tools are untouched. Each rename
+  emits `recovery(action=tool_argument_renamed)`.
+- **Proof:** unit tables (renamed, ambiguous, unrelated, colliding, and real catalog calls). End to end
+  against the real binary: `write {filePath, contents}` fails without the flag, and with it the file is
+  written and two rename events are recorded.
+- **A/B design:** TH.7 suite, Gemini, k = 3. Ship if tool errors fall and success is not lower.

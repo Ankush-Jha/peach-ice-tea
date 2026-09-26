@@ -92,6 +92,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [ ] **T2.4** `R-LOOP-4` non-interactive profile (prompt variant, followup disabled); ambiguous-task eval. **[A/B]**
 - [ ] **T2.5** `R-LOOP-3` progressive reasoning schedule behind config; ship on only if A/B wins. **[A/B]**
 - [ ] **T2.6** `R-TOOL-3` pre-dispatch correction layer + correction counters. **[A/B]**
+      → built behind `FORGE_HARNESS_TOOL_CORRECTION=1` (default off): unambiguous key renames, `recovery` events,
+      real-binary test (D-042). Unticked pending A/B.
 
 ## M3 — Context engine
 - [ ] **T3.1** `R-CTX-1` migrations + `thread_events` + `artifacts` + repository + replay test.
