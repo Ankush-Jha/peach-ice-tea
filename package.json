@@ -12,7 +12,9 @@
     "test:bounty": "tsx --test .github/scripts/bounty/tests/*.test.ts",
     "bounty:sync-issue": "tsx .github/scripts/bounty/src/sync-issue.ts",
     "bounty:sync-pr": "tsx .github/scripts/bounty/src/sync-pr.ts",
-    "bounty:sync-all-issues": "tsx .github/scripts/bounty/src/sync-all-issues.ts"
+    "bounty:sync-all-issues": "tsx .github/scripts/bounty/src/sync-all-issues.ts",
+    "hackathon:ab": "tsx benchmarks/hackathon/ab.ts",
+    "test:hackathon": "tsx --test benchmarks/hackathon/*.test.ts"
   },
   "dependencies": {
     "@ai-sdk/google-vertex": "^5.0.0",
