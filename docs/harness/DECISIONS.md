@@ -250,3 +250,13 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   (D-004), and upstream's user-facing "Forge" strings (banner, prompts), which are numerous and churn with every
   release. The README states plainly that Peach Ice Tea is built on a ForgeCode fork — which also answers ALIGNMENT §4
   Q1 honestly rather than obscuring it. Rebranding the binary and banner is a later, separate decision if wanted.
+
+## D-024 — A ForgeCode fork is eligible; provenance stays explicit (2026-09-23)
+- **Context:** ALIGNMENT §4 Q1 was the largest unhedged risk in the project — if the organizers required a
+  from-scratch harness, the whole approach would have had to change.
+- **Decision (confirmed by the team, 2026-09-23):** building Peach Ice Tea on a fork of `tailcallhq/forgecode`
+  is allowed. Work continues on the five-wave plan.
+- **Consequences:** the README states the provenance plainly rather than obscuring it, and every non-trivial
+  change keeps citing a requirement ID and a decision. §25's interview is about *our* engineering decisions, so
+  what matters is being able to say which parts we built, why, and what evidence supports them — which is what
+  `DECISIONS.md`, `RECON.md` and the review record exist to provide.
