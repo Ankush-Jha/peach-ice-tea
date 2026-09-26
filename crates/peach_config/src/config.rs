@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use derive_setters::Setters;
@@ -223,6 +223,11 @@ pub struct PeachConfig {
     /// generation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggest: Option<ModelConfig>,
+    /// Model and provider per agent id (e.g. `sage`), so each role can run on
+    /// the model that suits it. Used when the agent's own definition names no
+    /// provider or model; agents without an entry use `session`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub roles: BTreeMap<String, ModelConfig>,
 
     // --- Workflow fields ---
     /// Configuration for automatic Peach updates.

@@ -12,11 +12,16 @@
 ///
 /// Recognised:
 /// - Google: a `quotaId` naming a per-day quota (`...PerDay...`);
-/// - OpenAI-style: `insufficient_quota` (no credit left).
+/// - OpenAI-style: `insufficient_quota` (no credit left);
+/// - OpenRouter: a 402 whose `limit_source` is `openrouter_credits` (the
+///   account cannot afford the request's `max_tokens`; D-050).
 pub fn exhausted_quota(error: &anyhow::Error) -> Option<String> {
     let text = format!("{error:#}");
     if text.contains("insufficient_quota") {
         return Some("insufficient_quota".to_string());
+    }
+    if text.replace("\\\"", "\"").contains("\"limit_source\":\"openrouter_credits\"") {
+        return Some("openrouter_credits".to_string());
     }
     quota_ids(&text).into_iter().find(|id| id.contains("PerDay"))
 }
@@ -45,6 +50,8 @@ mod tests {
     const GOOGLE_DAILY: &str = r#"{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaValue":"20"}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"59s"}]}}"#;
     const GOOGLE_MINUTE: &str = r#"{"error":{"code":429,"details":[{"violations":[{"quotaId": "GenerateRequestsPerMinutePerProjectPerModel"}]}]}}"#;
 
+    const OPENROUTER_CREDITS: &str = r#"{"error":{"message":"This request requires more credits, or fewer max_tokens. You requested up to 20480 tokens, but can only afford 1354.","code":402,"metadata":{"limit_source":"openrouter_credits"}}}"#;
+
     fn provider_error(body: &str) -> anyhow::Error {
         anyhow::anyhow!("Invalid Status Code: 429")
             .context(format!("429 Too Many Requests Reason: {body}"))
@@ -59,6 +66,7 @@ mod tests {
             exhausted_quota(&provider_error(r#"{"error":{"code":"insufficient_quota"}}"#)),
             exhausted_quota(&anyhow::anyhow!("Invalid Status Code: 503")),
             exhausted_quota(&provider_error(&GOOGLE_DAILY.replace('"', "\\\""))),
+            exhausted_quota(&provider_error(OPENROUTER_CREDITS)),
         ];
 
         let expected = vec![
@@ -67,6 +75,7 @@ mod tests {
             Some("insufficient_quota".to_string()),
             None,
             Some("GenerateRequestsPerDayPerProjectPerModel-FreeTier".to_string()),
+            Some("openrouter_credits".to_string()),
         ];
         assert_eq!(actual, expected);
     }
