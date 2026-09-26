@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discord Community
+    url: https://discord.gg/kRZBPpkgwq
+    about: Join our Discord server for questions, discussions, and community support
+  - name: 📖 Documentation
+    url: https://peach-ice-tea.dev/docs/
+    about: Check out our comprehensive documentation
+  - name: ❓ Discussions
+    url: https://github.com/Ankush-Jha/peach-ice-tea/discussions
+    about: Ask questions and discuss ideas with the community

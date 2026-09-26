@@ -1,0 +1,5 @@
+[print_schema]
+file = "crates/peach_repo/src/database/schema.rs"
+
+[migrations_directory]
+dir = "crates/peach_repo/src/database/migrations"

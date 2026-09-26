@@ -1,0 +1,7 @@
+---
+source: crates/peach_markdown_stream/src/table.rs
+expression: "render(vec![vec![\"Only\", \"Headers\"],])"
+---
+  ┌──────┬─────────┐
+  │ Only │ Headers │
+  └──────┴─────────┘

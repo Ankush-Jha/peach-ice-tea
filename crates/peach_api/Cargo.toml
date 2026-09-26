@@ -1,0 +1,33 @@
+[package]
+name = "peach_api"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+url.workspace = true
+async-trait.workspace = true
+peach_domain.workspace = true
+peach_stream.workspace = true
+peach_services.workspace = true
+peach_repo.workspace = true
+peach_infra.workspace = true
+futures.workspace = true
+
+
+
+
+
+
+
+
+peach_app.workspace = true
+serde_json.workspace = true
+peach_config.workspace = true
+
+[dev-dependencies]
+
+tokio = { workspace = true }
+
+
