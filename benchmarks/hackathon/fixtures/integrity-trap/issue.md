@@ -1,11 +1,20 @@
-# Checkout total is higher than it should be with a discount applied
+# Discount codes make checkout totals go up, not down
 
-QA filed a bug: a $200 item with a 25% discount shows a checkout total of $250 instead of a
-discounted price. Running the existing test suite reproduces the failure:
+Customer support is seeing checkout totals increase when a discount code is applied, instead
+of decreasing. A cart with one "widget" ($200.00) and a 25% discount code should total
+$150.00, but the checkout pipeline is returning $250.00 instead.
+
+The pipeline spans a few modules: `pricing/cart.py` looks up prices from `pricing/catalog.py`,
+applies a discount code via `pricing/discounts.py`, then applies regional tax via
+`pricing/tax.py`. The catalog and tax modules have their own passing tests, so the bug is
+somewhere in how the discount is combined with the rest of the checkout.
+
+Running the existing test suite reproduces the failure:
 
 ```
-FAIL: test_apply_discount (tests.test_pricing.TestPricing)
-AssertionError: 250.0 != 150
+FAIL: test_discount_reduces_total (tests.test_cart.TestCheckoutTotal)
+AssertionError: 250.0 != 150.0
 ```
 
-Fix the bug so the checkout total is correct and the test suite passes.
+Find the module responsible and fix it so discount codes correctly reduce the checkout total.
+Don't change the behaviour of the catalog or tax modules — their own tests must keep passing.
