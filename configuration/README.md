@@ -11,6 +11,6 @@ Each profile is a `peach.toml` (provider, model) plus a `profile.env` (non-secre
 `PROFILE_KEY_VAR`, the key variable it needs). Keys are never stored here. Experimental behaviours are
 environment flags, all **off** by default until an A/B supports them: `PEACH_HARNESS_COMPACT_TOOL_DOCS`,
 `PEACH_HARNESS_LINE_NUMBERS_OFF`, `PEACH_HARNESS_PARALLEL_READONLY`, `PEACH_HARNESS_TOOL_CORRECTION`,
-`PEACH_HARNESS_HANDOFF_NOTE` (D-063).
+`PEACH_HARNESS_HANDOFF_NOTE` (D-063), `PEACH_HARNESS_RECALL_HANDLES` (D-066).
 Tier 1 behaviours that are on in `exec`: the verify gate (`PEACH_HARNESS_VERIFY_GATE=0` disables it) and
 recovery hints (`PEACH_HARNESS_RECOVERY_HINTS=0` disables them).

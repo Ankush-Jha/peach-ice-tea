@@ -125,7 +125,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [x] **T3.2** `R-CTX-1` write path: orchestrator appends all events; `conversations.context`
       becomes projection; old conversations still resume.
       → every save appends via `EventLogWriter`; content-based diff with `Revise` + compactor-shaped split (D-065).
-- [ ] **T3.3** `R-CTX-3` `recall` tool over artifacts; stub format with handles.
+- [x] **T3.3** `R-CTX-3` `recall` tool over artifacts; stub format with handles.
+      → recall handles as files read with `read`/`fs_search` (no new tool), listed in the summary; behind `PEACH_HARNESS_RECALL_HANDLES` (D-066).
 - [x] **T3.4** `R-CTX-2` pipeline skeleton with S3 = existing Compactor (behaviour identical to
       today; golden test proves it).
       → `compaction_pipeline::Pipeline`, hook wired, golden test over 4 shapes with a non-vacuity guard (D-062).

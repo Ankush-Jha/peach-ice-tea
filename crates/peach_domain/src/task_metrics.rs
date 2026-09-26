@@ -300,6 +300,13 @@ impl TaskMetrics {
         self.dump_files.insert(path.into());
     }
 
+    /// Adds `other`'s dump files to these. Hooks register handles (recall
+    /// handles, D-066) on the conversation's copy of the metrics, while the
+    /// tool executor counts reads against the tool context's copy.
+    pub fn absorb_dump_files(&mut self, other: &TaskMetrics) {
+        self.dump_files.extend(other.dump_files.iter().cloned());
+    }
+
     /// Records a file read and updates the recovery counters it triggers.
     ///
     /// `recovery.offload_read` fires the first time a path known to be one

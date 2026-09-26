@@ -9,6 +9,7 @@
 //! join as new variants of [`Stage`] ahead of `Summarize`.
 
 pub mod handoff;
+pub mod recall;
 
 use peach_domain::{Compact, Context, ContextMessage, Environment};
 
@@ -43,6 +44,9 @@ pub struct PipelineOutcome {
     pub context: Context,
     /// Name of the last stage that ran.
     pub stage_reached: &'static str,
+    /// Files holding results the summary replaced (R-CTX-3), for the caller
+    /// to register as recovery handles.
+    pub recall_handles: Vec<recall::RecallHandle>,
 }
 
 /// An ordered list of stages. Every pipeline ends with `Summarize`.
@@ -52,6 +56,8 @@ pub struct Pipeline {
     target_tokens: usize,
     /// Placed at the top of the summary S3 writes (R-CTX-6, [`handoff`]).
     handoff_note: Option<String>,
+    /// Whether S3 keeps what it summarises away as recall handles ([`recall`]).
+    recall_handles: bool,
 }
 
 impl Pipeline {
@@ -67,7 +73,14 @@ impl Pipeline {
             stages: vec![Stage::Summarize(Compactor::new(compact, environment))],
             target_tokens,
             handoff_note: None,
+            recall_handles: false,
         }
+    }
+
+    /// Sets whether S3 writes recall handles for the results it replaces.
+    pub fn recall_handles(mut self, enabled: bool) -> Self {
+        self.recall_handles = enabled;
+        self
     }
 
     /// Sets the handoff note placed at the top of the S3 summary.
@@ -84,6 +97,7 @@ impl Pipeline {
     /// context, as it did when `Compactor` failed.
     pub fn run(&self, mut context: Context) -> anyhow::Result<PipelineOutcome> {
         let mut stage_reached = "none";
+        let mut recall_handles = Vec::new();
         for (index, stage) in self.stages.iter().enumerate() {
             let is_last = index + 1 == self.stages.len();
             if !is_last && stage_reached != "none" && *context.token_count() <= self.target_tokens {
@@ -92,24 +106,30 @@ impl Pipeline {
             let before = context.messages.clone();
             context = stage.apply(context)?;
             stage_reached = stage.name();
-            if matches!(stage, Stage::Summarize(_))
-                && let Some(note) = &self.handoff_note
-            {
-                prepend_to_new_summary(&mut context, &before, note);
+            if matches!(stage, Stage::Summarize(_)) {
+                if self.recall_handles {
+                    recall_handles = recall::write_handles(&before, &context.messages);
+                    if let Some(section) = recall::recall_section(&recall_handles) {
+                        edit_new_summary(&mut context, &before, |text| format!("{text}\n\n{section}"));
+                    }
+                }
+                if let Some(note) = &self.handoff_note {
+                    edit_new_summary(&mut context, &before, |text| format!("{note}\n\n{text}"));
+                }
             }
         }
-        Ok(PipelineOutcome { context, stage_reached })
+        Ok(PipelineOutcome { context, stage_reached, recall_handles })
     }
 }
 
-/// Puts `note` at the top of the one message S3 added: the summary is the
+/// Rewrites the text of the one message S3 added: the summary is the
 /// message that was not in the context before the stage ran.
-fn prepend_to_new_summary(context: &mut Context, before: &[peach_domain::MessageEntry], note: &str) {
+fn edit_new_summary(context: &mut Context, before: &[peach_domain::MessageEntry], edit: impl Fn(&str) -> String) {
     let summary = context.messages.iter_mut().find(|entry| !before.contains(entry));
     if let Some(entry) = summary
         && let ContextMessage::Text(text) = &mut **entry
     {
-        text.content = format!("{note}\n\n{}", text.content);
+        text.content = edit(&text.content);
     }
 }
 
@@ -187,6 +207,30 @@ mod tests {
         let ContextMessage::Text(text) = &*actual.messages[changed[0]] else { panic!("summary is not text") };
         let ContextMessage::Text(plain_text) = &*plain.messages[changed[0]] else { panic!("summary is not text") };
         assert_eq!(text.content, format!("HANDOFF NOTE test\n\n{}", plain_text.content));
+    }
+
+    #[test]
+    fn test_recall_handles_list_every_summarised_result_below_the_summary() {
+        let compact = Compact::new().retention_window(2usize).eviction_window(0.5);
+        let fixture = fixture_contexts().remove(2);
+
+        let outcome = Pipeline::new(compact, fixture_environment(), 0).recall_handles(true).run(fixture).unwrap();
+
+        let summary = outcome
+            .context
+            .messages
+            .iter()
+            .find_map(|entry| match &**entry {
+                ContextMessage::Text(text) if text.content.contains("RECOVERABLE RESULTS") => Some(text.content.clone()),
+                _ => None,
+            })
+            .expect("no recall section in the summary");
+        assert!(!outcome.recall_handles.is_empty());
+        for handle in &outcome.recall_handles {
+            assert!(summary.contains(&handle.path.display().to_string()));
+            assert!(std::fs::read_to_string(&handle.path).unwrap().contains("contents of f"));
+            let _ = std::fs::remove_file(&handle.path);
+        }
     }
 
     #[test]

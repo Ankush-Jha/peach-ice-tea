@@ -1411,6 +1411,10 @@ fn test_the_handoff_note_survives_compaction_only_with_the_flag() {
     let has_note = |requests: &[String]| requests.iter().any(|body| body.contains("HANDOFF NOTE"));
     assert!(has_note(&with_flag), "no handoff note after compaction with the flag");
     assert!(!has_note(&without), "a handoff note appeared without the flag");
+    assert!(
+        !without.iter().any(|body| body.contains("RECOVERABLE RESULTS")),
+        "recall handles appeared without their flag"
+    );
     let last = with_flag.last().unwrap();
     assert!(last.contains("you must not rename add"), "the user's constraint was not kept verbatim");
 }
@@ -1444,4 +1448,47 @@ fn test_a_run_that_compacts_leaves_its_full_history_in_the_event_log() {
         assert_eq!(logged(&format!("command=\\\"echo {word}")), 1, "echo {word}'s result");
     }
     assert_eq!(logged("\"content\":\"Done.\""), 1, "the final answer");
+}
+
+/// Reads the first recall handle named in the request's summary.
+fn read_the_first_recall_handle(body: &str) -> Turn {
+    let unescaped = body.replace("\\\\/", "/");
+    let marker = unescaped.find("peach_recall_").expect("no recall handle in the request");
+    let start = unescaped[..marker].rfind(' ').expect("handle path has no leading space") + 1;
+    let path: String = unescaped[start..].chars().take_while(|c| !c.is_whitespace() && *c != '"').collect();
+    Turn::Tool("read", serde_json::json!({"file_path": path}))
+}
+
+#[test]
+fn test_a_result_summarised_away_is_recalled_from_its_handle() {
+    let project = project_with_a_test();
+    let echo = |text: &'static str| {
+        Turn::Tool("shell", serde_json::json!({"command": format!("echo {text}"), "description": "echo"}))
+    };
+    let model = ScriptedModel::start(vec![
+        echo("MARKER_ONE"),
+        echo("two"),
+        echo("three"),
+        echo("four"),
+        Turn::FromRequest(read_the_first_recall_handle),
+        Turn::Text("Done."),
+    ]);
+    let env = [
+        ("PEACH_COMPACT__MESSAGE_THRESHOLD", "6"),
+        ("PEACH_COMPACT__RETENTION_WINDOW", "2"),
+        ("PEACH_HARNESS_RECALL_HANDLES", "1"),
+    ];
+
+    let run = run_exec_full(project.path(), &model, None, &env, "fix add", &[]);
+
+    let requests = model.requests();
+    let before_recall = &requests[requests.len() - 2];
+    let after_recall = requests.last().unwrap();
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert!(before_recall.contains("RECOVERABLE RESULTS"), "no handles in the summary");
+    assert!(
+        after_recall.matches("MARKER_ONE").count() > before_recall.matches("MARKER_ONE").count(),
+        "the recalled result did not bring the original output back"
+    );
+    assert!(run.report["metrics"]["recovery"]["offload_read"].as_u64().unwrap() >= 1, "report: {}", run.report);
 }
