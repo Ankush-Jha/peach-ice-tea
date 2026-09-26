@@ -1,0 +1,159 @@
+{
+  "label": "free-screen-1",
+  "suite": "py-bugfix",
+  "commit": "03ac3d416",
+  "ranked": [
+    {
+      "model": "dots-studio/dots-3-note-preview:free",
+      "successes": 1,
+      "runs": 1,
+      "blocked": 0,
+      "llm_calls": 4,
+      "input_tokens": 50777,
+      "output_tokens": 703,
+      "wall_ms": 43187,
+      "usd": 0
+    },
+    {
+      "model": "cohere/north-mini-code:free",
+      "successes": 1,
+      "runs": 1,
+      "blocked": 0,
+      "llm_calls": 6,
+      "input_tokens": 68946,
+      "output_tokens": 1370,
+      "wall_ms": 45881,
+      "usd": 0
+    },
+    {
+      "model": "nvidia/nemotron-3-super-120b-a12b:free",
+      "successes": 1,
+      "runs": 1,
+      "blocked": 0,
+      "llm_calls": 5,
+      "input_tokens": 67789,
+      "output_tokens": 1371,
+      "wall_ms": 50576,
+      "usd": 0
+    },
+    {
+      "model": "poolside/laguna-s-2.1:free",
+      "successes": 1,
+      "runs": 1,
+      "blocked": 0,
+      "llm_calls": 4,
+      "input_tokens": 51176,
+      "output_tokens": 661,
+      "wall_ms": 576705,
+      "usd": 0
+    },
+    {
+      "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "successes": 0,
+      "runs": 1,
+      "blocked": 0,
+      "llm_calls": 7,
+      "input_tokens": 94791,
+      "output_tokens": 2678,
+      "wall_ms": 211271,
+      "usd": 0
+    },
+    {
+      "model": "nvidia/nemotron-3.5-lightning:free",
+      "successes": 0,
+      "runs": 1,
+      "blocked": 0,
+      "llm_calls": 6,
+      "input_tokens": 82390,
+      "output_tokens": 1107,
+      "wall_ms": 600208,
+      "usd": 0
+    }
+  ],
+  "perFixture": {
+    "cohere/north-mini-code:free": [
+      {
+        "fixture": "py-bugfix",
+        "seed": 1,
+        "blocked": false,
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 6,
+        "input_tokens": 68946,
+        "cached_input_tokens": 0,
+        "output_tokens": 1370,
+        "wall_ms": 45881
+      }
+    ],
+    "nvidia/nemotron-3-super-120b-a12b:free": [
+      {
+        "fixture": "py-bugfix",
+        "seed": 1,
+        "blocked": false,
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 5,
+        "input_tokens": 67789,
+        "cached_input_tokens": 21120,
+        "output_tokens": 1371,
+        "wall_ms": 50576
+      }
+    ],
+    "nvidia/nemotron-3.5-lightning:free": [
+      {
+        "fixture": "py-bugfix",
+        "seed": 1,
+        "blocked": false,
+        "success": false,
+        "outcome": "interrupted",
+        "llm_calls": 6,
+        "input_tokens": 82390,
+        "cached_input_tokens": 36992,
+        "output_tokens": 1107,
+        "wall_ms": 600208
+      }
+    ],
+    "dots-studio/dots-3-note-preview:free": [
+      {
+        "fixture": "py-bugfix",
+        "seed": 1,
+        "blocked": false,
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 4,
+        "input_tokens": 50777,
+        "cached_input_tokens": 36864,
+        "output_tokens": 703,
+        "wall_ms": 43187
+      }
+    ],
+    "poolside/laguna-s-2.1:free": [
+      {
+        "fixture": "py-bugfix",
+        "seed": 1,
+        "blocked": false,
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 4,
+        "input_tokens": 51176,
+        "cached_input_tokens": 0,
+        "output_tokens": 661,
+        "wall_ms": 576705
+      }
+    ],
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": [
+      {
+        "fixture": "py-bugfix",
+        "seed": 1,
+        "blocked": false,
+        "success": false,
+        "outcome": "request_limit",
+        "llm_calls": 7,
+        "input_tokens": 94791,
+        "cached_input_tokens": 71808,
+        "output_tokens": 2678,
+        "wall_ms": 211271
+      }
+    ]
+  }
+}
