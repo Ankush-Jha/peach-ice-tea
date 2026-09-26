@@ -28,6 +28,19 @@ pub struct Orchestrator<S> {
     config: forge_config::ForgeConfig,
     /// harness: T2.1 — run consecutive read-only tool calls concurrently.
     parallel_readonly: bool,
+    /// harness: R-LOOP-5 — apply the doom-loop escalation ladder. Set per
+    /// orchestrator (from `FORGE_HARNESS_DOOM_LOOP_ESCALATION` in `app.rs`) so
+    /// tests never share a process-wide flag.
+    doom_loop_escalation: bool,
+    /// harness: R-LOOP-5 — counts exact tool+argument repeats within this
+    /// run for the doom-loop escalation ladder. Inert (always `Allow`)
+    /// unless `doom_loop_escalation` is set.
+    #[setters(skip)]
+    escalation_guard: crate::doom_loop_escalation::EscalationGuard,
+    /// Set inside `execute_tool_calls` when a call is paused for approval
+    /// this iteration; consumed in `run()` right after it returns.
+    #[setters(skip)]
+    pending_escalation_pause: Option<crate::doom_loop_escalation::PendingPause>,
 }
 
 impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orchestrator<S> {
@@ -48,7 +61,27 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
             error_tracker: Default::default(),
             hook: Arc::new(Hook::default()),
             parallel_readonly: false,
+            doom_loop_escalation: false,
+            escalation_guard: crate::doom_loop_escalation::EscalationGuard::new(),
+            pending_escalation_pause: None,
         }
+    }
+
+    /// harness: R-LOOP-5 — the ladder's warning text for `tool_call`.
+    fn render_escalation_warning(&self, template: &str, tool_call: &ToolCallFull, occurrences: usize) -> String {
+        TemplateEngine::default()
+            .render(
+                template,
+                &serde_json::json!({ "tool_name": tool_call.name.as_str(), "occurrences": occurrences }),
+            )
+            .unwrap_or_default()
+    }
+
+    /// harness: R-LOOP-5 — the result of a call the ladder did not run.
+    fn escalation_skip_result(&self, tool_call: &ToolCallFull, warning: String) -> ToolResult {
+        ToolResult::new(tool_call.name.clone())
+            .call_id(tool_call.call_id.clone())
+            .success(Element::new("system_warning").cdata(warning).to_string())
     }
 
     /// Get a reference to the internal conversation
@@ -140,14 +173,66 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
                     .await?;
             }
 
+            // harness: R-LOOP-5 — classify each call against the doom-loop
+            // escalation ladder before it runs. A no-op (`Escalation::Allow`
+            // for everything) when the flag is off, so default behaviour is
+            // unchanged.
+            let escalations: Vec<crate::doom_loop_escalation::Escalation> = batch
+                .iter()
+                .map(|tool_call| {
+                    if self.doom_loop_escalation {
+                        self.escalation_guard.classify(&tool_call.name, &tool_call.arguments)
+                    } else {
+                        crate::doom_loop_escalation::Escalation::Allow
+                    }
+                })
+                .collect();
+
             // Execute the tools: one at a time unless this is a read-only
-            // batch, in which case together. Results keep the call order.
-            let tool_results: Vec<ToolResult> = join_all(
-                batch
+            // batch, in which case together. Only `Allow` and `WarnAndRun`
+            // execute; skipped and paused calls get a synthesized result.
+            // Results keep the call order.
+            let to_execute: Vec<&ToolCallFull> = batch
+                .iter()
+                .zip(escalations.iter())
+                .filter(|(_, escalation)| escalation.executes())
+                .map(|(tool_call, _)| *tool_call)
+                .collect();
+            let mut executed: std::collections::VecDeque<ToolResult> = join_all(
+                to_execute
                     .iter()
                     .map(|tool_call| self.services.call(&self.agent, tool_context, (*tool_call).clone())),
             )
-            .await;
+            .await
+            .into();
+
+            let mut tool_results: Vec<ToolResult> = Vec::with_capacity(batch.len());
+            for (tool_call, escalation) in batch.iter().zip(escalations.iter()) {
+                use crate::doom_loop_escalation::Escalation;
+                let result = match escalation {
+                    Escalation::Allow => executed.pop_front().expect("one executed result per Allow/WarnAndRun call"),
+                    Escalation::WarnAndRun { occurrences } => {
+                        let mut result =
+                            executed.pop_front().expect("one executed result per Allow/WarnAndRun call");
+                        let warning = self.render_escalation_warning("forge-doom-loop-warn.md", tool_call, *occurrences);
+                        result.output.combine_mut(ToolOutput::text(Element::new("system_warning").cdata(warning)));
+                        result
+                    }
+                    Escalation::WarnAndSkip { occurrences } => {
+                        let warning = self.render_escalation_warning("forge-doom-loop-skip.md", tool_call, *occurrences);
+                        self.escalation_skip_result(tool_call, warning)
+                    }
+                    Escalation::PauseForApproval { occurrences } => {
+                        let warning = self.render_escalation_warning("forge-doom-loop-pause.md", tool_call, *occurrences);
+                        self.pending_escalation_pause = Some(crate::doom_loop_escalation::PendingPause {
+                            tool_name: tool_call.name.clone(),
+                            occurrences: *occurrences,
+                        });
+                        self.escalation_skip_result(tool_call, warning)
+                    }
+                };
+                tool_results.push(result);
+            }
 
             for (tool_call, tool_result) in batch.iter().zip(tool_results) {
                 // Fire the ToolcallEnd lifecycle event (fires on both success
@@ -510,6 +595,19 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
                 })
                 .await?;
                 // Should yield if too many errors are produced
+                should_yield = true;
+            }
+
+            // harness: R-LOOP-5 — a call repeated past the ladder's pause
+            // threshold stops the run here, like the other two interrupts.
+            if let Some(pause) = self.pending_escalation_pause.take() {
+                self.send(ChatResponse::Interrupt {
+                    reason: InterruptionReason::DoomLoopEscalation {
+                        tool_name: pause.tool_name,
+                        occurrences: pause.occurrences as u64,
+                    },
+                })
+                .await?;
                 should_yield = true;
             }
 

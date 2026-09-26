@@ -59,7 +59,7 @@ OPENROUTER_API_KEY=... harness/peach-ice-tea --profile openrouter --evidence-dir
 ```
 
 The last stdout line is the JSON outcome. Exit codes: 0 completed, 1 error, 2 tool-failure limit, 3 request
-limit, 4 time budget, 5 interrupted. `forge report <evidence-dir>` regenerates the report offline.
+limit, 4 time budget, 5 interrupted, 6 doom-loop escalation (flagged, D-082). `forge report <evidence-dir>` regenerates the report offline.
 
 ## Evaluating locally
 

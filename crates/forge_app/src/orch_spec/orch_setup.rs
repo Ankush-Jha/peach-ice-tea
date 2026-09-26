@@ -47,6 +47,8 @@ pub struct TestContext {
     pub tool_delay: std::time::Duration,
     /// harness: T2.1 — the orchestrator's `parallel_readonly` setting.
     pub parallel_readonly: bool,
+    /// harness: R-LOOP-5 — the orchestrator's `doom_loop_escalation` setting.
+    pub doom_loop_escalation: bool,
 }
 
 impl Default for TestContext {
@@ -87,6 +89,7 @@ impl Default for TestContext {
             ],
             tool_delay: std::time::Duration::ZERO,
             parallel_readonly: false,
+            doom_loop_escalation: false,
         }
     }
 }

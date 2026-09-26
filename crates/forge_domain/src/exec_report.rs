@@ -29,6 +29,9 @@ pub enum TaskOutcome {
     /// Stopped by a signal (SIGINT/SIGTERM) from outside: a runner's hard
     /// timeout or a person. The evidence is still written.
     Interrupted,
+    /// Stopped because a tool call repeated with identical arguments past
+    /// the doom-loop escalation ladder's pause threshold (R-LOOP-5).
+    DoomLoopEscalation,
 }
 
 impl TaskOutcome {
@@ -45,6 +48,7 @@ impl TaskOutcome {
             TaskOutcome::RequestLimit => 3,
             TaskOutcome::TimeBudget => 4,
             TaskOutcome::Interrupted => 5,
+            TaskOutcome::DoomLoopEscalation => 6,
         }
     }
 

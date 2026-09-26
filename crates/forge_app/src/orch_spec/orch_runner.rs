@@ -142,7 +142,8 @@ impl Runner {
                     .on_end(PendingTodosHandler::new()),
             ))
             .sender(tx)
-            .parallel_readonly(setup.parallel_readonly);
+            .parallel_readonly(setup.parallel_readonly)
+            .doom_loop_escalation(setup.doom_loop_escalation);
 
         let (mut orch, runner) = (orch, services);
 

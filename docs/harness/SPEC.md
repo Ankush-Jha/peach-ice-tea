@@ -222,6 +222,16 @@ location in this repo, paths relative to `crates/`), and **acceptance** criteria
 
 ## 5. Context engine — `R-CTX`  *(core differentiator)*
 
+
+### R-LOOP-5 — Enforced doom-loop escalation
+- **Why:** upstream's `DoomLoopDetector` only nudges after the fact and cannot stop a call (principle 3).
+- **What:** an identical tool call (same name, canonicalised arguments) runs normally the first time; the 1st repeat
+  runs with a loud warning appended; the 2nd repeat is withheld and answered with the warning; the 3rd repeat is
+  withheld and pauses the run (`InterruptionReason::DoomLoopEscalation`, exec outcome `doom_loop_escalation`, exit 6).
+  Per-run counters; a one-shot re-arm lets the call through once after a pause. Orthogonal to, and does not modify,
+  `hooks/doom_loop.rs` (which also catches `[A,B,C]` cycles). Behind `FORGE_HARNESS_DOOM_LOOP_ESCALATION=1`.
+- **Acceptance:** unit tests of the ladder; an orchestrator spec (4 identical calls → 2 executed, 1 warned, pause);
+  an `exec` run ends with exit 6; A/B before default-on.
 ### R-CTX-1 — Append-only event log as source of truth
 - **Why:** compaction overwrites the only copy of history (S1c); Codex persists event
   history for resume/fork (S4); reversible compaction needs somewhere to recover from (S3).
