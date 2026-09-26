@@ -1608,3 +1608,23 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
   - With the flag on but no test command, the gate fails open: one request, `completed`.
   - With the flag off, it is inert.
 - **TASKS:** TH.10, `[A/B]` against the soft gate (success, LLM calls, wall time, recovery rate).
+
+## D-084 — Brief Tier 2 (offline part): a cache breakpoint on the Anthropic tool array, with the 4-marker limit enforced (2026-09-27)
+- **Built:** `SetCache` now marks the **last** tool definition as a cache breakpoint. One marker at the end of the
+  static tool array caches the whole array (about 38 KB, D-039) on its own, instead of only as part of the system
+  prefix. Tool markers are cleared first, so exactly one tool carries one. `count_cache_breakpoints` counts markers
+  across system messages, message content and tools. The tool marker is added **only if the total stays within
+  Anthropic's 4** (it rejects more with a 400); the brief's version lacked that guard. There is no flag: this sets a
+  field that was previously never set, and does not change what the model sees (principle 6 applies to behaviour).
+- **Pre-existing upstream issue found, recorded and not changed:** upstream marks *every* system message plus the
+  last message. With 4 system messages that is already 5 markers, which Anthropic would reject. Forge sends at most
+  3 (2 normally, 3 under OAuth), so this does not occur today. Capping upstream's system markers would change
+  upstream caching, so it is left alone.
+- **Tests:**
+  - only the last of 5 tools gets a marker;
+  - for every shape forge sends (0–3 system messages × short, medium and long conversations × 12 tools), 4 markers
+    or fewer;
+  - with 3 system messages the limit is already reached and no tool marker is added;
+  - with 4 system messages the tool marker never adds to upstream's 5.
+- Gemini's unused `Part.cache_control` gets a comment explaining why it stays unset (Gemini's caching is implicit).
+  Bedrock's equivalent was not changed (not on the judged path).

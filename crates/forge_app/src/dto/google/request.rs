@@ -96,6 +96,9 @@ pub enum Part {
         thought: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         thought_signature: Option<String>,
+        // harness (D-084): never set, so never serialised. Gemini has no per-part
+        // cache field; its prompt caching is implicit (D-032 saw hit rates with no
+        // cache-specific code). Kept, not deleted, to stay close to upstream.
         #[serde(skip_serializing_if = "Option::is_none")]
         cache_control: Option<CacheControl>,
     },
