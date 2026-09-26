@@ -31,6 +31,9 @@ pub const MAX_GATE_NUDGES: u32 = 2;
 /// Environment variable that disables the completion gate when set to `0`.
 pub const GATE_ENV_VAR: &str = "PEACH_HARNESS_VERIFY_GATE";
 
+/// Environment variable that disables recovery hints when set to `0`.
+pub const HINTS_ENV_VAR: &str = "PEACH_HARNESS_RECOVERY_HINTS";
+
 #[derive(Debug, Default)]
 struct State {
     edited: bool,
@@ -55,17 +58,19 @@ pub fn record_edit() {
 }
 
 /// Records a shell command. When it runs the tests, classifies the result,
-/// emits `test_run`, and clears the gate if it passed.
+/// emits `test_run`, and clears the gate if it passed. Returns a recovery
+/// hint to append to the tool result when the failure happened before the
+/// agent's code was exercised (see [`recovery_hint`]).
 ///
 /// # Arguments
 /// * `command` - The shell command line.
 /// * `exit_code` - Its exit code, when it exited on its own.
 /// * `output` - stdout and stderr together.
 /// * `duration_ms` - How long it took.
-pub fn record_shell(command: &str, exit_code: Option<i32>, output: &str, duration_ms: u64) {
+pub fn record_shell(command: &str, exit_code: Option<i32>, output: &str, duration_ms: u64) -> Option<String> {
     let detected = crate::runtime::get().and_then(|runtime| runtime.test_command());
     if !is_test_command(command, detected) {
-        return;
+        return None;
     }
     let classification = classify(exit_code, false, output);
     if classification.class == FailureClass::Passed
@@ -74,6 +79,50 @@ pub fn record_shell(command: &str, exit_code: Option<i32>, output: &str, duratio
         state.edited_since_green = false;
     }
     emit_test_run(command, exit_code, &classification, duration_ms, "agent");
+
+    let unattended = crate::runtime::get().is_some_and(|runtime| runtime.is_non_interactive());
+    if !unattended || std::env::var(HINTS_ENV_VAR).is_ok_and(|v| v == "0") {
+        return None;
+    }
+    let hint = recovery_hint(classification.class, detected)?;
+    telemetry::emit(TelemetryEvent::Recovery(event::Recovery {
+        action: "recovery_hint".to_string(),
+        trigger: classification.class.as_str().to_string(),
+        outcome: None,
+        origin_call_id: None,
+    }));
+    Some(hint)
+}
+
+/// One plain sentence naming what kind of failure this was, when that is
+/// not already obvious from a normal failing-assertion output: a run that
+/// failed before the agent's code was exercised is easy to misread as "my
+/// fix is wrong". Never suggests touching tests. `None` for passes and
+/// ordinary assertion failures, whose output speaks for itself — a hint
+/// there would only cost tokens.
+///
+/// # Arguments
+/// * `class` - The run's classification.
+/// * `test` - The repository's test command, when known.
+pub fn recovery_hint(class: FailureClass, test: Option<&TestCommand>) -> Option<String> {
+    let command = test.map_or(String::new(), |test| format!(" The expected test command is `{}`.", test.command));
+    match class {
+        FailureClass::Environment => Some(format!(
+            "RECOVERY HINT (harness): this run failed before any test executed — a runner, tool or module is \
+             missing. That is an environment problem, not evidence against your code change.{command} \
+             Use a runner that is already installed; do not install packages and do not modify tests."
+        )),
+        FailureClass::Compile => Some(
+            "RECOVERY HINT (harness): the code did not compile or import, so no test result is meaningful \
+             yet. Fix the first error shown above in the source code, then run the tests again."
+                .to_string(),
+        ),
+        FailureClass::Timeout => Some(format!(
+            "RECOVERY HINT (harness): the test run did not finish in time. Look for an infinite loop or \
+             blocking call in the code you changed, or run a narrower selection of tests first.{command}"
+        )),
+        FailureClass::Passed | FailureClass::TestAssertion | FailureClass::Unknown => None,
+    }
 }
 
 fn emit_test_run(command: &str, exit_code: Option<i32>, result: &Classification, duration_ms: u64, origin: &str) {
@@ -254,6 +303,27 @@ mod tests {
             .collect();
 
         assert_eq!(actual, vec![(true, false), (true, false), (false, true), (false, false)]);
+    }
+
+    #[test]
+    fn test_hints_only_for_failures_that_happened_before_the_code_ran() {
+        let test = TestCommand { command: "python3 -m unittest".into(), source: "explicit".into() };
+
+        let actual: Vec<bool> = [
+            FailureClass::Passed,
+            FailureClass::TestAssertion,
+            FailureClass::Unknown,
+            FailureClass::Environment,
+            FailureClass::Compile,
+            FailureClass::Timeout,
+        ]
+        .into_iter()
+        .map(|class| recovery_hint(class, Some(&test)).is_some())
+        .collect();
+
+        assert_eq!(actual, vec![false, false, false, true, true, true]);
+        let environment = recovery_hint(FailureClass::Environment, Some(&test)).unwrap();
+        assert!(environment.contains("`python3 -m unittest`") && environment.contains("do not modify tests"));
     }
 
     #[test]

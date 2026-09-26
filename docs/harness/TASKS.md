@@ -18,9 +18,10 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [ ] **TH.5** `R-HACK-5` evidence bundle (`--evidence-dir`), transcript on every exit path, redaction (pulls T3.7 forward).
       → bundle on completed/error/time-budget paths, redacted, checksummed (D-034); `tests.json` is the harness's
       own final run (D-037). **Open:** bundle when killed by a signal (exit 5 not implemented).
-- [ ] **TH.6** `R-HACK-7` verified completion: test-command detection, green-after-last-edit gate, failure classification + recovery hints.
-      → detection, classification, gate (2 nudges, voluntary stops only), `test_run` events, final harness run
-      into `tests.json` (D-037). **Open:** recovery hints keyed by failure class; shell-made edits don't arm the gate.
+- [x] **TH.6** `R-HACK-7` verified completion: test-command detection, green-after-last-edit gate, failure classification + recovery hints.
+      → detection, classification, gate (2 nudges, voluntary stops only), `test_run` + `recovery` events, final
+      harness run into `tests.json`, hints for environment/compile/timeout failures (D-037). Known gap: shell-made
+      edits don't arm the gate. Gate/hints ship on in exec without an A/B (C2), switchable off.
 - [ ] **TH.7** `R-HACK-8` local hackathon-shaped evaluation suite and runner (replaces T0.5 as primary suite).
 - [x] **TH.8** `R-HACK-4` standard report generator (`peach report`).
       → `peach_harness::report`, golden from `fixtures/evidence_min`; generated in every bundle (D-035).

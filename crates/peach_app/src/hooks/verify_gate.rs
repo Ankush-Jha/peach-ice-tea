@@ -14,17 +14,19 @@ use peach_template::Element;
 use crate::operation::ToolOperation;
 
 /// Records a successful tool operation for verification: source edits arm
-/// the completion gate, and test runs are classified.
-pub fn observe(operation: &ToolOperation, duration: Duration) {
-    if peach_harness::runtime::get().is_none() {
-        return;
-    }
+/// the completion gate, and test runs are classified. Returns a recovery
+/// hint to append to the tool's result, when there is one.
+pub fn observe(operation: &ToolOperation, duration: Duration) -> Option<String> {
+    peach_harness::runtime::get()?;
     match operation {
         ToolOperation::FsWrite { .. }
         | ToolOperation::FsRemove { .. }
         | ToolOperation::FsPatch { .. }
         | ToolOperation::FsMultiPatch { .. }
-        | ToolOperation::FsUndo { .. } => peach_harness::verify::record_edit(),
+        | ToolOperation::FsUndo { .. } => {
+            peach_harness::verify::record_edit();
+            None
+        }
         ToolOperation::Shell { output } => {
             let result = &output.output;
             let combined = format!("{}\n{}", result.stdout, result.stderr);
@@ -33,9 +35,9 @@ pub fn observe(operation: &ToolOperation, duration: Duration) {
                 result.exit_code,
                 &combined,
                 duration.as_millis() as u64,
-            );
+            )
         }
-        _ => {}
+        _ => None,
     }
 }
 

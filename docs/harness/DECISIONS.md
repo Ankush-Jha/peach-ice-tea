@@ -537,6 +537,7 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Test-command source:** `--test-command` (the runner passes each fixture's own command, as judges will) beats
   detection. For Python without pytest configuration, detection picks stdlib `unittest`.
 - **Not covered, recorded:** edits made through shell commands (`sed -i`, redirects) do not arm the gate, since
-  only tool edits are observed. Failure-class-keyed recovery hints injected into tool results (PLAN.md W2-D
-  step 3) are not built: the classification exists, but nothing tells the model "this is an environment
-  failure, not your code" yet.
+  only tool edits are observed. ~~Failure-class-keyed recovery hints are not built~~ — built in the
+  follow-up commit: one plain sentence is appended to a failed test run's result for environment, compile and
+  timeout failures only (never for ordinary assertion failures, whose output speaks for itself), each emitting a
+  `recovery` event; `PEACH_HARNESS_RECOVERY_HINTS=0` disables them. No hint suggests touching tests.

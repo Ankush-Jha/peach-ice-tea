@@ -822,3 +822,37 @@ fn test_the_gate_gives_up_after_two_reminders_and_says_so() {
         serde_json::from_str(&std::fs::read_to_string(dir.join("tests.json")).unwrap()).unwrap();
     assert_eq!((tests["class"].as_str(), tests["source"].as_str()), (Some("passed"), Some("tests/test_*.py")));
 }
+
+#[test]
+fn test_a_test_run_that_never_reached_the_code_gets_a_recovery_hint() {
+    let project = calc_project();
+    let model = ScriptedModel::start(vec![
+        Turn::Tool("read", serde_json::json!({"file_path": project.path().join("calc.py")})),
+        Turn::Tool(
+            "write",
+            serde_json::json!({
+                "file_path": project.path().join("calc.py"),
+                "content": "def add(a, b)\n    return a + b\n",
+                "overwrite": true,
+            }),
+        ),
+        Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run tests"})),
+        Turn::Text("Done."),
+    ]);
+
+    let run = run_exec_full(project.path(), &model, None, &[], "fix add", &["--test-command", CALC_TESTS]);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let requests = model.requests();
+    assert!(requests[3].contains("RECOVERY HINT (harness): the code did not compile"), "no hint after the broken run");
+    assert!(!requests[2].contains("RECOVERY HINT"), "hints only follow a failed test run");
+    let test_run = run.telemetry.iter().find(|event| event["type"] == "test_run").unwrap();
+    assert_eq!(test_run["failure_class"], "compile");
+    assert!(
+        run.telemetry
+            .iter()
+            .any(|event| event["type"] == "recovery" && event["trigger"] == "compile"),
+        "telemetry: {:?}",
+        run.telemetry
+    );
+}
