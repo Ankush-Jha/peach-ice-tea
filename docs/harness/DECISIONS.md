@@ -1818,3 +1818,28 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
   the server, hit `/api/status`, got a real profile list and the harness binary's path back.
 - **Not yet run against a live evaluator or judge, and no A/B** — it is a convenience layer, not a behaviour
   change to the harness itself, so principle 6 does not apply the way it does to a flag inside the agent loop.
+
+## D-093 — Tier 2 A/Bs, first family in for four flags: two closed, two pending, two confounded (2026-09-27)
+- **T1.2 line numbers off — closed, stays off.** Two model families now (GLM: py-bugfix/node-feature/py-ledger,
+  Ultra: all six fixtures, k=2). Success flat both times (100%→100% GLM, 92%→92% Ultra); cost worse both times
+  (input +64.0%/+24.8%, calls +50.0%/+23.7%, wall +36.9%/+27.0%). No benefit on either family. `T1.2` ticked.
+- **T2.1 parallel read-only and T2.6 tool correction — one family in, both look like regressions, second family
+  still running.** GLM only so far (py-bugfix/node-feature/py-ledger, k=1): T2.1 success flat, cost worse
+  (input +18.7%, calls +13.3%, wall +28.0% — notably calls and wall time both *rose* under a flag meant to run
+  reads concurrently, the opposite of its point, worth a look at the implementation once Ultra's run is in, not
+  just a "no benefit" verdict). T2.6 success flat, cost worse (input +33.1%, calls +26.7%, wall +30.1%). Left
+  unticked pending the Ultra arm (MM.5); provisional reading is "no case for shipping either."
+- **T3.10 handoff note (Muse Glimmer) — confounded, not usable as evidence either way.** Read alone, success
+  rose 0%→33% — but every base run hit the request-limit ceiling (40-45 calls, all six fixtures), and two
+  candidate runs didn't fail, they ran away: 158 calls / 6.19M input tokens on integrity-trap, 143 calls / 5.66M
+  on js-duration, both hitting the 600s wall clock still going. The apparent success gain is base's request cap
+  biting before candidate's, not the flag helping — and the runaway token counts are their own finding,
+  independent of this flag: something about Muse Glimmer under these conditions does not converge. Not shipping
+  on this; not concluding the flag is bad either. Needs a rerun with a cap sized for what Muse actually needs, or
+  a different model, before this flag gets a real verdict.
+- **T3.14 write_note (Nemotron 3.5) — also confounded, also not concluding.** Success fell 50%→33%, but four of
+  six fixtures interrupted on *both* arms (hit the request or duration cap before finishing), so the samples
+  that actually completed are too few to read as the flag's effect rather than which runs happened to fit the
+  cap. BR.3's own note was right: this needs runs long enough to actually compact, which these were not.
+- **Updated `TASKS.md`:** T1.2 ticked closed. T2.1/T2.6 left unticked with the GLM-only reading recorded.
+  T3.10/T3.14's notes now carry their A/B results and the confound in each, rather than staying silent pending.
