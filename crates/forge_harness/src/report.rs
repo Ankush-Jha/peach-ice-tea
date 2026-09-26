@@ -128,6 +128,18 @@ pub struct ContextSection {
     /// definitions, task): the fixed cost every later request repeats.
     #[serde(default)]
     pub prompt_composition: BTreeMap<String, u64>,
+    /// Prompt-cache hit rate (`cached / input`) of the model call just before
+    /// and just after each compaction, in order (R-CTX-8): how much of the
+    /// cached prefix a compaction cost. `None` where a side had no call or
+    /// no reported usage.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cache_around_compactions: Vec<(Option<f64>, Option<f64>)>,
+}
+
+/// Cache hit rate of one model call, from provider-reported usage.
+fn call_cache_rate(call: &crate::telemetry::event::ModelCall) -> Option<f64> {
+    let input = call.input_tokens.filter(|input| *input > 0)?;
+    Some(call.cached_tokens.unwrap_or(0) as f64 / input as f64)
 }
 
 /// One tool's usage.
@@ -253,7 +265,11 @@ pub fn build(dir: &Path) -> Report {
         compaction_messages: vec![],
         tokens_reclaimed_estimated: 0,
         prompt_composition: BTreeMap::new(),
+        cache_around_compactions: vec![],
     };
+    // R-CTX-8: the last call's cache rate, and compactions awaiting their next call.
+    let mut last_cache_rate: Option<f64> = None;
+    let mut awaiting_next_call: Vec<usize> = vec![];
     let mut agents: Vec<String> = vec![];
     let mut timeline = vec![];
     let mut retry_events = 0u64;
@@ -277,6 +293,11 @@ pub fn build(dir: &Path) -> Report {
                 format!("run ended: {}", end.outcome)
             }
             TelemetryEvent::ModelCall(call) => {
+                let rate = call_cache_rate(call);
+                for index in awaiting_next_call.drain(..) {
+                    context.cache_around_compactions[index].1 = rate;
+                }
+                last_cache_rate = rate;
                 model_inputs.extend(call.input_tokens);
                 contexts.extend(call.context_tokens_estimated);
                 durations.push(call.duration_ms);
@@ -313,6 +334,8 @@ pub fn build(dir: &Path) -> Report {
                 format!("retry {} of {}: {}", retry.attempt, retry.operation, retry_class(&retry.reason))
             }
             TelemetryEvent::ContextCompaction(compaction) => {
+                awaiting_next_call.push(context.cache_around_compactions.len());
+                context.cache_around_compactions.push((last_cache_rate, None));
                 context.compactions += 1;
                 context
                     .compaction_messages
@@ -517,6 +540,12 @@ pub fn render_md(report: &Report) -> String {
             )
         }
     );
+    if !c.cache_around_compactions.is_empty() {
+        let pct = |rate: &Option<f64>| rate.map_or("n/a".to_string(), |r| format!("{:.0}%", r * 100.0));
+        let pairs: Vec<String> =
+            c.cache_around_compactions.iter().map(|(before, after)| format!("{}→{}", pct(before), pct(after))).collect();
+        let _ = writeln!(md, "Cache hit rate around each compaction (call before → call after): {}\n", pairs.join(", "));
+    }
     if !c.prompt_composition.is_empty() {
         let total: u64 = c.prompt_composition.values().sum();
         let parts: Vec<String> = c
