@@ -191,6 +191,34 @@ struct Run {
     telemetry: Vec<serde_json::Value>,
 }
 
+/// The `.forge.toml` registering `model` as the session provider, with
+/// `extra_toml` appended.
+fn scripted_config_toml(model: &ScriptedModel, extra_toml: &str) -> String {
+    format!(
+        r#"
+[[providers]]
+id = "{provider}"
+url = "{url}"
+response_type = "OpenAI"
+auth_methods = ["api_key"]
+api_key_var = "FORGE_TEST_SCRIPTED_KEY"
+
+[[providers.models]]
+id = "scripted-model"
+name = "Scripted"
+tools_supported = true
+input_modalities = ["text"]
+
+[session]
+provider_id = "{provider}"
+model_id = "scripted-model"
+{extra_toml}
+"#,
+        provider = model.provider_id,
+        url = model.url,
+    )
+}
+
 /// Runs `forge exec` in `project` against `model`, with an isolated
 /// `FORGE_CONFIG`. `agent_md` installs a custom agent and selects it.
 fn run_exec(project: &Path, model: &ScriptedModel, agent_md: Option<(&str, &str)>) -> Run {
@@ -231,32 +259,7 @@ fn run_exec_configured(
 ) -> Run {
     let config = tempfile::tempdir().unwrap();
     let telemetry = config.path().join("telemetry.jsonl");
-    std::fs::write(
-        config.path().join(".forge.toml"),
-        format!(
-            r#"
-[[providers]]
-id = "{provider}"
-url = "{url}"
-response_type = "OpenAI"
-auth_methods = ["api_key"]
-api_key_var = "FORGE_TEST_SCRIPTED_KEY"
-
-[[providers.models]]
-id = "scripted-model"
-name = "Scripted"
-tools_supported = true
-input_modalities = ["text"]
-
-[session]
-provider_id = "{provider}"
-model_id = "scripted-model"
-{extra_toml}
-"#,
-            provider = model.provider_id,
-            url = model.url,
-        ),
-    )
+    std::fs::write(config.path().join(".forge.toml"), scripted_config_toml(model, extra_toml))
     .unwrap();
 
     let mut command = Command::new(env!("CARGO_BIN_EXE_forge"));
@@ -1198,4 +1201,105 @@ fn test_a_failing_role_model_does_not_end_the_run() {
         "no recovery event: {:?}",
         run.telemetry
     );
+}
+
+/// A permissions file that asks before every shell command.
+const CONFIRM_EVERY_COMMAND: &str = "policies:\n  - permission: confirm\n    rule:\n      command: \"*\"\n";
+
+/// Runs `forge exec` under a pseudo-terminal (`script`), as a judge's shell
+/// would, since a prompt only waits when a terminal is attached (D-048).
+/// `permissions`, when given, is installed with restricted mode on. Returns
+/// the terminal transcript and the telemetry events.
+#[cfg(target_os = "macos")]
+fn run_exec_under_tty(
+    project: &Path,
+    model: &ScriptedModel,
+    permissions: Option<&str>,
+    extra_env: &[(&str, &str)],
+) -> (String, Vec<serde_json::Value>) {
+    let config = tempfile::tempdir().unwrap();
+    let telemetry = config.path().join("telemetry.jsonl");
+    let transcript = config.path().join("tty.log");
+    std::fs::write(config.path().join(".forge.toml"), scripted_config_toml(model, "")).unwrap();
+    let mut command = Command::new("script");
+    if let Some(permissions) = permissions {
+        std::fs::write(config.path().join("permissions.yaml"), permissions).unwrap();
+        command.env("FORGE_RESTRICTED", "true");
+    }
+    let mut child = command
+        .arg("-q")
+        .arg(&transcript)
+        .arg(env!("CARGO_BIN_EXE_forge"))
+        .args(["exec", "fix add", "--json", "--max-duration-secs", "20", "--telemetry"])
+        .arg(&telemetry)
+        .envs(extra_env.iter().copied())
+        .env("FORGE_CONFIG", config.path())
+        .env("FORGE_TEST_SCRIPTED_KEY", "scripted-key")
+        .current_dir(project)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    while child.try_wait().unwrap().is_none() {
+        if started.elapsed() > BOUND {
+            let _ = child.kill();
+            panic!("forge exec did not exit within {BOUND:?}");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let events = std::fs::read_to_string(&telemetry)
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap()["event"].clone())
+        .collect();
+    (std::fs::read_to_string(&transcript).unwrap_or_default(), events)
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn test_a_confirm_permission_is_refused_not_asked_in_an_unattended_run() {
+    let project = project_with_a_test();
+    let model = ScriptedModel::start(vec![
+        Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "say hi"})),
+        Turn::Text("Done."),
+    ]);
+
+    let (transcript, telemetry) = run_exec_under_tty(project.path(), &model, Some(CONFIRM_EVERY_COMMAND), &[]);
+
+    assert!(
+        !transcript.contains("How would you like to proceed"),
+        "the permission prompt was shown:\n{transcript}"
+    );
+    assert_eq!(tty_outcome(&transcript), "completed");
+    assert!(
+        telemetry.iter().any(|event| event["type"] == "prompt_suppressed"
+            && event["prompt_kind"] == "permission"),
+        "no prompt_suppressed(permission) event: {telemetry:?}"
+    );
+    let told = model.requests().get(1).cloned().unwrap_or_default();
+    assert!(told.contains("no person is present"), "the model was not told why: {told}");
+}
+
+/// The `outcome` of the JSON line forge printed last in a TTY transcript. A
+/// pty merges stderr in, so the JSON can share a line with a spinner frame.
+#[cfg(target_os = "macos")]
+fn tty_outcome(transcript: &str) -> String {
+    let json = &transcript[transcript.rfind("{\"outcome\"").unwrap_or_else(|| panic!("no outcome JSON in transcript:\n{transcript}"))..];
+    let report: serde_json::Value = serde_json::from_str(json.lines().next().unwrap().trim()).unwrap();
+    report["outcome"].as_str().unwrap_or_default().to_string()
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn test_the_request_limit_ends_the_run_instead_of_asking_to_continue() {
+    let project = project_with_a_test();
+    let read = || Turn::Tool("read", serde_json::json!({"file_path": "calc.py"}));
+    let model = ScriptedModel::start((0..10).map(|_| read()).collect());
+
+    let (transcript, _) = run_exec_under_tty(project.path(), &model, None, &[("FORGE_MAX_REQUESTS_PER_TURN", "2")]);
+
+    assert!(!transcript.contains("continue anyway"), "the continue prompt was shown:\n{transcript}");
+    assert_eq!(tty_outcome(&transcript), "request_limit");
 }
