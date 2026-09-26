@@ -104,6 +104,24 @@ impl<S: Services + EnvironmentInfra<Config = forge_config::ForgeConfig>> ToolReg
 
         // First, try to call a Forge tool
         if ToolCatalog::contains(&input.name) {
+            // harness: T2.6 — rename unambiguously misnamed argument keys
+            // before the strict parse rejects them. Off unless flagged.
+            let input = if crate::tool_correction::enabled() {
+                let (input, renames) = crate::tool_correction::correct(input);
+                for (from, to) in renames {
+                    forge_harness::telemetry::emit(forge_harness::telemetry::TelemetryEvent::Recovery(
+                        forge_harness::telemetry::event::Recovery {
+                            action: "tool_argument_renamed".to_string(),
+                            trigger: format!("{}: `{from}` is not a parameter; used `{to}`", input.name),
+                            outcome: None,
+                            origin_call_id: input.call_id.as_ref().map(|id| id.as_str().to_string()),
+                        },
+                    ));
+                }
+                input
+            } else {
+                input
+            };
             let tool_input: ToolCatalog = ToolCatalog::try_from(input)?;
 
             // Special handling for Task tool - delegate to AgentExecutor

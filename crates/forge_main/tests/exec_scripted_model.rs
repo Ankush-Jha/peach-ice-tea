@@ -1006,3 +1006,40 @@ fn test_parallel_reads_run_through_the_real_executor_and_keep_order() {
         ]
     );
 }
+
+#[test]
+fn test_misnamed_arguments_are_corrected_only_with_the_flag() {
+    // T2.6: `filePath`/`contents` are not write's parameters. Without the
+    // flag the strict parse rejects the call and the model must try again;
+    // with it, the call goes through and the rename is recorded.
+    let run = |flag: &str| {
+        let project = calc_project();
+        let target = project.path().join("notes.txt");
+        let model = ScriptedModel::start(vec![
+            Turn::Tool("write", serde_json::json!({"filePath": target, "contents": "hello"})),
+            Turn::Text("Done."),
+        ]);
+        let run = run_exec_with_env(project.path(), &model, None, &[("FORGE_HARNESS_TOOL_CORRECTION", flag)]);
+        (std::fs::read_to_string(&target).ok(), run)
+    };
+
+    let (without, _) = run("0");
+    let (with, with_run) = run("1");
+
+    assert_eq!(without, None, "the uncorrected call must fail as before");
+    assert_eq!(with.as_deref(), Some("hello"));
+    let renames: Vec<&str> = with_run
+        .telemetry
+        .iter()
+        .filter(|event| event["type"] == "recovery" && event["action"] == "tool_argument_renamed")
+        .map(|event| event["trigger"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        renames,
+        vec![
+            "write: `contents` is not a parameter; used `content`",
+            "write: `filePath` is not a parameter; used `file_path`"
+        ]
+    );
+}
+
