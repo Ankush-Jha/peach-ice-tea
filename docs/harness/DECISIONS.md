@@ -971,3 +971,31 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   `token`; hyphen/camel variants normalised) plus credential formats, and is applied at every exit that exists
   today: evidence files, telemetry free text and scorer previews. T6.3's external hooks must call it when built.
 - **Still carried from `712689fc9`:** `first_error_recovered` is summed and diffed but derived nowhere (T1.3).
+
+## D-060 — `offload_read` could never be non-zero; `first_error_recovered` was never set; T1.3 closed (2026-09-26)
+- **What broke:**
+  - `TaskMetrics::record_read` counts `offload_read` only for paths in `dump_files`, and
+    `record_dump_file` had **no caller anywhere**. `TempContentFiles` even carried a comment saying its paths
+    were exposed "to record them as recovery dump files", but nothing recorded them. So the counter that tells
+    us whether withholding output cost the agent a turn (principle 1; the ship bar for T1.2 and T1.5) read 0 in
+    every run, whatever happened.
+  - `first_error_recovered` was summed across subagents and diffed, but derived nowhere (carried from `712689fc9`).
+- **Found by:** following T1.1's shaper wiring (D-059) to its R-OUT-3 half: reading an MCP dump would not count,
+  and `grep record_dump_file` showed no callers for shell and fetch either.
+- **Fix:**
+  - The tool executor registers every dump file `dump_operation` creates (shell stdout/stderr, fetch).
+  - `shape_mcp_output` now returns its dump paths, and the MCP branch registers them.
+  - `ExecReport::new` derives `first_error_recovered = completed && any tool error`, in the same place `exit_code`
+    is derived from the outcome, so the two cannot disagree.
+- **Proof:**
+  - End to end, a scripted model runs `seq 1 500` (truncated). A new `Turn::FromRequest` then builds the next call
+    from the request body, reading the path in the "Full output: read …" notice, as a real model would.
+    `metrics.recovery.offload_read == 1`, and the read returns the withheld middle.
+  - Removing the registration makes that test fail.
+  - Unit tests cover MCP returning its handle (with the file's content) and `first_error_recovered` for
+    completed/failed/clean runs.
+- **Consequence for the A/B record:** every earlier report's `offload_read` (including
+  `2026-09-25-compact-tool-docs-nim`) was structurally 0 and says nothing about recovery. The pending A/Bs will be
+  the first real measurement.
+- **T1.3 ticked.** Handles: shell, fetch and MCP dump to a file; read's truncation points at the file itself with a
+  line range; search's points at a re-run with an offset.
