@@ -20,6 +20,7 @@ mod operation;
 mod orch;
 #[cfg(test)]
 mod orch_spec;
+mod tool_concurrency;
 pub mod retry;
 mod search_dedup;
 mod services;

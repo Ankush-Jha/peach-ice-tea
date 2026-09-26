@@ -31,6 +31,8 @@ enum Turn {
     Status(u16),
     /// Fails with this HTTP status and JSON body.
     StatusBody(u16, &'static str),
+    /// Calls several tools in one turn.
+    Tools(Vec<(&'static str, serde_json::Value)>),
     /// An empty completion: no content, no tool call, no finish reason —
     /// with this `(prompt, completion)` usage, or none at all.
     Empty(Option<(u64, u64)>),
@@ -148,6 +150,13 @@ fn sse(turn: Turn) -> String {
                 "index": 0, "id": "call_1", "type": "function",
                 "function": {"name": name, "arguments": arguments.to_string()},
             }]}),
+            "tool_calls",
+        ),
+        Turn::Tools(calls) => (
+            serde_json::json!({"role": "assistant", "tool_calls": calls.iter().enumerate().map(|(index, (name, arguments))| {
+                serde_json::json!({"index": index, "id": format!("call_{index}"), "type": "function",
+                    "function": {"name": name, "arguments": arguments.to_string()}})
+            }).collect::<Vec<_>>()}),
             "tool_calls",
         ),
         Turn::Text(text) => (serde_json::json!({"role": "assistant", "content": text}), "stop"),
@@ -938,4 +947,62 @@ fn test_an_exhausted_daily_quota_fails_at_once_and_says_why() {
         "{error}"
     );
     assert!(started.elapsed() < Duration::from_secs(20));
+}
+
+#[test]
+fn test_parallel_reads_run_through_the_real_executor_and_keep_order() {
+    // T2.1 end to end: the real tool executor, whose shared metrics and
+    // read tracking must survive concurrent calls. The overwrite in the next
+    // turn is refused unless the concurrent read of calc.py was recorded.
+    let project = calc_project();
+    let calc = project.path().join("calc.py");
+    let test = project.path().join("tests/test_calc.py");
+    let model = ScriptedModel::start(vec![
+        Turn::Tools(vec![
+            ("read", serde_json::json!({"file_path": calc})),
+            ("read", serde_json::json!({"file_path": test})),
+        ]),
+        Turn::Tool(
+            "write",
+            serde_json::json!({"file_path": calc, "content": "def add(a, b):\n    return a + b\n", "overwrite": true}),
+        ),
+        Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run tests"})),
+        Turn::Text("Done."),
+    ]);
+
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[("FORGE_HARNESS_PARALLEL_READONLY", "1")],
+        "fix add",
+        &["--test-command", CALC_TESTS],
+    );
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let second: serde_json::Value = serde_json::from_str(&model.requests()[1]).unwrap();
+    let tool_results: Vec<String> = second["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|message| message["role"] == "tool")
+        .map(|message| message["tool_call_id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(tool_results, vec!["call_0", "call_1"], "results keep the model's order");
+    assert_eq!(std::fs::read_to_string(&calc).unwrap(), "def add(a, b):\n    return a + b\n");
+    let tools: Vec<(String, bool)> = run
+        .telemetry
+        .iter()
+        .filter(|event| event["type"] == "tool_call")
+        .map(|event| (event["name"].as_str().unwrap().to_string(), event["success"].as_bool().unwrap()))
+        .collect();
+    assert_eq!(
+        tools,
+        vec![
+            ("read".to_string(), true),
+            ("read".to_string(), true),
+            ("write".to_string(), true),
+            ("shell".to_string(), true)
+        ]
+    );
 }
