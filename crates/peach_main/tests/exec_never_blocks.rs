@@ -305,3 +305,51 @@ fn test_provider_connection_failure_exits_fast_with_open_never_written_pipe() {
     assert_eq!(status.code(), Some(4));
     assert!(elapsed < BOUND);
 }
+
+// ---- Scenario 4: a project MCP config under a real terminal ----------------
+//
+// peach asks whether to trust a project's `.mcp.json`. Under a TTY that
+// prompt waits for a keypress: reproduced with `script`, the run sat on
+// "Accept / Reject" until its budget with no model call. An unattended run
+// must refuse without asking.
+
+#[cfg(target_os = "macos")]
+#[test]
+fn test_a_project_mcp_config_never_prompts_even_with_a_terminal() {
+    let config = isolated_config_dir();
+    let project = isolated_project_dir();
+    write_unroutable_provider_config(&config);
+    std::fs::write(
+        project.path().join(".mcp.json"),
+        r#"{"mcpServers":{"local":{"command":"sleep","args":["60"]}}}"#,
+    )
+    .unwrap();
+    let transcript = project.path().join("tty.log");
+
+    // `script` gives peach a pseudo-terminal, as a judge's shell would.
+    let mut command = Command::new("script");
+    command
+        .arg("-q")
+        .arg(&transcript)
+        .arg(peach_bin())
+        .args(["exec", "do nothing", "--json", "--max-duration-secs", "6"])
+        .env("PEACH_CONFIG", config.path())
+        .env("PEACH_TEST_BOGUS_KEY", "bogus-key-value")
+        .current_dir(project.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let child = command.spawn().expect("spawn script");
+    let (_status, elapsed) = wait_bounded(child, BOUND);
+
+    let output = std::fs::read_to_string(&transcript).unwrap_or_default();
+    assert!(!output.contains("Accept"), "the trust prompt was shown:\n{output}");
+    // It reached the (closed-port) provider instead of waiting: transport
+    // retries, then the budget, not a prompt. A pty merges stderr into the
+    // transcript, so the spinner's last frame shares the JSON's line.
+    let json = &output[output.rfind("{\"outcome\"").expect("no outcome JSON in transcript")..];
+    let report = last_json_line(json);
+    assert_eq!(report["outcome"], "time_budget");
+    assert!(elapsed < BOUND);
+}
+

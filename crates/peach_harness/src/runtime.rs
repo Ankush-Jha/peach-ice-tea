@@ -153,6 +153,29 @@ pub fn unattended_followup_answer(question: &str) -> Option<String> {
     Some(answer)
 }
 
+/// Whether an unattended run must refuse a project's untrusted MCP servers
+/// instead of asking to trust them. Records the refusal in telemetry.
+///
+/// Asking blocks forever when a terminal is attached (reproduced under a
+/// pseudo-TTY: the run never reached the model), and starting a server
+/// nobody reviewed is an external service the rules forbid (HACKATHON §31).
+///
+/// # Arguments
+/// * `config_path` - The project MCP config that would have been trusted.
+pub fn refuse_untrusted_mcp(config_path: &Path) -> bool {
+    if !is_non_interactive() {
+        return false;
+    }
+    crate::telemetry::emit(crate::telemetry::TelemetryEvent::PromptSuppressed(
+        crate::telemetry::event::PromptSuppressed {
+            prompt_kind: "mcp_trust".to_string(),
+            detail: config_path.display().to_string(),
+            default_action: Some("rejected_not_persisted".to_string()),
+        },
+    ));
+    true
+}
+
 /// Whether a `followup` tool call should end the agent's turn so a human can
 /// reply. False in an unattended run: there is no reply coming, and ending
 /// the turn there would stop a one-shot run mid-task and report it as
