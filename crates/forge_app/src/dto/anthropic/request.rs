@@ -515,6 +515,19 @@ pub struct ToolDefinition {
     pub input_schema: serde_json::Value,
 }
 
+impl ToolDefinition {
+    /// Sets or clears this tool's cache breakpoint (harness, D-084). One
+    /// breakpoint on the last tool caches the whole tool array.
+    pub fn set_cached(&mut self, cached: bool) {
+        self.cache_control = if cached { Some(CacheControl::Ephemeral) } else { None };
+    }
+
+    /// Whether this tool carries a cache breakpoint.
+    pub fn is_cached(&self) -> bool {
+        self.cache_control.is_some()
+    }
+}
+
 impl TryFrom<forge_domain::ToolDefinition> for ToolDefinition {
     type Error = anyhow::Error;
     fn try_from(value: forge_domain::ToolDefinition) -> std::result::Result<Self, Self::Error> {
