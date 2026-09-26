@@ -104,8 +104,10 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       and `R-OUT-3` stable handles on every withheld output.
       → dump files finally registered (offload_read was always 0), MCP handles, first_error_recovered derived (D-060).
 - [ ] **T1.4** `R-OUT-2` classifier + search regrouping (lossless parts only). **[A/B]**
+      → built behind `FORGE_HARNESS_SEARCH_REGROUP` (default off), unit + e2e tests (D-073). A/B pending.
 - [ ] **T1.5** `R-OUT-2` noise compressor with fixture tests for cargo/npm/pytest/jest/tsc/eslint. **[A/B]**
       Ship only if noise-class recovery < 2%.
+      → built behind `FORGE_HARNESS_NOISE_COMPRESSION` (default off), fixture + e2e tests (D-073). A/B pending.
 
 ## M2 — Orchestration
 - [ ] **T2.1** `R-LOOP-1` concurrency classes + concurrent read-only batches; add behaviour test. **[A/B]**
