@@ -1,0 +1,24 @@
+{
+  "harness": {
+    "name": "peach-ice-tea",
+    "version": "0.1.0"
+  },
+  "evidence_layout_version": "0.2.0",
+  "telemetry_schema_version": "0.1.0",
+  "started_at": "2026-09-26T20:24:36.764Z",
+  "ended_at": "2026-09-26T20:28:04.164Z",
+  "outcome": "error",
+  "files": {
+    "diff.patch": "c22600782ff70c728f5192688c63d9e9532c15fe71a7d46e9fd3101fe030fb97",
+    "exec.json": "8df32b2e3f4a9e3da247a25fa9741df7941dd3ec7865fe054f9b9fc2cc062ebf",
+    "integrity.baseline.json": "ac9000e2d175d4771272fd95b4dbeeab28d559131ae11f69e5b95eb3d95dbf28",
+    "integrity.json": "14a8ffb9c14626a034cdbb48831273d1ebb70d768fe4f57effaf40f8232d773e",
+    "prompt.txt": "5ed5c29509578b517e432d62ae17064750659b2ee6e05f44e2fed7666c707413",
+    "report.json": "90de0664b83604403d5b844c46d6d79da4cefd87beeab82e8c3f0360fbde8d28",
+    "report.md": "fe8396c447dccf8757b6444b62766892a9503f776eedcada76ed5ba3d55c0ff4",
+    "telemetry.jsonl": "4d06173917be42c0e4f35b9cf1e1c0e1e61f1a2cd37a0f06474a3589656c06bd",
+    "tests.json": "51ecd1bc0bed6a8b95da6d469930fe7cf5ec8ff11db2271085d5e7d103422825",
+    "transcript.json": "894096fc10faccac9a877a15d3741713c84ba41ec31820c36d0885d2eeed7a47"
+  },
+  "notes": []
+}

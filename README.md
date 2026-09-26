@@ -43,9 +43,10 @@ make run REPO=/path/to/repository PROMPT="Fix the failing test in stats.py"
 cd /path/to/repository && make -f /path/to/harness/Makefile run    # REPO defaults to here
 ```
 
-`AI_API_KEY` is handed to the selected profile as the provider variable it expects, so a prescribed model is a
-variable, not a source change: `make run PROFILE=openrouter MODEL=<model id>`, or `PROFILE=gemini` for Google
-AI Studio. Optional: `TEST_COMMAND=` (otherwise detected), `EVIDENCE_DIR=` (default `evidence/<UTC time>/`),
+`AI_API_KEY` is handed to the selected profile as the provider variable it expects. With no `PROFILE`, the key's
+shape picks it (D-081): an AI Studio key (`AIza…`) runs `gemini`, the model HACKATHON.md names; an OpenRouter key
+(`sk-or-…`) runs `openrouter`; anything else runs `gemini`. A prescribed model is a variable, not a source change:
+`make run MODEL=<model id>` or `PROFILE=<name>`. Optional: `TEST_COMMAND=` (otherwise detected), `EVIDENCE_DIR=` (default `evidence/<UTC time>/`),
 `MAX_DURATION_SECS=` (default 1800). `make test` runs the local hackathon suite live; `make check` runs the
 offline checks (no key, no model); `make clean` removes build output and evidence.
 
@@ -88,8 +89,9 @@ binary against a scripted model.
 ## Configuration
 
 Provider profiles and feature flags are listed in [`configuration/README.md`](configuration/README.md).
-Any model may be used (D-049). The default is `openrouter` on a free-tier model (D-051, D-069); `.env.example`
-shows the one variable the harness reads.
+Any model may be used (D-049). `make run` picks the profile from the key (D-081): `gemini` for AI Studio keys and by
+default, `openrouter` (free-tier model, D-069) for OpenRouter keys. `.env.example` shows the one variable the harness
+reads.
 
 ## Major design decisions
 

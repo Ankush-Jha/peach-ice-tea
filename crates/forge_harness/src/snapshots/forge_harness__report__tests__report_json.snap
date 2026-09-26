@@ -21,6 +21,7 @@ expression: json
     "tokens_reclaimed_estimated": 7500
   },
   "error_recovery": {
+    "model_failover_count": 0,
     "refused_integrity_actions": 1,
     "retries_by_reason": {
       "empty_completion": 1,
