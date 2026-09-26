@@ -21,6 +21,7 @@ mod orch;
 #[cfg(test)]
 mod orch_spec;
 mod tool_concurrency;
+mod tool_correction;
 pub mod retry;
 mod search_dedup;
 mod services;

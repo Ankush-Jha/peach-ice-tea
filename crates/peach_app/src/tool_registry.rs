@@ -104,6 +104,24 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> ToolReg
 
         // First, try to call a Peach tool
         if ToolCatalog::contains(&input.name) {
+            // harness: T2.6 — rename unambiguously misnamed argument keys
+            // before the strict parse rejects them. Off unless flagged.
+            let input = if crate::tool_correction::enabled() {
+                let (input, renames) = crate::tool_correction::correct(input);
+                for (from, to) in renames {
+                    peach_harness::telemetry::emit(peach_harness::telemetry::TelemetryEvent::Recovery(
+                        peach_harness::telemetry::event::Recovery {
+                            action: "tool_argument_renamed".to_string(),
+                            trigger: format!("{}: `{from}` is not a parameter; used `{to}`", input.name),
+                            outcome: None,
+                            origin_call_id: input.call_id.as_ref().map(|id| id.as_str().to_string()),
+                        },
+                    ));
+                }
+                input
+            } else {
+                input
+            };
             let tool_input: ToolCatalog = ToolCatalog::try_from(input)?;
 
             // Special handling for Task tool - delegate to AgentExecutor
