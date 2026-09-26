@@ -1,7 +1,7 @@
 # Evaluation for checking appropriate todo_write tool usage
 run:
   - git clone --depth=1 --branch main https://github.com/Ankush-Jha/peach-ice-tea .
-  - PEACH_OVERRIDE_PROVIDER=open_router PEACH_OVERRIDE_MODEL={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
+  - PEACH_SESSION__PROVIDER_ID=open_router PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
 parallelism: 3
 timeout: 240
 early_exit: true

@@ -20,7 +20,7 @@ run:
         }
     }
     RUSTEOF
-  - PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache --provider zai_coding --model {{model}} -p '{{task}}'
+  - PEACH_SESSION__PROVIDER_ID=zai_coding PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
 
 parallelism: 5
 timeout: 120

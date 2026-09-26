@@ -1,7 +1,7 @@
 run:
   - mkdir -p test_dir
   - cd test_dir && touch file1.txt file2.py README.md
-  - cd test_dir && peache --provider {{provider}} --model {{model}} suggest "{{prompt}}"
+  - cd test_dir && PEACH_SUGGEST__PROVIDER_ID={{provider}} PEACH_SUGGEST__MODEL_ID={{model}} peache suggest "{{prompt}}"
 
 parallelism: 2
 timeout: 60

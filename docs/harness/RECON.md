@@ -41,16 +41,71 @@ exactly. Both of its failures are claims that something **does not exist**.
   ("chore: add a peach_config crate", #2685). The replacements are `peach config set model <provider> <model>`
   (`crates/peach_main/src/cli.rs:667`) and the env vars `PEACH_SESSION__PROVIDER_ID` / `PEACH_SESSION__MODEL_ID`
   (`crates/peach_config/src/reader.rs:276`), which are tested but undocumented.
-- **`PEACH_DEBUG_REQUESTS` does not exist.** Zero occurrences in `crates/`. 11 eval files depend on it to dump a
-  transcript that `jq` then scrapes for tool-call assertions. It appears never to have been implemented.
+- **`PEACH_OVERRIDE_PROVIDER` / `PEACH_OVERRIDE_MODEL` are also dead.** `todo_write_usage` uses this third,
+  distinct naming scheme; `PeachConfig` has no `override_provider`/`override_model` field, so it is silently ignored
+  and the eval runs against whatever the ambient config happens to be.
+- **`PEACH_DEBUG_REQUESTS` *does* work** — see the correction box below.
 - `benchmarks/` was last touched 2026-04-10 (`73c46ca69`) — *after* the flag removal — and was not updated.
+
+> **Correction (supersedes the first draft of this section; see D-012).** An earlier pass concluded that
+> `PEACH_DEBUG_REQUESTS` "has never existed" because `grep -rn PEACH_DEBUG_REQUESTS crates/` returns zero hits.
+> The grep is accurate; the conclusion was wrong. There is no literal because the variable is handled generically:
+> `PeachConfig` has a `debug_requests: Option<PathBuf>` field (`peach_config/src/config.rs:173`) and
+> `ConfigReader::read_env()` (`peach_config/src/reader.rs:104-112`) maps every `PEACH_<FIELD>` env var onto
+> `PeachConfig` via `config::Environment::with_prefix("PEACH").prefix_separator("_").separator("__")`. Only `__`
+> marks struct nesting, so the single-underscore `PEACH_DEBUG_REQUESTS` lands on the flat `debug_requests` field.
+> It is consumed by `write_debug_request` (`peach_infra/src/http.rs:238`). Verified empirically:
+> `PEACH_DEBUG_REQUESTS=/tmp/probe.json peach config list` prints `debug_requests = "/tmp/probe.json"`.
+>
+> **The same generic mechanism makes every `PeachConfig` field settable per-process**, which is what makes the
+> T0.0 repair a TypeScript-only change. Verified: `PEACH_SESSION__PROVIDER_ID` + `PEACH_SESSION__MODEL_ID` populate
+> `[session]`, and `PEACH_AUTO_DUMP=json` sets `auto_dump`.
 
 Affected: `commit_no_markdown`, `multi_file_patch`, `patch_exact_match`, `parallel_tool_calls`, `read_over_cat`,
 `redundant_cd_with_cwd`, `refactoring_uses_patch`, `search_over_find`, `semantic_search_quality`, `suggest`.
 
 **Why this matters more than it looks.** clap rejects the unknown argument before the agent ever starts, so the
-run fails fast and the harness records it as a normal task failure. A T0.6 baseline would report ~0% pass and
-look like a catastrophic regression rather than a broken invocation. → new task **T0.0**.
+run fails fast and the harness records it as a normal task failure. Verified empirically:
+
+```
+$ peach --provider open_router --model anthropic/claude-sonnet-4.5 -p 'hi'
+error: unexpected argument '--provider' found
+$ echo $?
+2
+```
+
+`benchmarks/task-executor.ts:144` rejects on any nonzero exit, so a T0.6 baseline would report ~0% pass and look
+like a catastrophic regression rather than an invocation that never reached the agent. → new task **T0.0**.
+
+### Mechanism status, all verified empirically against `target/debug/peach`
+
+| Mechanism | Used by | Status |
+|---|---|---|
+| `--provider` / `--model` CLI flags | 10 evals | **Dead** — clap exits 2 |
+| `PEACH_OVERRIDE_PROVIDER` / `PEACH_OVERRIDE_MODEL` | `todo_write_usage` | **Dead** — no such `PeachConfig` fields; silently ignored |
+| `PEACH_DEBUG_REQUESTS` | 11 evals | **Works** — generic env→config mapping |
+| `PEACH_SESSION__PROVIDER_ID` / `PEACH_SESSION__MODEL_ID` | `sem_search` | **Works** — the parallel-safe replacement |
+| `PEACH_AUTO_DUMP=json` | nothing yet | **Works** — richer, provider-agnostic alternative |
+
+So the repair is a find-and-replace in `benchmarks/evals/*/task.yml`, with no Rust change:
+`--provider X --model Y` → `PEACH_SESSION__PROVIDER_ID=X PEACH_SESSION__MODEL_ID=Y`, and the same for the
+`PEACH_OVERRIDE_*` pair. Only `echo` needs no provider at all; the other 13 evals genuinely invoke the agent.
+
+### Two caveats that survive the repair
+
+1. **`debug_requests` writes JSONL, and it captures requests only — never responses.** Each outgoing provider
+   request body is appended as one line. The evals `jq` the file as though it were a single document; `jq` does
+   process multi-document input, and with `-e` the exit status reflects the *last* output, which happens to be the
+   fullest request (each request re-sends the whole history). It works, but by luck rather than design. Because
+   nothing is POSTed after the final turn, the file can never contain the final assistant message — no
+   `context.json`-based eval needs it today, but T0.3 should not assume this file can supply it.
+2. **The `jq` filters assume the OpenAI wire shape** (`.messages[].tool_calls[].function.name/.arguments`).
+   Anthropic's native format uses `content` blocks with `tool_use`, so an eval routed through the `anthropic`
+   provider directly (rather than through `open_router`) would yield empty arrays and **pass or fail silently for
+   the wrong reason**. This directly threatens R-EVAL-1's "≥2 model families" requirement: the Anthropic arm must
+   either route via an OpenAI-compatible gateway or use `PEACH_AUTO_DUMP=json`, whose `Context` structure is
+   provider-agnostic (`peach_domain/src/context.rs` — ordered messages, `ToolCallFull` with parsed arguments,
+   `ToolResult` with output, plus the final assistant message). **Recommended for T0.4.**
 
 ### Supporting gaps in the same area
 

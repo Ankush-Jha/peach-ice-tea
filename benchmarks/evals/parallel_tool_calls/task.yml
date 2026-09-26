@@ -2,7 +2,7 @@
 run:
   - # Clone into `tmp/task` dir
   - git clone --depth=1 --branch main https://github.com/Ankush-Jha/peach-ice-tea .
-  - PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache --provider open_router --model {{model}} -p '{{task}}'
+  - PEACH_SESSION__PROVIDER_ID=open_router PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
 parallelism: 5
 timeout: 120
 early_exit: true

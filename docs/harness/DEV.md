@@ -81,10 +81,20 @@ ln -sf $(pwd)/target/debug/peach ~/bin/peache   # ~/bin must be on PATH
 ```
 
 > **Warning — the eval harness does not currently work.** 10 of the 14 evals invoke
-> `peache --provider ... --model ...`, flags that were removed from the CLI in `b3ec4d17a`,
-> and 11 rely on a `PEACH_DEBUG_REQUESTS` env var that does not exist anywhere in `crates/`.
-> See `docs/harness/RECON.md` and task **T0.0** in `TASKS.md`. Do not interpret a 0% pass rate
-> as a regression until T0.0 is done.
+> `peache --provider ... --model ...`, flags removed from the CLI in `b3ec4d17a` (clap exits 2), and
+> `todo_write_usage` uses `PEACH_OVERRIDE_PROVIDER`/`PEACH_OVERRIDE_MODEL`, which map to no config field.
+> See `docs/harness/RECON.md` §2 and task **T0.0**. Do not interpret a 0% pass rate as a regression
+> until T0.0 is done.
+
+Any `PeachConfig` field can be set per-process via a `PEACH_<FIELD>` env var (`__` separates nested
+fields; a single `_` does not). This is parallel-safe — unlike `peach config set`, which does an
+unlocked read-modify-write of a shared `~/.peach/.peach.toml`. Useful ones:
+
+```bash
+PEACH_SESSION__PROVIDER_ID=open_router PEACH_SESSION__MODEL_ID=anthropic/claude-sonnet-4.5   # select provider+model
+PEACH_DEBUG_REQUESTS=/path/to/context.json    # append each outgoing provider request body (JSONL)
+PEACH_AUTO_DUMP=json                          # write a full structured Conversation dump on TaskComplete
+```
 
 ## Guardrails
 

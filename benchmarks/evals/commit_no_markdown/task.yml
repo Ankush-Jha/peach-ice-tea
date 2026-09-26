@@ -22,7 +22,7 @@ run:
     }
     EOF
   - cd test_repo && git add example.js
-  - cd test_repo && peache --provider {{provider}} --model {{model}} commit --preview
+  - cd test_repo && PEACH_COMMIT__PROVIDER_ID={{provider}} PEACH_COMMIT__MODEL_ID={{model}} peache commit --preview
   
 parallelism: 2
 timeout: 120

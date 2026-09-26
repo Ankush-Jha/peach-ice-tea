@@ -7,10 +7,14 @@ append the A/B report path where one is required.
 Legend: **[A/B]** requires an A/B report before ticking.
 
 ## M0 — Foundations (nothing else starts until M0 is done)
-- [ ] **T0.0** Repair the eval harness so it can invoke the agent at all: 10 of 14 evals use the
-      `--provider`/`--model` flags removed in `b3ec4d17a`, and 11 rely on `PEACH_DEBUG_REQUESTS`,
-      which never existed. Standardize model naming across `task.yml` files. See `RECON.md` §2,
-      `DECISIONS.md` D-011. **Blocks T0.4, T0.5, T0.6.**
+- [ ] **T0.0** Repair the eval harness so it can invoke the agent at all. 10 of 14 evals use the
+      `--provider`/`--model` flags removed in `b3ec4d17a` (clap exits 2), and `todo_write_usage` uses
+      `PEACH_OVERRIDE_PROVIDER`/`PEACH_OVERRIDE_MODEL`, which map to no config field and are silently
+      ignored. Replace both with `PEACH_SESSION__PROVIDER_ID` / `PEACH_SESSION__MODEL_ID` (parallel-safe:
+      process env only, no shared config-file write). Keep `PEACH_DEBUG_REQUESTS` — it works (D-012).
+      Standardize model naming across `task.yml` files so "model family" is usable as an A/B dimension.
+      TypeScript-only; no Rust change. See `RECON.md` §2, `DECISIONS.md` D-011 and D-012.
+      **Blocks T0.4, T0.5, T0.6.**
 - [x] **T0.1** Fork hygiene: add `upstream` remote, record the upstream commit we forked from in
       `DECISIONS.md`, confirm `cargo check` and `cargo insta test` pass on a clean clone,
       document the local dev loop in `docs/harness/DEV.md`.

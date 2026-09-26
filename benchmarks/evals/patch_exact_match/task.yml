@@ -184,7 +184,7 @@ run:
        Trade-offs: More flexible and extensible architecture, but adds abstraction layers and complexity. The current approach of checking tool type is simpler for the immediate use case.
     EOF
   - |  
-      PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache --provider open_router --model {{model}} -p '{{task}}'
+      PEACH_SESSION__PROVIDER_ID=open_router PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p '{{task}}'
 parallelism: 2
 timeout: 180
 early_exit: true

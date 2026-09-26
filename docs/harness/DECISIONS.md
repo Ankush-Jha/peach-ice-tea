@@ -99,3 +99,29 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Consequences:** M0 grows one task. A failed baseline can no longer be misread as a regression.
   The longer-term fix is that T0.3's JSON metrics line should replace `jq`-scraping outright, so T0.0
   should avoid investing in the transcript-dump approach beyond what unblocks a baseline.
+
+## D-012 — Correction to D-011: `PEACH_DEBUG_REQUESTS` works; T0.0 is TypeScript-only (2026-09-20)
+- **Context:** D-011 and the first draft of `RECON.md` §2 stated that `PEACH_DEBUG_REQUESTS` "has never existed in
+  `crates/`", inferred from `grep -rn PEACH_DEBUG_REQUESTS crates/` returning zero hits. The grep is accurate; the
+  inference was wrong. `PeachConfig` has a `debug_requests: Option<PathBuf>` field
+  (`peach_config/src/config.rs:173`) and `ConfigReader::read_env()` (`peach_config/src/reader.rs:104`) maps every
+  `PEACH_<FIELD>` env var onto `PeachConfig` generically, with `__` as the only nesting separator — so no literal
+  string exists to grep for. It is consumed by `write_debug_request` (`peach_infra/src/http.rs:238`).
+- **Verified empirically** against `target/debug/peach`: `PEACH_DEBUG_REQUESTS=/tmp/probe.json peach config list`
+  prints `debug_requests = "/tmp/probe.json"`; `PEACH_SESSION__PROVIDER_ID`/`PEACH_SESSION__MODEL_ID` populate
+  `[session]`; `PEACH_AUTO_DUMP=json` sets `auto_dump`. Conversely `--provider` exits 2
+  ("unexpected argument"), and `PEACH_OVERRIDE_PROVIDER`/`PEACH_OVERRIDE_MODEL` — used only by `todo_write_usage`,
+  a third naming scheme D-011 missed — map to no `PeachConfig` field and are silently ignored.
+- **Decision:** T0.0 stays in scope but shrinks to a TypeScript-only repair of `benchmarks/evals/*/task.yml`:
+  replace `--provider X --model Y` and the `PEACH_OVERRIDE_*` pair with
+  `PEACH_SESSION__PROVIDER_ID=X PEACH_SESSION__MODEL_ID=Y`, and **keep** `PEACH_DEBUG_REQUESTS` as-is. No Rust
+  change, and no need to choose a replacement for the transcript-dump convention as D-011 assumed.
+- **Consequences:** M0 is less blocked than D-011 implied — the only genuinely dead mechanisms are the two
+  provider/model ones. Two caveats carry forward to T0.4 and are recorded in `RECON.md` §2: `debug_requests` is
+  JSONL and captures requests only (never the final assistant message), and the evals' `jq` filters assume the
+  OpenAI wire shape, so an Anthropic-native arm would silently match nothing. R-EVAL-1 requires ≥2 model families,
+  so the Anthropic arm must either route through an OpenAI-compatible gateway or switch to
+  `PEACH_AUTO_DUMP=json`, whose `Context` structure is provider-agnostic and also carries tool results and the
+  final message.
+- **Process note:** the error was reasoning from the absence of a grep hit to the absence of a feature. For a
+  config value, check the config struct and its env-mapping layer before concluding it is unimplemented.
