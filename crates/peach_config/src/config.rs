@@ -307,6 +307,20 @@ pub struct PeachConfig {
     #[serde(default)]
     pub verify_todos: bool,
 
+    /// Runtime verification gate (harness, R-HACK-10): before accepting a
+    /// voluntary stop in `peach exec` as task completion, the harness itself
+    /// runs the repository's test command (`--test-command`, or detected) and
+    /// requires it to exit clean. On failure, the real command output — not the
+    /// model's report of it — is fed back into the conversation as the next
+    /// turn's input, and the run continues instead of ending.
+    ///
+    /// Fails open (principle 5): inert outside an installed `exec` runtime, and
+    /// inert when no test command is configured or detected, in which case
+    /// completion is accepted exactly as it is today. Off by default until an
+    /// A/B (principle 6).
+    #[serde(default)]
+    pub runtime_verify_gate: bool,
+
     /// Switches patch replacement fallback from the legacy fuzzy-search range
     /// lookup to the newer text-patch gRPC API.
     /// Defaults to `false` so patching continues to use the legacy fallback

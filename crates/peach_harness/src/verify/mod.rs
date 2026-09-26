@@ -238,11 +238,28 @@ pub struct FinalRun {
 /// * `test` - The command to run.
 /// * `timeout` - Wall-clock limit.
 pub fn run_final(root: &Path, test: &TestCommand, timeout: Duration) -> FinalRun {
+    run_test_command(root, test, timeout, "harness_final")
+}
+
+/// Runs `test` the same way [`run_final`] does, but tagged as a runtime
+/// verification gate run (R-HACK-10): this can happen more than once per
+/// task, so it must never be confused with the one final run recorded to
+/// the evidence bundle.
+///
+/// # Arguments
+/// * `root` - Repository root, the working directory.
+/// * `test` - The command to run.
+/// * `timeout` - Wall-clock limit.
+pub fn run_gate(root: &Path, test: &TestCommand, timeout: Duration) -> FinalRun {
+    run_test_command(root, test, timeout, "harness_runtime_gate")
+}
+
+fn run_test_command(root: &Path, test: &TestCommand, timeout: Duration, origin: &str) -> FinalRun {
     let started = Instant::now();
     let (exit_code, timed_out, output) = run_bounded(root, &test.command, timeout);
     let duration_ms = started.elapsed().as_millis() as u64;
     let result = classify(exit_code, timed_out, &output);
-    emit_test_run(&test.command, exit_code, &result, duration_ms, "harness_final");
+    emit_test_run(&test.command, exit_code, &result, duration_ms, origin);
     let tail: Vec<&str> = output.lines().rev().take(40).collect();
     FinalRun {
         ran: true,
@@ -257,6 +274,19 @@ pub fn run_final(root: &Path, test: &TestCommand, timeout: Duration) -> FinalRun
         skipped: result.skipped,
         output_tail: tail.into_iter().rev().collect::<Vec<_>>().join("\n"),
     }
+}
+
+/// How many times the runtime verification gate re-runs the tests on a
+/// voluntary stop before giving up and letting the run end regardless
+/// (principle 5: an environment that can never pass must not hang the run).
+pub const MAX_RUNTIME_GATE_ATTEMPTS: u32 = 2;
+static RUNTIME_GATE_ATTEMPTS: std::sync::Mutex<u32> = std::sync::Mutex::new(0);
+
+/// Records one runtime-gate attempt. Returns `(attempt_number, exhausted)`.
+pub fn runtime_gate_attempt() -> (u32, bool) {
+    let mut attempts = RUNTIME_GATE_ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+    *attempts += 1;
+    (*attempts, *attempts > MAX_RUNTIME_GATE_ATTEMPTS)
 }
 
 fn run_bounded(root: &Path, command: &str, timeout: Duration) -> (Option<i32>, bool, String) {

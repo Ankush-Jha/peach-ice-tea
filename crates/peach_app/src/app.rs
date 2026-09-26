@@ -11,7 +11,7 @@ use crate::changed_files::ChangedFiles;
 use crate::dto::ToolsOverview;
 use crate::hooks::{
     CompactionHandler, DoomLoopDetector, PendingTodosHandler, TelemetryHandler,
-    TitleGenerationHandler, TracingHandler, VerifyGateHandler,
+    TitleGenerationHandler, TracingHandler, VerifyGateHandler, RuntimeVerifyGateHandler,
 };
 use crate::init_conversation_metrics::InitConversationMetrics;
 use crate::orch::Orchestrator;
@@ -165,20 +165,23 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> PeachAp
 
         // Build the on_end hook, conditionally adding PendingTodosHandler based
         // on config
-        let on_end_hook = if peach_config.verify_todos {
-            tracing_handler
-                .clone()
-                .and(telemetry_handler.clone())
-                .and(title_handler.clone())
-                .and(PendingTodosHandler::new())
-                // harness: R-HACK-7 — inert unless an exec runtime is installed.
-                .and(VerifyGateHandler::new())
+        let base_end_hook = tracing_handler
+            .clone()
+            .and(telemetry_handler.clone())
+            .and(title_handler.clone());
+        let base_end_hook = if peach_config.verify_todos {
+            base_end_hook.and(PendingTodosHandler::new())
         } else {
-            tracing_handler
-                .clone()
-                .and(telemetry_handler.clone())
-                .and(title_handler.clone())
-                .and(VerifyGateHandler::new())
+            base_end_hook
+        };
+        // harness: R-HACK-7 — inert unless an exec runtime is installed.
+        // harness: R-HACK-10 (D-083) — the hard gate supersedes the soft nudge
+        // when it's on: the harness then runs the tests itself, so also asking
+        // the model to self-report the same fact would double the messaging.
+        let on_end_hook = if peach_config.runtime_verify_gate {
+            base_end_hook.and(RuntimeVerifyGateHandler::new())
+        } else {
+            base_end_hook.and(VerifyGateHandler::new())
         };
 
         let hook = Hook::default()

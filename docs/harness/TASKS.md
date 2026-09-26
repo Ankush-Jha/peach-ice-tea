@@ -35,6 +35,10 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       → wrapper (gemini-only, evidence always, budget, key hygiene), build/check scripts, §32 tree, README, ARCHITECTURE
       answering §25 with code paths + telemetry fields (D-044). ARCHITECTURE now cites a committed real run's telemetry
       (`documentation/evidence/2026-09-27-make-run-py-bugfix/`, D-080). Root `Makefile` (setup/run/test/check/clean, `AI_API_KEY`) verified from a clean clone (D-070).
+- [ ] **TH.10** `R-HACK-10` runtime verification gate: before a voluntary stop is accepted, the harness runs the tests itself
+      and sends the real failure back. **[A/B]**
+      → built behind config `runtime_verify_gate` (default false); replaces the soft gate when on; re-verifies integrity
+        after each gate run; capped at 2 attempts; e2e tests (D-083). A/B pending.
 
 ## MM — Any model (D-049)
 - [x] **MM.1** Model profiles: `openrouter-nemotron` (main) and `openrouter-routed` (main + cheap `sage`/compaction);

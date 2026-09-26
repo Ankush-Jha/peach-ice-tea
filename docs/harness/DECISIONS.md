@@ -1585,3 +1585,26 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
     run stops after the fourth request.
   - Upstream's doom-loop tests are unchanged and pass.
 - **SPEC:** R-LOOP-5 added to §3. **TASKS:** T2.7, `[A/B]`, default off.
+
+## D-083 — Brief Tier 1.2: a hard runtime verification gate (R-HACK-10), behind a config flag (2026-09-27)
+- **Built as the brief specified:** config `runtime_verify_gate` (default `false`, in `.peach.toml` and the schema;
+  env `PEACH_RUNTIME_VERIFY_GATE=true`) and `hooks/runtime_verify_gate.rs`.
+  - On a **voluntary** stop in an unattended run with a known test command, the harness runs that command itself
+    (`verify::run_gate`, `test_run.origin: harness_runtime_gate`, 180 s timeout).
+  - It then re-verifies and restores protected files via the new `runtime::IntegrityHandle` /
+    `restore_integrity_if_installed`, the same guarantee the final run gives.
+  - On failure, it appends the command's **real** output (class, exit code, last lines, recovery hint) as the next
+    user turn, so the loop continues. `orch.rs` is unchanged: the End-hook extension point already does this.
+  - Capped at `MAX_RUNTIME_GATE_ATTEMPTS = 2`; after that it records `agent_state: runtime_verify_gate_exhausted`
+    and lets the run end.
+  - When on, it **replaces** the soft `VerifyGateHandler` (D-037) instead of stacking, to avoid double messaging.
+  - `verify::run_final` now shares `run_test_command` with `run_gate`; the final run's behaviour is unchanged.
+- **Changed from the brief:** its first end-to-end test expected a `harness_final` test run but passed no
+  `--evidence-dir`. The harness runs its final test only when writing an evidence bundle, as every judged run does.
+  The test now passes `--evidence-dir`, and its assertions are otherwise as specified.
+- **Proof:** three end-to-end tests through the real binary:
+  - A premature "Done." on unfixed code is sent back with the real `test_assertion` output; after the fix the test
+    runs read gate `test_assertion` → gate `passed` → final `passed`, with 4 requests and the file fixed.
+  - With the flag on but no test command, the gate fails open: one request, `completed`.
+  - With the flag off, it is inert.
+- **TASKS:** TH.10, `[A/B]` against the soft gate (success, LLM calls, wall time, recovery rate).
