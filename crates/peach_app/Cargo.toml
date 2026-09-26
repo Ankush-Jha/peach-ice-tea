@@ -6,6 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 peach_domain.workspace = true
+peach_harness.workspace = true
 peach_config.workspace = true
 peach_stream.workspace = true
 async-trait.workspace = true

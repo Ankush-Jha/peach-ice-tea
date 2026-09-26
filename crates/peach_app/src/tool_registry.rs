@@ -134,6 +134,23 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> ToolReg
             }
 
             let env = self.services.get_environment();
+
+            // harness: R-HACK-2 — refuse anything that would alter a protected
+            // test before it runs. Modifying a test can disqualify the team
+            // (HACKATHON.md §8, §31), so this is enforced here rather than
+            // asked for in the prompt (CLAUDE.md principle 3). Inert unless a
+            // harness runtime is installed, so interactive use is unaffected.
+            if let Some(refusal) = harness_integrity_refusal(&tool_input, &env.cwd) {
+                context
+                    .send(peach_domain::TitleFormat::error("Protected test file"))
+                    .await?;
+                // Returned as output rather than an error on purpose: a refusal
+                // is information for the model, not a tool failure, and
+                // counting it toward `max_tool_failure_per_turn` would let
+                // three refusals end an otherwise healthy run.
+                return Ok(ToolOutput::text(refusal));
+            }
+
             if let Some(content) = tool_input.to_content(&env) {
                 context.send(content).await?;
             }
@@ -1112,4 +1129,38 @@ fn test_all_rendered_tool_descriptions() {
         "all_rendered_tool_descriptions",
         all_descriptions.join("\n---\n\n")
     );
+}
+
+
+/// Refusal text when a tool call would alter a protected test file.
+///
+/// Maps each file-touching tool onto the operation it performs, and screens
+/// shell commands separately since `shell` can reach the same files.
+fn harness_integrity_refusal(tool_input: &ToolCatalog, cwd: &std::path::Path) -> Option<String> {
+    use peach_harness::integrity::WriteOp;
+
+    let resolve = |path: &str| -> std::path::PathBuf {
+        let path = std::path::Path::new(path);
+        if path.is_absolute() { path.to_path_buf() } else { cwd.join(path) }
+    };
+
+    match tool_input {
+        ToolCatalog::Write(input) => {
+            peach_harness::runtime::check_write(WriteOp::Create, &resolve(&input.file_path))
+        }
+        ToolCatalog::Patch(input) => {
+            peach_harness::runtime::check_write(WriteOp::Modify, &resolve(&input.file_path))
+        }
+        ToolCatalog::MultiPatch(input) => {
+            peach_harness::runtime::check_write(WriteOp::Modify, &resolve(&input.file_path))
+        }
+        ToolCatalog::Remove(input) => {
+            peach_harness::runtime::check_write(WriteOp::Remove, &resolve(&input.path))
+        }
+        ToolCatalog::Undo(input) => {
+            peach_harness::runtime::check_write(WriteOp::Modify, &resolve(&input.path))
+        }
+        ToolCatalog::Shell(input) => peach_harness::runtime::check_shell(&input.command),
+        _ => None,
+    }
 }

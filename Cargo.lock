@@ -2272,6 +2272,7 @@ dependencies = [
  "peach_domain",
  "peach_embed",
  "peach_eventsource",
+ "peach_harness",
  "peach_json_repair",
  "peach_stream",
  "peach_template",
