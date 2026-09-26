@@ -1,0 +1,14 @@
+# Report shows events in the wrong order
+
+The nightly reporting job calls `dedupe_sorted` in `stats.py` to turn a raw event stream into
+a de-duplicated list for display. Customers are seeing the de-duplicated list in an
+inconsistent, seemingly random order instead of ascending order.
+
+Running the existing test suite reproduces the failure:
+
+```
+FAIL: test_removes_duplicates_and_sorts (tests.test_stats.TestDedupeSorted)
+AssertionError: Lists differ: [3, 1, 2] != [1, 2, 3]
+```
+
+Fix `dedupe_sorted` so the reported list is always sorted ascending, with duplicates removed.

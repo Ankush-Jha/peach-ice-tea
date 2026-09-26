@@ -1,0 +1,10 @@
+diff --git a/stats.py b/stats.py
+index 2b19111..eacf794 100644
+--- a/stats.py
++++ b/stats.py
+@@ -11,4 +11,4 @@ def dedupe_sorted(items):
+     for item in items:
+         if item not in result:
+             result.append(item)
+-    return result
++    return sorted(result)
