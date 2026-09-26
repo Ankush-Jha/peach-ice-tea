@@ -84,6 +84,23 @@ pub fn emit_with(event: TelemetryEvent, conversation_id: Option<String>, agent_i
     sink.emit(event, conversation_id, agent_id);
 }
 
+/// Forces buffered events to disk. A no-op when no sink has been installed.
+///
+/// For callers that need the log to reflect everything emitted so far right
+/// now — for example so an external process watching the file can see that a
+/// run has started.
+pub fn flush() {
+    if let Some(sink) = SINK.get() {
+        sink.flush();
+    }
+}
+
+/// Events the installed sink failed to write so far; `0` when none is
+/// installed. Reported in `RunEnd` so a lossy log says so about itself.
+pub fn dropped_events() -> u64 {
+    SINK.get().map_or(0, Sink::dropped_events)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

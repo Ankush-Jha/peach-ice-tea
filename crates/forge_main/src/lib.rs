@@ -5,6 +5,7 @@ mod conversation_selector;
 mod display_constants;
 mod editor;
 mod error;
+mod harness_exec;
 mod highlighter;
 mod info;
 mod input;

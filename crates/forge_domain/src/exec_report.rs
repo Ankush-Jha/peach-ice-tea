@@ -21,6 +21,11 @@ pub enum TaskOutcome {
     /// Stopped because of an error: a provider failure, a bad configuration, or
     /// an I/O problem.
     Error,
+    /// Stopped because the caller's wall-clock budget (`--max-duration-secs`)
+    /// ran out. Not a failure of the task itself: the clock simply ran out,
+    /// which the evidence must be able to tell apart from an error
+    /// (`DECISIONS.md` D-029).
+    TimeBudget,
 }
 
 impl TaskOutcome {
@@ -35,6 +40,7 @@ impl TaskOutcome {
             TaskOutcome::Error => 1,
             TaskOutcome::ToolFailureLimit => 2,
             TaskOutcome::RequestLimit => 3,
+            TaskOutcome::TimeBudget => 4,
         }
     }
 
@@ -73,6 +79,44 @@ pub struct ExecReport {
     /// `Completed`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+
+    /// Result of the post-run test-integrity check (R-HACK-2). Absent when
+    /// the check did not run, so a consumer can tell "not checked" apart
+    /// from "checked and clean".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integrity: Option<ExecIntegrity>,
+}
+
+/// Post-run test-integrity result carried in the `exec` report.
+///
+/// A violation does not change the exit code (the task outcome is a separate
+/// fact), so it has to be visible here instead: a restored file leaves a clean
+/// repository behind, and without this field nothing in the report would say
+/// a test was ever touched.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecIntegrity {
+    /// Number of protected files compared against the pre-run manifest.
+    pub checked: usize,
+    /// Protected files that changed during the run. Empty means clean.
+    pub violations: Vec<ExecIntegrityViolation>,
+}
+
+impl ExecIntegrity {
+    /// Whether every protected file was left exactly as it was.
+    pub fn is_clean(&self) -> bool {
+        self.violations.is_empty()
+    }
+}
+
+/// One protected file that changed during an `exec` run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecIntegrityViolation {
+    /// Path relative to the repository root.
+    pub path: String,
+    /// What happened to it: `modified`, `deleted` or `added`.
+    pub kind: String,
+    /// Whether the harness put the original content back.
+    pub restored: bool,
 }
 
 impl ExecReport {
@@ -86,6 +130,7 @@ impl ExecReport {
             conversation_id: None,
             model: None,
             error: None,
+            integrity: None,
         }
     }
 
@@ -104,6 +149,12 @@ impl ExecReport {
     /// Sets the failure description.
     pub fn error(mut self, error: impl ToString) -> Self {
         self.error = Some(error.to_string());
+        self
+    }
+
+    /// Sets the post-run test-integrity result.
+    pub fn integrity(mut self, integrity: ExecIntegrity) -> Self {
+        self.integrity = Some(integrity);
         self
     }
 
@@ -126,8 +177,9 @@ mod tests {
             TaskOutcome::Error.exit_code(),
             TaskOutcome::ToolFailureLimit.exit_code(),
             TaskOutcome::RequestLimit.exit_code(),
+            TaskOutcome::TimeBudget.exit_code(),
         ];
-        let expected = [0, 1, 2, 3];
+        let expected = [0, 1, 2, 3, 4];
 
         assert_eq!(actual, expected);
     }
@@ -138,6 +190,7 @@ mod tests {
         assert!(!TaskOutcome::Error.is_success());
         assert!(!TaskOutcome::ToolFailureLimit.is_success());
         assert!(!TaskOutcome::RequestLimit.is_success());
+        assert!(!TaskOutcome::TimeBudget.is_success());
     }
 
     #[test]
@@ -168,5 +221,35 @@ mod tests {
 
         assert!(actual.contains(r#""outcome":"tool_failure_limit""#));
         assert!(actual.contains(r#""exit_code":2"#));
+    }
+
+    #[test]
+    fn test_time_budget_serializes_as_the_shape_callers_already_parse() {
+        // `time_budget` / 4 was previously hand-built JSON in `ui.rs`; the
+        // runner and `exec_never_blocks.rs` already match on these values.
+        let fixture = ExecReport::new(TaskOutcome::TimeBudget, TaskMetrics::default());
+        let actual = fixture.to_json_line().unwrap();
+
+        assert!(actual.contains(r#""outcome":"time_budget""#));
+        assert!(actual.contains(r#""exit_code":4"#));
+    }
+
+    #[test]
+    fn test_integrity_is_omitted_until_checked_and_round_trips_once_set() {
+        let unchecked = ExecReport::new(TaskOutcome::Completed, TaskMetrics::default());
+        assert!(!unchecked.to_json_line().unwrap().contains("integrity"));
+
+        let fixture = unchecked.integrity(ExecIntegrity {
+            checked: 2,
+            violations: vec![ExecIntegrityViolation {
+                path: "tests/test_math.py".to_string(),
+                kind: "modified".to_string(),
+                restored: true,
+            }],
+        });
+        let actual: ExecReport = serde_json::from_str(&fixture.to_json_line().unwrap()).unwrap();
+
+        assert_eq!(actual, fixture);
+        assert!(!actual.integrity.unwrap().is_clean());
     }
 }
