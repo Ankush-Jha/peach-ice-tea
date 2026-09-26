@@ -1020,3 +1020,18 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   rest of T3.8.
 - **Not wired yet (by design):** the compaction pipeline that builds summaries and calls a scorer is T3.4. The
   builder must compute `referenced_later` from the messages after each call. **T3.8 ticked.**
+
+## D-062 — T3.4: compaction runs through a staged pipeline; behaviour identical, proven by a golden test (2026-09-26)
+- **Built (R-CTX-2):** `forge_app/src/compaction_pipeline/`. `Pipeline` runs an ordered list of `Stage`s, stopping
+  once the context is at or below the target, except that the final stage always runs if reached. It reports
+  `stage_reached`. `Stage` is an enum rather than trait objects (AGENTS.md: no `Box<dyn>`). Its one variant today
+  is `Summarize`, the existing `Compactor`. S0 supersede, S1 offload and S2 score are `[A/B]` tasks (T3.5, T3.6,
+  T3.9) and join as variants ahead of it. `hooks/compaction.rs` calls the pipeline instead of `Compactor`
+  directly. The manual `/compact` path in `app.rs` (full compaction, `max = true`) is untouched.
+- **Proof of "behaviour identical":** a golden test runs the pipeline and a direct `Compactor::compact(ctx, false)`
+  over four conversation shapes (empty, one message, 12 read turns, the same plus a new request) and requires
+  equal output. A guard requires at least two fixtures to actually change, so two no-ops cannot pass as equal.
+  The end-to-end compaction telemetry test still passes.
+- **Flaky upstream test:** `test_fs_create_overwrite` has now failed in 3 full runs (D-054 root cause, a
+  global colour-flag race). Still not modified, per the guardrail. If it keeps recurring, the fix belongs upstream
+  in `todo_fmt`'s colour guard.
