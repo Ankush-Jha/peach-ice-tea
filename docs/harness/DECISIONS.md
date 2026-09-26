@@ -1452,3 +1452,32 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
     `referenced_later` doing its job); a second scoring pass changes nothing.
   - End to end: a 16 KB read the conversation never mentions again, compaction on tokens. S2 cuts it, and **no
     summary runs**. Stable at 6,000–7,000; 8,000 never triggers.
+
+## D-078 — T0.7: behavioural checks over real runs; on 19 real bundles the one failure is a run that ran out of requests (2026-09-27)
+- **Built (R-EVAL-4):** `benchmarks/hackathon/behaviour.ts`. Four checks over an evidence bundle's
+  `telemetry.jsonl`, from what the agent *did*, each pass / fail / n/a (n/a when the run gave it nothing to judge):
+  - `read_before_patch`: every edit of an existing file came after a read of it; creating a file needs none;
+  - `verified_after_last_edit`: a green *agent* test run came after the last edit (the harness's own final run does
+    not count);
+  - `truncation_awareness`: withheld output was recovered via its handle, not by re-running the same command blind;
+  - `todo_usage`: work that edits two or more files used `todo_write`.
+
+  CLI: `node benchmarks/hackathon/behaviour.ts <evidence-dir>…`; exits 1 on any failure.
+- **Two checker flaws, found by running it on real bundles before trusting it:**
+  - It counted *refused* edits as edits. Nemotron 3.5 Lightning patched a path outside the task repository without
+    reading it, and peach's own read-before-edit guard refused the call. The run looked like a behaviour failure,
+    but the runtime had enforced the rule, which is principle 3 working. Refused attempts are now excluded and
+    reported in the detail.
+  - Telemetry truncates arguments at 2,000 characters, so a large `write` has unparseable JSON and lost both its
+    path and its `overwrite` flag. `file_path` and `overwrite` are now recovered from the raw text.
+- **Real evidence** (`benchmarks/reports/behaviour/2026-09-27-real-runs.md`, all 19 bundles from real model runs
+  so far: the `make run` verification, the free-tier screen and round 1):
+  - Every successful run passes every applicable check.
+  - The single failure is `verified_after_last_edit` on Nemotron Nano Omni's `py-bugfix`, which hit its 7-request
+    cap after patching and before testing. That is a true negative.
+  - `truncation_awareness` was n/a everywhere: none of these runs produced withheld output. The scripted
+    end-to-end tests (D-060, D-073) cover that path mechanically.
+- **Scope note:** R-EVAL-4's "parallel subagents" check is not included. No real run has used a subagent yet, so
+  there is nothing to validate a check against. It moves to T3.13 with the other behaviours that need specific
+  tasks.
+- **T0.7 ticked:** green on the baseline (every run that completed passes), with the one true negative explained.

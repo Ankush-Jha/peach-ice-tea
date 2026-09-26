@@ -85,12 +85,14 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       or to the previous shipped state.** Note: this baseline predates the non-interactive prompt
       profile (`R-LOOP-4`, T2.4), so footnote it — unattended runs can stall on clarifying questions
       and wall-time/success deltas are not comparable once T2.4 ships (`RECON.md` §5).
-- [ ] **T0.7** `R-EVAL-4` behavioural regression suite (parallel subagents, read-before-patch,
+- [x] **T0.7** `R-EVAL-4` behavioural regression suite (parallel subagents, read-before-patch,
       todo usage, verification, truncation awareness). Must be green on baseline.
       Note: R-EVAL-4 also requires tests gated on R-LOOP-1/R-LOOP-2/R-CTX-3, which land in M2/M3 —
       those are tracked separately as T3.13, not here (`RECON.md` §5).
 - [x] **T0.8** `R-TOOL-1` schema-rule unit test over all tool definitions.
       → flat-schema rule enforced catalog-wide; `required`-before-`properties` deferred with reason (D-055).
+      → `benchmarks/hackathon/behaviour.ts` (4 checks) run on 19 real bundles: every completed run passes (D-078);
+        subagent check moves to T3.13.
 - [ ] **T0.9** `R-EVAL-3` per-tool micro-eval template + CI job reporting per-tool error rate by model.
       Every task below that adds or changes a tool must add its micro-eval and follow `R-TOOL-2` naming.
 
