@@ -22,12 +22,13 @@ fn token_value(count: TokenCount) -> u64 {
 ///
 /// Counts are cumulative over the task.
 ///
-/// **Subagent work is not included.** The `task` tool builds a fresh
-/// `Conversation` per subagent (`forge_app::agent_executor`), so its requests
-/// and tokens accumulate on that conversation's own metrics and never reach the
-/// parent. Only the parent's `task` tool *call* is counted, not what it cost.
-/// Any A/B that changes subagent behaviour will therefore under-report tokens
-/// until subagent metrics are rolled up; see `RECON.md`.
+/// **Subagent work is included.** The `task` tool builds a fresh `Conversation`
+/// per subagent, so its costs land on that conversation's own metrics; the
+/// agent executor folds them back into the parent through `absorb_subagent`
+/// once the subagent finishes. Without that rollup an A/B on subagent
+/// behaviour — which is exactly what `R-LOOP-1` changes — would under-report
+/// tokens. `wall_ms` is the one field that does not roll up; see
+/// `absorb_subagent`.
 #[derive(Debug, Clone, Default, PartialEq, Setters, Serialize, Deserialize)]
 #[setters(into, strip_option)]
 #[serde(default)]
@@ -150,6 +151,32 @@ impl TaskMetrics {
         self.tool_errors.values().sum()
     }
 
+    /// Folds a subagent's costs into this task's totals.
+    ///
+    /// Counts, tokens, cost and compactions add. `wall_ms` deliberately does
+    /// not: subagents run concurrently with each other and with the parent, so
+    /// summing their elapsed time would exceed the wall time actually spent.
+    /// The parent's own clock already covers the period they ran in.
+    pub fn absorb_subagent(&mut self, child: &TaskMetrics) {
+        self.llm_calls += child.llm_calls;
+        self.input_tokens += child.input_tokens;
+        self.cached_input_tokens += child.cached_input_tokens;
+        self.output_tokens += child.output_tokens;
+        self.reasoning_tokens += child.reasoning_tokens;
+        if let Some(child_cost) = child.cost {
+            self.cost = Some(self.cost.unwrap_or(0.0) + child_cost);
+        }
+        for (tool, count) in child.tool_calls.iter() {
+            *self.tool_calls.entry(tool.clone()).or_default() += count;
+        }
+        for (tool, count) in child.tool_errors.iter() {
+            *self.tool_errors.entry(tool.clone()).or_default() += count;
+        }
+        self.compactions.count += child.compactions.count;
+        self.compactions.tokens_before += child.compactions.tokens_before;
+        self.compactions.tokens_after += child.compactions.tokens_after;
+    }
+
     /// Prompt tokens that were not served from cache.
     pub fn uncached_input_tokens(&self) -> u64 {
         self.input_tokens.saturating_sub(self.cached_input_tokens)
@@ -250,6 +277,33 @@ mod tests {
         actual.record_llm_call(Some(&fixture));
 
         assert_eq!(actual.reasoning_tokens, 300);
+    }
+
+    #[test]
+    fn test_absorb_subagent_adds_costs_but_not_wall_time() {
+        let mut child = TaskMetrics::default();
+        child.record_llm_call(Some(&usage_fixture(500, 120, 100)));
+        child.record_tool_call(&ToolName::new("shell"), true);
+        child.wall_ms = 9_000;
+        child.compactions.record(2000, 300);
+
+        let mut actual = TaskMetrics::default();
+        actual.record_llm_call(Some(&usage_fixture(100, 10, 0)));
+        actual.record_tool_call(&ToolName::new("shell"), false);
+        actual.wall_ms = 4_000;
+        actual.absorb_subagent(&child);
+
+        let mut expected = TaskMetrics::default()
+            .llm_calls(2u64)
+            .input_tokens(600u64)
+            .output_tokens(130u64)
+            .cached_input_tokens(100u64)
+            .wall_ms(4_000u64)
+            .tool_calls(BTreeMap::from([("shell".to_string(), 2u64)]))
+            .tool_errors(BTreeMap::from([("shell".to_string(), 1u64)]));
+        expected.compactions.record(2000, 300);
+
+        assert_eq!(actual, expected);
     }
 
     #[test]
