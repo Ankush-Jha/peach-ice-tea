@@ -227,6 +227,17 @@ impl ExecHarness {
             }
             evidence.write_json(evidence::EXEC, report);
         }
+        // HACKATHON §15 "Agent: errors": the reason a run did not complete
+        // is otherwise only in exec.json.
+        if outcome != "completed" {
+            telemetry::emit(TelemetryEvent::Error(event::Error {
+                kind: outcome.to_string(),
+                message: report.error.clone().unwrap_or_default(),
+                recoverable: false,
+                source: Some("exec".to_string()),
+                origin_call_id: None,
+            }));
+        }
         telemetry::emit(TelemetryEvent::RunEnd(event::RunEnd {
             outcome: outcome.to_string(),
             duration_ms,

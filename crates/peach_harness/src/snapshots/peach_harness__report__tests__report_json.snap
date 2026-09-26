@@ -11,6 +11,7 @@ expression: json
       ]
     ],
     "compactions": 1,
+    "prompt_composition": {},
     "tokens_reclaimed_estimated": 7500
   },
   "error_recovery": {

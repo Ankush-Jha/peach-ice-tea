@@ -37,6 +37,8 @@ struct State {
     /// Compaction counters and message count just before `CompactionHandler`
     /// ran on the latest response, for [`CompactionObserver`] to compare.
     pre_compaction: Option<(CompactionMetrics, usize)>,
+    /// Whether this conversation's prompt composition was already recorded.
+    composed: bool,
 }
 
 struct PendingRequest {
@@ -136,6 +138,39 @@ fn request_tokens_estimated(context: &peach_domain::Context) -> u64 {
         .map(|tool| serde_json::to_string(tool).map_or(0, |json| json.chars().count()))
         .sum();
     (context.token_count_approx() + tool_chars.div_ceil(4)) as u64
+}
+
+/// Where a request's estimated tokens go (T6.1), by message role and by
+/// source. Recorded once per conversation, at its first request, which is the
+/// fixed cost every later request repeats: system prompt, tool definitions,
+/// task (D-039).
+fn composition(context: &peach_domain::Context) -> event::ContextComposition {
+    use std::collections::BTreeMap;
+    let mut by_role: BTreeMap<String, u64> = BTreeMap::new();
+    let mut by_source: BTreeMap<String, u64> = BTreeMap::new();
+    for entry in &context.messages {
+        let (role, source) = match &entry.message {
+            peach_domain::ContextMessage::Text(text) => match text.role {
+                peach_domain::Role::System => ("system", "system_prompt"),
+                peach_domain::Role::User => ("user", "user_prompt"),
+                peach_domain::Role::Assistant => ("assistant", "assistant"),
+            },
+            peach_domain::ContextMessage::Tool(_) => ("tool", "tool_results"),
+            peach_domain::ContextMessage::Image(_) => ("user", "images"),
+        };
+        let tokens = entry.message.token_count_approx() as u64;
+        *by_role.entry(role.to_string()).or_default() += tokens;
+        *by_source.entry(source.to_string()).or_default() += tokens;
+    }
+    let tool_tokens = request_tokens_estimated(context) - context.token_count_approx() as u64;
+    if tool_tokens > 0 {
+        by_source.insert("tool_definitions".to_string(), tool_tokens);
+    }
+    event::ContextComposition {
+        total_messages: context.messages.len(),
+        tokens_by_role_estimated: by_role,
+        tokens_by_source_estimated: by_source,
+    }
 }
 
 /// The tool result as the model saw it, flattened to text.
@@ -247,6 +282,14 @@ impl EventHandle<EventData<RequestPayload>> for TelemetryHandler {
             .as_ref()
             .map(|context| (Some(request_tokens_estimated(context)), context.messages.len()))
             .unwrap_or((None, 0));
+        let first = self.state.lock().map(|mut state| !std::mem::replace(&mut state.composed, true)).unwrap_or(false);
+        if first && let Some(context) = conversation.context.as_ref() {
+            emit(
+                TelemetryEvent::ContextComposition(composition(context)),
+                conversation,
+                _event.agent.id.as_str(),
+            );
+        }
         if let Ok(mut state) = self.state.lock() {
             state.request = Some(PendingRequest {
                 started: Instant::now(),
@@ -442,6 +485,22 @@ mod tests {
 
         assert_eq!(without, messages_only.token_count_approx() as u64);
         assert!(with >= without + 1000, "{without} -> {with}");
+    }
+
+    #[test]
+    fn test_composition_splits_the_fixed_cost_by_source() {
+        let fixture = peach_domain::Context::default()
+            .add_message(peach_domain::ContextMessage::system("s".repeat(400)))
+            .add_message(peach_domain::ContextMessage::user("u".repeat(40), None))
+            .tools(vec![peach_domain::ToolDefinition::new("read").description("d".repeat(4000))]);
+
+        let actual = composition(&fixture);
+
+        assert_eq!(actual.total_messages, 2);
+        assert_eq!(actual.tokens_by_source_estimated["system_prompt"], 100);
+        assert_eq!(actual.tokens_by_source_estimated["user_prompt"], 10);
+        assert!(actual.tokens_by_source_estimated["tool_definitions"] >= 1000);
+        assert_eq!(actual.tokens_by_role_estimated["system"], 100);
     }
 
     #[test]
