@@ -1,0 +1,5 @@
+{
+  "language": "python",
+  "test_command": "python3 -m unittest discover -s tests -t . -v",
+  "test_files": ["tests/__init__.py", "tests/test_money.py", "tests/test_invoice.py", "tests/test_report.py"]
+}

@@ -1,0 +1,5 @@
+# Any-model profile (D-049, D-050): forge's built-in `open_router` provider. The model is chosen per run with
+# FORGE_SESSION__MODEL_ID (bake-off, A/Bs); the default below is replaced by MM.2's winner.
+[session]
+provider_id = "open_router"
+model_id = "anthropic/claude-opus-5.5"
