@@ -1677,3 +1677,42 @@ fn test_a_read_superseded_by_a_reread_becomes_a_stub_without_a_summary() {
     assert!(!requests.iter().any(|b| b.contains("summary frames")), "the lossy summary ran although S0 sufficed");
     assert!(requests.last().unwrap().contains("line 0200: the quick brown fox"), "the newest read was lost");
 }
+
+#[test]
+fn test_the_soft_trigger_compacts_reversibly_before_the_hard_one_is_reached() {
+    let (run, requests) = soft_trigger_run(true);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert!(requests.iter().any(|b| b.contains("big.txt was read again later")), "no soft compaction reached the model");
+    assert!(!requests.iter().any(|b| b.contains("summary frames")), "the soft trigger ran the lossy summary");
+    assert!(
+        run.telemetry.iter().any(|event| event["type"] == "context_compaction"),
+        "the soft compaction is not in telemetry"
+    );
+}
+
+#[test]
+fn test_without_the_soft_trigger_the_same_run_does_not_compact() {
+    let (run, requests) = soft_trigger_run(false);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert!(!requests.iter().any(|b| b.contains("[offloaded by the harness:")));
+    assert!(!run.telemetry.iter().any(|event| event["type"] == "context_compaction"), "the hard trigger fired");
+}
+
+/// Two 16 KB reads: above the soft trigger (3/4 of 15,000), below the hard one.
+fn soft_trigger_run(soft: bool) -> (Run, Vec<String>) {
+    let project = project_with_a_test();
+    let big: String = (0..400).map(|i| format!("line {i:04}: the quick brown fox jumps over\n")).collect();
+    std::fs::write(project.path().join("big.txt"), &big).unwrap();
+    let read = || Turn::Tool("read", serde_json::json!({"file_path": "big.txt"}));
+    let echo = || Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "echo"}));
+    let model = ScriptedModel::start(vec![read(), read(), echo(), echo(), Turn::Text("Done.")]);
+    let mut env = vec![("FORGE_COMPACT__TOKEN_THRESHOLD", "15000"), ("FORGE_COMPACT__RETENTION_WINDOW", "2")];
+    if soft {
+        env.push(("FORGE_HARNESS_SOFT_COMPACTION", "1"));
+    }
+
+    let run = run_exec_with_env(project.path(), &model, None, &env);
+    (run, model.requests())
+}

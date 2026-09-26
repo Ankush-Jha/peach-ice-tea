@@ -24,6 +24,8 @@ expression: render_md(&normalized)
 
 Compactions: 1 · tokens reclaimed (estimated): 7500 · messages: 40→6
 
+Cache hit rate around each compaction (call before → call after): 85%→89%
+
 ## Tools
 
 | Tool | Calls | Errors | Total ms |

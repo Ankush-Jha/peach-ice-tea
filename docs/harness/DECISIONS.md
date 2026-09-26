@@ -1403,3 +1403,30 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
     tuning, thresholds where S0 alone was not enough correctly fell through to S3, which is the D-074 stop rule
     working as intended.
 - **T3.5 stays unticked** (`[A/B]`).
+
+## D-076 — T3.11: a soft trigger that compacts reversibly and early, and the cache cost of each compaction in the report (2026-09-27)
+- **R-CTX-7, soft trigger (`FORGE_HARNESS_SOFT_COMPACTION=1`, default off):**
+  - When the hard trigger has not fired but tokens reach ¾ of `token_threshold` (the spec's 0.6 of the window
+    against the hard trigger's 0.8), the hook runs `Pipeline::reversible`: S0 supersede, then S1 offload. **It
+    never runs the lossy summary.**
+  - It aims at ¾ of the soft threshold. It records a compaction (metrics and telemetry) only when it actually
+    changed the context, and registers its handles for `offload_read`.
+  - This keeps compaction deliberate: large, reversible cuts early, and the prefix-invalidating summary rarely.
+  - The soft pass enables S0/S1 by itself, independent of their own flags, which govern the hard pass.
+- **R-CTX-8, cache accounting:**
+  - Per-call cached tokens were already recorded (D-032, D-036). The report now adds
+    `context.cache_around_compactions`: the cache hit rate (`cached / input`) of the model call just before and
+    just after each compaction, which shows what a compaction cost the prompt cache. Markdown: "Cache hit rate
+    around each compaction (call before → call after): 85%→89%".
+  - Serialised only when non-empty. The golden snapshot changed by exactly that field for the fixture's one
+    compaction.
+  - "Keep the system prompt and tool definitions first and stable" already holds: nothing in the pipeline touches
+    them, and S0–S2 edit only tool results.
+- **Proof:**
+  - Unit: the soft pipeline never summarises.
+  - End to end: two 16 KB reads under a 15,000-token hard threshold. With the flag, the soft trigger stubs the
+    first read ("read again later"), no summary runs, and `context_compaction` is in telemetry. **Control:** the
+    same run without the flag does not compact at all, so the soft trigger did it. The end-to-end test was stable
+    across hard thresholds from 13,000 to 16,000.
+- **T3.11 stays unticked** (`[A/B]`: long tasks; success, total input tokens, compaction count, and the cache rate
+  around compactions, flag on vs off).
