@@ -124,8 +124,9 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [ ] **T3.2** `R-CTX-1` write path: orchestrator appends all events; `conversations.context`
       becomes projection; old conversations still resume.
 - [ ] **T3.3** `R-CTX-3` `recall` tool over artifacts; stub format with handles.
-- [ ] **T3.4** `R-CTX-2` pipeline skeleton with S3 = existing Compactor (behaviour identical to
+- [x] **T3.4** `R-CTX-2` pipeline skeleton with S3 = existing Compactor (behaviour identical to
       today; golden test proves it).
+      → `compaction_pipeline::Pipeline`, hook wired, golden test over 4 shapes with a non-vacuity guard (D-062).
 - [ ] **T3.5** `R-CTX-2` S0 supersede. **[A/B]**
 - [ ] **T3.6** `R-CTX-2` S1 offload. **[A/B]**
 - [x] **T3.7** `R-SAFE-3` redaction utility (needed before any scorer sends data).
