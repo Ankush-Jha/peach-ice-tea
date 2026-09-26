@@ -78,6 +78,15 @@ textarea { min-height: 150px; resize: vertical; font-family: var(--mono); font-s
 .stat { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; min-width: 0; }
 .stat b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat span { font-size: 12px; color: var(--muted); }
+.rubric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.rubric-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
+.rubric-card .rc-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.rubric-card h3 { margin: 0; font-size: 15px; font-weight: 650; }
+.weight { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+.rubric-card p { margin: 0 0 10px; color: var(--text); font-size: 13.5px; line-height: 1.55; }
+.rubric-card .evidence { display: flex; flex-wrap: wrap; gap: 6px; }
+.rubric-card .evidence code { font-family: var(--mono); font-size: 11.5px; background: var(--panel-2); border: 1px solid var(--line); padding: 2px 7px; border-radius: 999px; color: var(--muted); }
+@media (max-width: 900px) { .rubric-grid { grid-template-columns: 1fr; } }
 .run-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
 .run-head .meta { color: var(--muted); font-size: 13px; font-family: var(--mono); overflow-wrap: anywhere; }
 .banner { border-radius: var(--radius); padding: 12px 16px; margin-bottom: 14px; display: none; align-items: center; justify-content: space-between; gap: 12px; }
@@ -162,7 +171,8 @@ tr.sel td { background: var(--accent-soft); }
       <div>Peach Ice Tea<small>coding-agent harness</small></div>
     </div>
     <nav>
-      <button data-view="run" class="active">Run a task <span id="nav-run-dot"></span></button>
+      <button data-view="overview" class="active">Overview</button>
+      <button data-view="run">Run a task <span id="nav-run-dot"></span></button>
       <button data-view="history">History</button>
       <button data-view="bench">Benchmarks</button>
     </nav>
@@ -174,8 +184,22 @@ tr.sel td { background: var(--accent-soft); }
   </aside>
 
   <main>
+    <!-- Overview -->
+    <section class="view active" id="view-overview">
+      <h1>Overview</h1>
+      <p class="sub">What the hackathon rubric weighs, and where this harness answers each part. Every card links to the
+        code and the decision behind it — not a claim, a pointer to check.</p>
+      <div class="stats" style="grid-template-columns:repeat(4, minmax(0,1fr))">
+        <div class="stat"><b id="ov-tasks">–</b><span>Backlog items done</span></div>
+        <div class="stat"><b id="ov-decisions">–</b><span>Decisions on record</span></div>
+        <div class="stat"><b id="ov-binary">–</b><span>Harness binary</span></div>
+        <div class="stat"><b id="ov-keys">–</b><span>Provider keys ready</span></div>
+      </div>
+      <div class="rubric-grid" id="rubric-grid"></div>
+    </section>
+
     <!-- Run -->
-    <section class="view active" id="view-run">
+    <section class="view" id="view-run">
       <h1>Run a task</h1>
       <p class="sub">One unattended run, the same path as <code>make run</code>: the agent edits the repository, the harness runs its tests and records an evidence bundle.</p>
       <div class="run-grid">
@@ -294,8 +318,57 @@ function show(view) {
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${view}`));
   if (view === "history") loadHistory();
   if (view === "bench") loadReports();
+  if (view === "overview") loadOverview();
 }
 document.querySelectorAll("nav button").forEach((b) => (b.onclick = () => show(b.dataset.view)));
+
+// ---- overview: the hackathon rubric, and where this harness answers each part ----
+const RUBRIC = [
+  { name: "Task completion &amp; correctness", weight: 30,
+    what: "The harness's own final test run decides pass/fail, never the model's claim: a runtime verification gate runs the real tests before accepting a voluntary stop, and sends a failure back as the next turn instead of trusting a report. A test-integrity guard refuses and restores any edit to a protected test.",
+    evidence: ["crates/forge_harness/src/verify/", "hooks/runtime_verify_gate.rs"] },
+  { name: "Orchestration &amp; agent architecture", weight: 15,
+    what: "A staged loop with End-hooks; an enforced doom-loop ladder (warn → skip → pause) layered on a softer pattern detector; automatic failover to the next model in a profile's list on a quota that cannot recover or an outage that outlasts retries. Nothing can block an unattended run — no prompt goes unanswered.",
+    evidence: ["forge_app/src/orch.rs", "doom_loop_escalation.rs", "model_failover.rs"] },
+  { name: "Context management", weight: 15,
+    what: "A four-stage compaction pipeline, cheapest and most reversible first: supersede stale results, offload large ones to re-readable handles, drop by a relevance score, and only then a lossy summary as the last resort. An append-only event log means compaction can shrink the working view without ever destroying history.",
+    evidence: ["compaction_pipeline/", "thread_event.rs"] },
+  { name: "Tool design &amp; usage", weight: 10,
+    what: "14 tools by default — comfortably under where tool-use reliability is known to fall off past roughly 15. Flat schemas; unambiguous argument mistakes get corrected before the strict parser would reject them; every truncation is loud and reversible, never a silent drop.",
+    evidence: ["forge_domain/src/tools/catalog.rs", "truncation/"] },
+  { name: "Token / resource efficiency", weight: 10,
+    what: "A token-saving change ships only once a real A/B on two model families shows success holds, not just that it's cheaper — one already shipped this way. Cache-hit rate and per-component prompt cost are in every report, not just totals.",
+    evidence: ["benchmarks/reports/ab/", "report.rs"] },
+  { name: "Error recovery &amp; reliability", weight: 10,
+    what: "Every recovery event is tagged with whose failure it answered — the model's, the harness's own, or the environment's — so a report can tell them apart instead of one undifferentiated retry count.",
+    evidence: ["telemetry/event.rs", "recovery: model | harness | environment"] },
+  { name: "Code / system quality", weight: 5,
+    what: "Every non-trivial decision is on record with its reasoning, not just its outcome. No test has ever been weakened to make it pass — a failing test found before a change stays recorded as inherited, not quietly fixed by lowering the bar.",
+    evidence: ["docs/harness/DECISIONS.md"] },
+  { name: "Technical understanding", weight: 5,
+    what: "documentation/ARCHITECTURE.md answers the same categories the technical interview asks about, and every answer cites what a real run's own telemetry actually showed — not an assertion of how the system is supposed to behave.",
+    evidence: ["documentation/ARCHITECTURE.md"] },
+];
+function renderRubric() {
+  $("rubric-grid").innerHTML = RUBRIC.map((r) => `
+    <div class="rubric-card">
+      <div class="rc-h"><h3>${r.name}</h3><span class="weight">${r.weight} pts</span></div>
+      <p>${r.what}</p>
+      <div class="evidence">${r.evidence.map((e) => `<code>${esc(e)}</code>`).join("")}</div>
+    </div>`).join("");
+}
+async function loadOverview() {
+  renderRubric();
+  try {
+    const [stats, status] = await Promise.all([api("/api/overview"), api("/api/status")]);
+    $("ov-tasks").textContent = `${stats.tasksDone}/${stats.tasksTotal}`;
+    $("ov-decisions").textContent = stats.decisions;
+    $("ov-binary").textContent = status.binary ? "built" : "not built";
+    $("ov-binary").style.color = status.binary ? "" : "var(--bad)";
+    const withKey = status.profiles.filter((p) => p.keyAvailable).length;
+    $("ov-keys").textContent = `${withKey}/${status.profiles.length}`;
+  } catch { /* the stats endpoints are read-only extras; a failure here shouldn't block the page */ }
+}
 
 // ---- markdown (enough for the harness's reports: headings, tables, lists, code) ----
 function inline(s) {
@@ -594,6 +667,7 @@ async function loadReports() {
 }
 
 loadStatus().catch((err) => showError(`Cannot reach the UI server: ${err.message}`));
+loadOverview();
 connect();
 </script>
 </body>
