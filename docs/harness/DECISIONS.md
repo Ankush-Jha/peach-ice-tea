@@ -802,3 +802,25 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   Cost: 40 calls / 684k input tokens for 5 fixtures, about 2× GLM 5.3's calls, so it is the default because it
   runs, not because it is efficient. When credit exists, round 2 reruns all nine and the shortlist gets k = 3.
 - **Limit found:** the free tier is 50 requests/day across all free models; one six-fixture suite needs ~50.
+
+## D-052 — MM.3 per-role routing: what routes, what cannot, and a failure the tests found (2026-09-26)
+- **Organizer confirmation (via the team):** any model is allowed in the judged run. D-017's compliance concern is closed.
+- **What actually calls a model in `exec`:** the main loop (`orch.rs`) and subagents (`agent_executor.rs`). Title
+  generation is skipped when unattended (D-045). **Compaction calls no model:** `Compactor::compact` renders a
+  template summary, and `compact.model` is carried in config but never read by a model call. So "a cheap compaction
+  model" would be dead configuration; it was removed from `openrouter-routed`. An LLM-written summary is new
+  behaviour (T3.10 territory, `[A/B]`), not routing. The relevance-scorer role likewise waits on T3.9, which has no
+  `LlmScorer` yet. **Routing today therefore means `roles.<subagent>`**, e.g. `sage` on a fast long-context model.
+- **Proof, end to end with two scripted providers** (`exec_scripted_model.rs`): with `roles.sage` set, the sage
+  request carries `fast-model` and every main-loop request carries `scripted-model`. Ignoring `roles` in the resolver
+  makes this test fail.
+- **Failure found by the second test:** when the role model's provider failed, the parent received upstream's
+  generic tool-error frame: "reflect on what was wrong with the tool call … make the correct tool call", with 2
+  attempts left. That tells the strong model to retry a delegation that cannot succeed, which spends turns and can
+  reach the tool-failure limit, and it never said which model failed. `AgentExecutor` now prefixes the cause with
+  "The 'sage' subagent's model (<provider>/<model>) failed … a provider failure, not a mistake in your tool call …
+  Continue the work yourself", and emits `recovery{action: subagent_model_failed}`. The run completes (exit 0).
+  Automatic re-run on the session model was considered and not built: `ForgeApp::chat` resolves the model from the
+  agent id, and a per-request override would touch upstream's hot path (principle 8). The parent is the strongest
+  model and has the same read tools, so handing the work back is the cheaper fail-open.
+- **Not yet shown:** whether routing helps. That is the `[A/B]` (routed vs single-model), which needs credit (D-050).

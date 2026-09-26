@@ -40,7 +40,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       → round 1 done (`benchmarks/reports/models/20260926-round1.md`, D-051); 3 harder fixtures added. Round 2 needs account credit.
 - [ ] **MM.3** `R-TOOL-4` per-role routing in the runtime (`harness.roles.<agent>` provider/model, compaction model on
       another provider), failing open to the session model. **[A/B]** routed vs single-model.
-      → `roles` config + resolver + test; `openrouter-routed` profile. Unticked pending the A/B.
+      → `roles` config + resolver; two-provider end-to-end proof; loud fail-open when a role model fails (D-052).
+      Compaction calls no model, so it is not routable; the scorer role waits on T3.9. Unticked pending the A/B.
 - [ ] **MM.4** Quota/outage failover: when D-040's detector sees an exhausted quota or a provider is unreachable, continue
       on the next model in the profile's fallback list, with a `recovery` event, instead of exiting.
 - [ ] **MM.5** Second-family A/Bs for the flagged work: compact tool docs (DeepSeek arm done), T2.1, T2.6, T1.2.
