@@ -40,6 +40,18 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       → built behind config `runtime_verify_gate` (default false); replaces the soft gate when on; re-verifies integrity
         after each gate run; capped at 2 attempts; e2e tests (D-083). A/B pending.
 
+## BR — Handoff brief remainder (`AGENT_HANDOFF_BRIEF.md`, D-081…D-084)
+Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What remains needs model requests or is Tier 3.
+- [ ] **BR.1** Tier 2 A/Bs, one per flag on the default model, k ≥ 2, ship or revert each:
+      compact tool docs (D-039; strongest prior, −17.6% input on DeepSeek), T1.2, T1.4, T1.5, T2.1, T2.6, T3.10, T2.7, TH.10.
+      → blocked on budget: ~40 free requests per A/B, 50/day (D-069); one per day.
+- [ ] **BR.2** Tier 3.1 failure-attribution tag on `recovery` events (+ emit `offload_read`/`rerun`/`reread` as events).
+      → not started (Tier 3; after BR.1 per the brief's order).
+- [ ] **BR.3** Tier 3.2 `write_note` scratchpad tool kept outside `Context.messages` (`R-CTX-10`).
+      → not started (Tier 3). Note D-067's concern does not apply: notes live in the event log, not the repo.
+- [ ] **BR.4** Tier 3.3 remove 6 dead schema structs from `catalog.rs`.
+      → not started (Tier 3, cleanup only).
+
 ## MM — Any model (D-049)
 - [x] **MM.1** Model profiles: `openrouter-nemotron` (main) and `openrouter-routed` (main + cheap `sage`/compaction);
       `harness/peach-ice-tea --profile`; runner key-stripping covers them.
