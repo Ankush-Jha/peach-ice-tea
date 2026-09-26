@@ -107,6 +107,49 @@ fn env_flag_is_set(value: Option<String>) -> bool {
     value.is_some_and(|v| v == "1")
 }
 
+/// Answer the `followup` tool returns instead of asking a human, in an
+/// unattended run. Written for the model: nobody will reply, so it must
+/// decide, and say what it assumed.
+pub const UNATTENDED_FOLLOWUP_ANSWER: &str = "No human is available to answer: this is an unattended, one-shot run. \
+     Proceed on your own judgement. Choose the most reasonable interpretation, state that \
+     assumption in your final message, and continue working on the task.";
+
+/// What the `followup` tool should return instead of prompting, or `None`
+/// when a human may be asked.
+///
+/// In an unattended run, prompting blocks until the judging window closes
+/// (R-HACK-1, D-022), so the question is answered with
+/// [`UNATTENDED_FOLLOWUP_ANSWER`] and recorded in telemetry.
+///
+/// # Arguments
+/// * `question` - The question the model wanted to ask, kept in telemetry.
+pub fn unattended_followup_answer(question: &str) -> Option<String> {
+    let answer = followup_answer_when(is_non_interactive())?;
+    crate::telemetry::emit(crate::telemetry::TelemetryEvent::PromptSuppressed(
+        crate::telemetry::event::PromptSuppressed {
+            prompt_kind: "followup".to_string(),
+            detail: question.to_string(),
+            default_action: Some("told_to_proceed_on_own_judgement".to_string()),
+        },
+    ));
+    Some(answer)
+}
+
+/// Whether a `followup` tool call should end the agent's turn so a human can
+/// reply. False in an unattended run: there is no reply coming, and ending
+/// the turn there would stop a one-shot run mid-task and report it as
+/// completed.
+pub fn followup_ends_turn() -> bool {
+    !is_non_interactive()
+}
+
+/// The decision behind [`unattended_followup_answer`], as a pure function of
+/// whether the run is unattended, so it can be tested without installing a
+/// process-global runtime.
+fn followup_answer_when(non_interactive: bool) -> Option<String> {
+    non_interactive.then(|| UNATTENDED_FOLLOWUP_ANSWER.to_string())
+}
+
 /// Refusal text if this operation targets a protected test file.
 ///
 /// Answers `None` whenever no runtime is installed, so behaviour outside a
@@ -156,6 +199,22 @@ mod tests {
             None
         );
         assert!(!is_non_interactive());
+    }
+
+    #[test]
+    fn test_an_unattended_followup_is_answered_instead_of_asked() {
+        let actual = (followup_answer_when(true), followup_answer_when(false));
+
+        let expected = (Some(UNATTENDED_FOLLOWUP_ANSWER.to_string()), None);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_followup_ends_the_turn_when_nothing_is_installed() {
+        // No runtime and no env flag in this test process: interactive
+        // behaviour, where a followup hands the turn back to the human.
+        assert!(followup_ends_turn());
+        assert_eq!(unattended_followup_answer("which file?"), None);
     }
 
     #[test]
