@@ -1492,3 +1492,17 @@ fn test_a_result_summarised_away_is_recalled_from_its_handle() {
     );
     assert!(run.report["metrics"]["recovery"]["offload_read"].as_u64().unwrap() >= 1, "report: {}", run.report);
 }
+
+#[test]
+fn test_the_project_memory_file_reaches_the_model() {
+    let project = project_with_a_test();
+    std::fs::create_dir_all(project.path().join(".peach")).unwrap();
+    std::fs::write(project.path().join(".peach/memory.md"), "MEMORY_MARKER: money is stored in cents.").unwrap();
+    let model = ScriptedModel::start(vec![Turn::Text("Done.")]);
+
+    let run = run_exec(project.path(), &model, None);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let first = model.requests().first().cloned().unwrap_or_default();
+    assert!(first.contains("MEMORY_MARKER: money is stored in cents."), "memory not in the first request");
+}

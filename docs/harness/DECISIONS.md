@@ -1165,3 +1165,15 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   - Without the flag, no section appears.
   - Unit tests: only results that left the view get handles with their full text; section format; the pipeline
     lists every handle below the summary.
+
+## D-067 — T6.4: project memory is loaded; `memory_write` is deferred, because in a judged run it would edit the repo (2026-09-26)
+- **Loaded:** `.peach/memory.md` (at the git root, else the working directory) joins the custom instructions after
+  `AGENTS.md`, under a "Project memory" heading. It is bounded at 16,000 characters; a larger file is clipped with
+  the shared loud sentence and the path to read the rest. There is no effect unless the file exists, so no flag.
+  Unit test for the format and clipping; end to end, a marker in the file is in the model's first request.
+- **Deferred, by decision:** R-MEM-1's `memory_write` tool. In the judged one-shot run it would write
+  `.peach/memory.md` **into the repository under evaluation**, an unrelated change in the diff the panel scores
+  (HACKATHON §24, "avoids unnecessary changes"), and a one-shot run has no later session to benefit. It would also
+  add a catalog tool for every model to learn (§21). It belongs in interactive use, with approval, as the spec
+  says. Revisit with T4.1's approval flow, and keep it disabled whenever the run is unattended.
+- **T6.4 stays unticked**, with the load half done.

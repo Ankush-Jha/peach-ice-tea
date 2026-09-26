@@ -167,5 +167,6 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [ ] **T6.2** `R-PROMPT-2` compress `task.md` behind behaviour tests. **[A/B]**
 - [ ] **T6.3** `R-EXT-1` external hooks incl. `pre_compact` + save-token-jev-compatible example.
 - [ ] **T6.4** `R-MEM-1` project memory file + `memory_write` tool.
+      → memory file loaded (bounded, loud clip); `memory_write` deferred: it would edit the judged repo (D-067).
 - [ ] **T6.5** `R-TOOL-4` model profiles (Anthropic, OpenAI) consolidating per-model defaults.
 - [ ] **T6.6** `R-CTX-9` entry-point discovery hint. **[A/B]**
