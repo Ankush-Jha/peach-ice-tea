@@ -1303,3 +1303,35 @@ fn test_the_request_limit_ends_the_run_instead_of_asking_to_continue() {
     assert!(!transcript.contains("continue anyway"), "the continue prompt was shown:\n{transcript}");
     assert_eq!(tty_outcome(&transcript), "request_limit");
 }
+
+#[test]
+fn test_a_changed_test_script_in_package_json_is_flagged_and_announced() {
+    let project = project_with_a_test();
+    let package = r#"{"name":"calc","scripts":{"test":"node --test","build":"tsc"}}"#;
+    std::fs::write(project.path().join("package.json"), package).unwrap();
+    let model = ScriptedModel::start(vec![
+        Turn::Tool("read", serde_json::json!({"file_path": "package.json"})),
+        Turn::Tool(
+            "write",
+            serde_json::json!({
+                "file_path": "package.json",
+                "content": r#"{"name":"calc","scripts":{"test":"true","build":"tsc"}}"#,
+                "overwrite": true,
+            }),
+        ),
+        Turn::Text("Done."),
+    ]);
+
+    let run = run_exec(project.path(), &model, None);
+
+    let first_request = model.requests().first().cloned().unwrap_or_default();
+    assert!(
+        first_request.contains("the test sections of these files must not change: package.json"),
+        "no test-configuration notice in the first request"
+    );
+    let actual = run.report["integrity"]["violations"].clone();
+    let expected = serde_json::json!([
+        {"path": "package.json", "kind": "test_config_changed", "restored": false}
+    ]);
+    assert_eq!(actual, expected, "report: {}", run.report);
+}
