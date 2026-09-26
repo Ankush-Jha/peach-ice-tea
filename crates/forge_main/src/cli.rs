@@ -106,6 +106,12 @@ pub enum TopLevelCommand {
         /// asked for a budget.
         #[arg(long)]
         max_duration_secs: Option<u64>,
+
+        /// Append the harness telemetry event stream (JSONL) to this file:
+        /// run start and end, and every test-integrity check, refusal and
+        /// restore. Off by default.
+        #[arg(long, value_name = "FILE")]
+        telemetry: Option<PathBuf>,
     },
 
     /// Manage agents.

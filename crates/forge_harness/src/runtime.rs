@@ -114,14 +114,31 @@ fn env_flag_is_set(value: Option<String>) -> bool {
 pub fn check_write(op: crate::integrity::WriteOp, path: &Path) -> Option<String> {
     let runtime = get()?;
     let protected = runtime.protected_set()?;
-    crate::integrity::check_tool_path(protected, op, path)
+    let refusal = crate::integrity::check_tool_path(protected, op, path)?;
+    record_refusal(Some(protected.display_path(path)), &refusal);
+    Some(refusal)
 }
 
 /// Refusal text if this shell command would mutate a protected test file.
 pub fn check_shell(command: &str) -> Option<String> {
     let runtime = get()?;
     let protected = runtime.protected_set()?;
-    crate::integrity::check_command(protected, command, runtime.repo_root())
+    let refusal = crate::integrity::check_command(protected, command, runtime.repo_root())?;
+    record_refusal(None, &refusal);
+    Some(refusal)
+}
+
+/// Records a refusal in telemetry. A refused attempt on a test is exactly
+/// what a judge reviewing test integrity wants to see (HACKATHON.md §8), and
+/// the tool result the model receives is not part of the telemetry stream.
+fn record_refusal(path: Option<String>, refusal: &str) {
+    crate::telemetry::emit(crate::telemetry::TelemetryEvent::Integrity(
+        crate::telemetry::event::Integrity {
+            kind: "refused".to_string(),
+            path,
+            detail: refusal.lines().next().unwrap_or_default().to_string(),
+        },
+    ));
 }
 
 #[cfg(test)]
