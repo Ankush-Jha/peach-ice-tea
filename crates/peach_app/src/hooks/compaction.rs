@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use peach_domain::{Agent, Conversation, Environment, EventData, EventHandle, ResponsePayload};
 use tracing::{debug, info};
 
-use crate::compaction_pipeline::{Pipeline, handoff, offload, recall, supersede};
+use crate::compaction_pipeline::{Pipeline, handoff, offload, recall, soft_enabled, soft_threshold, supersede};
 
 /// Hook handler that performs context compaction when needed
 ///
@@ -92,6 +92,27 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionHandler {
                     .compactions
                     .record(tokens_before, tokens_after);
                 conversation.context = Some(compacted);
+            } else if let Some(hard) = self.agent.compact.token_threshold
+                && soft_enabled()
+                && *token_count >= soft_threshold(hard)
+            {
+                // harness: R-CTX-7 (T3.11, D-076) — the soft trigger: reversible
+                // stages only, early, so the lossy summary (and the cache miss it
+                // causes) comes rarely. Off unless PEACH_HARNESS_SOFT_COMPACTION=1.
+                let outcome = Pipeline::reversible(
+                    self.agent.compact.retention_window,
+                    soft_threshold(soft_threshold(hard)),
+                )
+                .run(context.clone())?;
+                if outcome.context != *context {
+                    info!(agent_id = %self.agent.id, "Soft compaction");
+                    for handle in &outcome.recall_handles {
+                        conversation.metrics.task.record_dump_file(handle.path.display().to_string());
+                    }
+                    let tokens_after = *outcome.context.token_count() as u64;
+                    conversation.metrics.task.compactions.record(*token_count as u64, tokens_after);
+                    conversation.context = Some(outcome.context);
+                }
             } else {
                 debug!(agent_id = %self.agent.id, "Compaction not needed");
             }

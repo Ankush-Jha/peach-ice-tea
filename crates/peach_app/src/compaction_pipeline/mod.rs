@@ -17,6 +17,20 @@ use peach_domain::{Compact, Context, ContextMessage, Environment};
 
 use crate::compact::Compactor;
 
+/// Environment variable that turns the soft trigger on (R-CTX-7, T3.11).
+pub const SOFT_ENV_VAR: &str = "PEACH_HARNESS_SOFT_COMPACTION";
+
+/// Whether the soft trigger is enabled for this process.
+pub fn soft_enabled() -> bool {
+    std::env::var(SOFT_ENV_VAR).as_deref() == Ok("1")
+}
+
+/// Where the soft trigger fires: three quarters of the hard token threshold
+/// (the spec's 0.6 of the window against the hard trigger's 0.8).
+pub fn soft_threshold(hard: usize) -> usize {
+    hard * 3 / 4
+}
+
 /// One compaction stage.
 pub enum Stage {
     /// S0: results made stale by later actions become stubs with a handle
@@ -89,6 +103,21 @@ impl Pipeline {
     pub fn new(compact: Compact, environment: Environment, target_tokens: usize) -> Self {
         Self {
             stages: vec![Stage::Summarize(Box::new(Compactor::new(compact, environment)))],
+            target_tokens,
+            handoff_note: None,
+            recall_handles: false,
+        }
+    }
+
+    /// The soft-trigger pipeline (R-CTX-7): S0 then S1 only, never the lossy
+    /// summary. Cheap, deterministic and reversible, so it can run early.
+    ///
+    /// # Arguments
+    /// * `retention_window` - Newest messages never touched.
+    /// * `target_tokens` - Stop once the context is at or below this size.
+    pub fn reversible(retention_window: usize, target_tokens: usize) -> Self {
+        Self {
+            stages: vec![Stage::Supersede { retention_window }, Stage::Offload { retention_window }],
             target_tokens,
             handoff_note: None,
             recall_handles: false,
@@ -290,6 +319,17 @@ mod tests {
         assert!(*outcome.context.token_count() <= target);
         assert!(!outcome.recall_handles.is_empty());
         outcome.recall_handles.iter().for_each(|h| drop(std::fs::remove_file(&h.path)));
+    }
+
+    #[test]
+    fn test_the_soft_pipeline_never_summarises() {
+        let fixture = fixture_contexts().remove(2);
+
+        let outcome = Pipeline::reversible(2, 0).run(fixture.clone()).unwrap();
+
+        assert_eq!(outcome.stage_reached, "offload");
+        assert_eq!(outcome.context.messages.len(), fixture.messages.len(), "a message was summarised away");
+        assert!(!format!("{:?}", outcome.context).contains("summary frames"));
     }
 
     #[test]

@@ -146,6 +146,7 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [x] **T3.10** `R-CTX-6` handoff note in S3.
       → deterministic note atop the S3 summary behind `PEACH_HARNESS_HANDOFF_NOTE` (default off, A/B pending; D-063).
 - [ ] **T3.11** `R-CTX-7` soft/hard triggers + `R-CTX-8` cache accounting. **[A/B]**
+      → soft trigger (S0+S1 only) behind `PEACH_HARNESS_SOFT_COMPACTION`; cache rate around compactions in the report (D-076). A/B pending.
 - [ ] **T3.12** Long-horizon eval suite (≥ 60-turn tasks) and final context-engine A/B. **[A/B]**
 - [ ] **T3.13** `R-EVAL-4` completion: extend the T0.7 behavioural suite with the tests that could not
       exist in M0 — parallel independent read-only tools (after T2.1), background job usage for long
