@@ -32,6 +32,11 @@ enum Turn {
     /// An empty completion: no content, no tool call, no finish reason —
     /// with this `(prompt, completion)` usage, or none at all.
     Empty(Option<(u64, u64)>),
+    /// A DeepSeek thinking-mode turn: streamed `reasoning_content`, then one
+    /// tool call (or text, when the name is empty), with DeepSeek-shaped
+    /// usage (`prompt_cache_hit_tokens`, reasoning in
+    /// `completion_tokens_details`).
+    DeepSeek { reasoning: &'static str, tool: &'static str, arguments: serde_json::Value, text: &'static str },
 }
 
 /// A local OpenAI-compatible chat endpoint that replays `script` for every
@@ -41,10 +46,17 @@ enum Turn {
 struct ScriptedModel {
     url: String,
     requests: Arc<Mutex<Vec<String>>>,
+    /// Provider id the mock is registered as; `deepseek` engages forge's
+    /// DeepSeek-specific request transformers.
+    provider_id: &'static str,
 }
 
 impl ScriptedModel {
     fn start(script: Vec<Turn>) -> Self {
+        Self::start_as("scripted", script)
+    }
+
+    fn start_as(provider_id: &'static str, script: Vec<Turn>) -> Self {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let url = format!("http://{}/v1/chat/completions", server.server_addr());
         let requests = Arc::new(Mutex::new(Vec::new()));
@@ -70,7 +82,7 @@ impl ScriptedModel {
                 let _ = request.respond(response);
             }
         });
-        Self { url, requests }
+        Self { url, requests, provider_id }
     }
 
     fn requests(&self) -> Vec<String> {
@@ -79,6 +91,40 @@ impl ScriptedModel {
 }
 
 fn sse(turn: Turn) -> String {
+    if let Turn::DeepSeek { reasoning, tool, arguments, text } = turn {
+        let chunk = |delta: serde_json::Value, finish: Option<&str>, usage: Option<serde_json::Value>| {
+            serde_json::json!({
+                "id": "chatcmpl-ds", "object": "chat.completion.chunk", "created": 0,
+                "model": "deepseek-v4-flash",
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+                "usage": usage,
+            })
+        };
+        let (answer, finish) = if tool.is_empty() {
+            (serde_json::json!({"content": text}), "stop")
+        } else {
+            (
+                serde_json::json!({"tool_calls": [{"index": 0, "id": "call_ds", "type": "function",
+                    "function": {"name": tool, "arguments": arguments.to_string()}}]}),
+                "tool_calls",
+            )
+        };
+        let usage = serde_json::json!({
+            "prompt_tokens": 1000, "completion_tokens": 40, "total_tokens": 1040,
+            "prompt_cache_hit_tokens": 600, "prompt_cache_miss_tokens": 400,
+            "prompt_tokens_details": {"prompt_cache_hit_tokens": 600, "prompt_cache_miss_tokens": 400},
+            "completion_tokens_details": {"reasoning_tokens": 25},
+        });
+        return [
+            chunk(serde_json::json!({"role": "assistant", "reasoning_content": reasoning}), None, None),
+            chunk(answer, None, None),
+            chunk(serde_json::json!({}), Some(finish), Some(usage)),
+        ]
+        .iter()
+        .map(|chunk| format!("data: {chunk}\n\n"))
+        .collect::<String>()
+            + "data: [DONE]\n\n";
+    }
     if let Turn::Empty(usage) = turn {
         let usage = usage.map(|(prompt, completion)| {
             serde_json::json!({"prompt_tokens": prompt, "completion_tokens": completion,
@@ -101,7 +147,7 @@ fn sse(turn: Turn) -> String {
             "tool_calls",
         ),
         Turn::Text(text) => (serde_json::json!({"role": "assistant", "content": text}), "stop"),
-        Turn::Status(_) | Turn::Empty(_) => unreachable!("handled above"),
+        Turn::Status(_) | Turn::Empty(_) | Turn::DeepSeek { .. } => unreachable!("handled above"),
     };
     let chunk = |delta: serde_json::Value, finish: Option<&str>| {
         serde_json::json!({
@@ -157,8 +203,8 @@ fn run_exec_full(
         format!(
             r#"
 [[providers]]
-id = "scripted"
-url = "{}"
+id = "{provider}"
+url = "{url}"
 response_type = "OpenAI"
 auth_methods = ["api_key"]
 api_key_var = "FORGE_TEST_SCRIPTED_KEY"
@@ -170,10 +216,11 @@ tools_supported = true
 input_modalities = ["text"]
 
 [session]
-provider_id = "scripted"
+provider_id = "{provider}"
 model_id = "scripted-model"
 "#,
-            model.url
+            provider = model.provider_id,
+            url = model.url,
         ),
     )
     .unwrap();
@@ -602,4 +649,63 @@ fn test_an_errored_run_still_writes_its_bundle() {
     for name in ["prompt.txt", "integrity.json", "diff.patch", "tests.json", "transcript.json", "manifest.json"] {
         assert!(dir.join(name).exists(), "{name} missing on the error path");
     }
+}
+
+#[test]
+fn test_deepseek_thinking_mode_runs_with_full_accounting() {
+    // Registered as provider `deepseek`, so forge's DeepSeek request
+    // transformers run for real: reasoning is replayed as a flat
+    // `reasoning_content` on the assistant message.
+    let project = git_project_with_a_test();
+    let evidence = tempfile::tempdir().unwrap();
+    let model = ScriptedModel::start_as(
+        "deepseek",
+        vec![
+            Turn::DeepSeek {
+                reasoning: "The subtraction is the bug; read the file first.",
+                tool: "read",
+                arguments: serde_json::json!({"file_path": project.path().join("math.py")}),
+                text: "",
+            },
+            Turn::DeepSeek { reasoning: "Done reading.", tool: "", arguments: serde_json::json!({}), text: "Done." },
+        ],
+    );
+    let dir = evidence.path().join("bundle");
+
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[],
+        "fix add",
+        &["--evidence-dir", dir.to_str().unwrap()],
+    );
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let metrics = &run.report["metrics"];
+    assert_eq!(metrics["llm_calls"], 2);
+    assert_eq!(metrics["input_tokens"], 2000);
+    // DeepSeek's cache hits, which forge used to read as zero.
+    assert_eq!(metrics["cached_input_tokens"], 1200);
+    assert_eq!(metrics["reasoning_tokens"], 50);
+
+    // The second request replays the first turn's reasoning the DeepSeek way.
+    let requests = model.requests();
+    let second: serde_json::Value = serde_json::from_str(&requests[1]).unwrap();
+    let assistant = second["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| message["role"] == "assistant")
+        .expect("assistant turn replayed");
+    assert_eq!(assistant["reasoning_content"], "The subtraction is the bug; read the file first.");
+    // The harness's protected-file notice reached DeepSeek too.
+    assert!(requests[0].contains("PROTECTED TEST FILES"));
+
+    let model_call = run.telemetry.iter().find(|event| event["type"] == "model_call").unwrap();
+    assert_eq!(model_call["cached_tokens"], 600);
+    let report: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("report.json")).unwrap()).unwrap();
+    assert_eq!(report["tokens"]["cache_hit_rate"], 0.6);
+    assert_eq!(report["integrity"]["violations"], serde_json::json!([]));
 }
