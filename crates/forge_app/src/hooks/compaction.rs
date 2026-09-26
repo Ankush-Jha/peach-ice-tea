@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use forge_domain::{Agent, Conversation, Environment, EventData, EventHandle, ResponsePayload};
 use tracing::{debug, info};
 
-use crate::compaction_pipeline::{Pipeline, handoff, recall};
+use crate::compaction_pipeline::{Pipeline, handoff, offload, recall};
 
 /// Hook handler that performs context compaction when needed
 ///
@@ -52,11 +52,20 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionHandler {
                         .collect();
                     handoff::handoff_note(context, &conversation.metrics.todos, &changed)
                 });
-                let outcome = Pipeline::new(
-                    self.agent.compact.clone(),
-                    self.environment.clone(),
-                    self.agent.compact.token_threshold.unwrap_or(0),
-                )
+                // Aim below the token threshold, with a margin, when tokens
+                // triggered this; a message- or turn-count trigger needs the
+                // summary to actually shrink the count, so aim at zero.
+                let target = match self.agent.compact.token_threshold {
+                    Some(threshold) if *token_count >= threshold => threshold * 3 / 4,
+                    _ => 0,
+                };
+                let mut pipeline =
+                    Pipeline::new(self.agent.compact.clone(), self.environment.clone(), target);
+                // harness: R-CTX-2 S1 (T3.6) — off unless FORGE_HARNESS_OFFLOAD=1 (D-074).
+                if offload::enabled() {
+                    pipeline = pipeline.offload(self.agent.compact.retention_window);
+                }
+                let outcome = pipeline
                 .handoff_note(note.flatten())
                 // harness: R-CTX-3 (T3.3) — off unless FORGE_HARNESS_RECALL_HANDLES=1 (D-066).
                 .recall_handles(recall::enabled())
