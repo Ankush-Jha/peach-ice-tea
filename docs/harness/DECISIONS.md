@@ -262,8 +262,12 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   `DECISIONS.md`, `RECON.md` and the review record exist to provide.
 
 ## D-025 — Total Gemini spend is capped at ₹100 (2026-09-23)
-- **Context:** the team set a hard total budget of **₹100 (~USD 1.15)** across the whole project. `CLAUDE.md`'s
-  guardrail said USD 25 *per A/B run*, which is now obsolete by two orders of magnitude.
+- **Context:** the team set a budget of **₹100 (~USD 1.15)** for now, which may be raised later. `CLAUDE.md`'s
+  guardrail said USD 25 *per A/B run*, which is obsolete by two orders of magnitude.
+- **Standing rule:** treat the current figure as a hard ceiling and ask before exceeding it, rather than
+  assuming a later increase. When it is raised, the A/B plans that are written but unrun become affordable in
+  priority order: TH.7 suite first, then T1.2 (line numbers) and T1.5 (noise compression), which have the
+  clearest measured effect on tokens.
 - **Decision:** ₹100 is a **project total**, not a per-run allowance. Consequences for the plan:
   - No A/B sweeps. R-EVAL-1's k=3 seeds × 2 arms × a suite is unaffordable, so `[A/B]` tasks stay behind
     default-off flags and unticked (already the position since D-018), and the A/B *designs* are what ship.
@@ -290,3 +294,26 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   limits); there is no `gemini-3.8-pro`, so "Gemini 3.8 High" means that model at High thinking level. Note the
   65,536 output limit against `.forge.toml`'s `max_tokens = 20480`, which counts thinking and would truncate
   High-thinking turns — tracked for TH.3.
+
+## D-027 — Relevance-scored compaction: pluggable scorer, Gemini in the evaluation profile (2026-09-23)
+- **Context:** the team asked for Jev-style relevance scoring to drive compaction decisions, and said to use
+  whatever models make the product strong, going beyond what the hackathon strictly demands. `HACKATHON.md` §31
+  prohibits "unauthorized external model usage" *during the evaluation run*, and §6 recommends restricting
+  evaluation to the standardized model. D-003 had previously refused any Jev dependency outright.
+- **Decision:** build the capability fully and keep the frozen run compliant. `RelevanceScorer` is a trait with
+  three implementations:
+  - `HeuristicScorer` — no model at all; recency, pinning and result size. The fallback when anything else
+    errors or times out.
+  - `LlmScorer` — the ported Jev algorithm, asking the **configured foundation model** (Gemini) the two
+    probability questions per tool call. **This is the default, and the only one enabled in the evaluation
+    profile.**
+  - `JevScorer` — the hosted TypeSafe scorer, behind config and off by default, for use outside a judged run.
+  This supersedes D-003's blanket refusal: the algorithm is ported rather than depended on, and the hosted
+  scorer becomes an option instead of a requirement.
+- **Why the evaluation profile is pinned to Gemini:** a second external model inside the judged run is exactly
+  what §31 names, and the penalty is disqualification. Losing on a technicality would defeat the point of a
+  stronger product, so capability and compliance are separated by configuration rather than by argument.
+- **Scope (team's call):** compaction only — which tool calls and results to keep verbatim, truncate or drop
+  (`R-CTX-4`). Not what enters context, and not tool routing.
+- **Consequence:** `R-SAFE-3` redaction (T3.7) moves ahead of the scorer work, because tool previews leave the
+  process the moment any scorer is called. T3.7, T3.8 and T3.9 move from Tier 3 to Tier 2 in `ALIGNMENT.md`.

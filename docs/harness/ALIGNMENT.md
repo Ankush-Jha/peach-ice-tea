@@ -98,10 +98,10 @@ T0.8 (schema rules — now also Gemini compatibility), T1.1 (loud truncation), T
 
 **Tier 2 — where points are won:** R-HACK-4, R-HACK-9, T1.2/T1.3/T1.4/T1.5 (output shaping + recovery events),
 T2.1 (parallel read-only), T2.4 (non-interactive prompt profile — merges into R-HACK-1), T2.6 (tool-call correction),
-T3.1–T3.6 (event log, recall, reversible compaction), T3.10–T3.11 (handoff, triggers + cache accounting), T6.1, T6.4.
+T3.1–T3.6 (event log, recall, reversible compaction), **T3.7 redaction + T3.8/T3.9 relevance scorer (raised from Tier 3 by D-027)**, T3.10–T3.11 (handoff, triggers + cache accounting), T6.1, T6.4.
 
 **Tier 3 — deferred:** M5 protocol server and client (T5.1–T5.7; not evaluated), T4.2/T4.3 OS sandboxes, T0.5
-TermBench (replaced by R-HACK-8), T3.8/T3.9 scorer (only with the foundation model, D-017), T6.2, T6.3, T6.5, T6.6.
+TermBench (replaced by R-HACK-8), T6.2, T6.3, T6.5, T6.6.
 
 **Changed:** T4.1 ask-by-default must never apply in the evaluation profile (it would block the one-shot run); keep it
 for interactive use only. All `[A/B]` tasks A/B on Gemini on the R-HACK-8 suite; while there is no credit they ship
