@@ -51,8 +51,37 @@ impl Transformer for SetCache {
             *message = std::mem::take(message).cached(true);
         }
 
+        // harness: D-084 — a breakpoint on the last tool definition caches the
+        // whole (static, ~38 KB) tool array on its own, instead of only as part
+        // of the system prefix. Anthropic rejects more than
+        // `MAX_CACHE_BREAKPOINTS` per request, so it is added only when it fits.
+        for tool in request.tools.iter_mut() {
+            tool.set_cached(false);
+        }
+        if count_cache_breakpoints(&request) < MAX_CACHE_BREAKPOINTS
+            && let Some(last_tool) = request.tools.last_mut()
+        {
+            last_tool.set_cached(true);
+        }
+
         request
     }
+}
+
+/// Anthropic's limit on cache breakpoints in one request (a 400 beyond it).
+pub const MAX_CACHE_BREAKPOINTS: usize = 4;
+
+/// Cache breakpoints set anywhere in `request`: system messages, message
+/// content and tool definitions.
+pub fn count_cache_breakpoints(request: &Request) -> usize {
+    let system = request.system.as_ref().map_or(0, |messages| messages.iter().filter(|m| m.is_cached()).count());
+    let messages = request
+        .get_messages()
+        .iter()
+        .map(|message| message.content.iter().filter(|content| content.is_cached()).count())
+        .sum::<usize>();
+    let tools = request.tools.iter().filter(|tool| tool.is_cached()).count();
+    system + messages + tools
 }
 
 #[cfg(test)]
@@ -149,6 +178,67 @@ mod tests {
         }
 
         output
+    }
+
+    /// A transformed request with `system` system messages, the conversation
+    /// `turns` ('u'/'a'), and `tools` tool definitions (D-084).
+    fn transformed_with_tools(system: usize, turns: &str, tools: usize) -> Request {
+        let mut messages: Vec<peach_domain::MessageEntry> = (0..system)
+            .map(|i| ContextMessage::Text(TextMessage::new(Role::System, format!("s{i}"))).into())
+            .collect();
+        for c in turns.chars() {
+            let role = if c == 'u' { Role::User } else { Role::Assistant };
+            messages.push(ContextMessage::Text(TextMessage::new(role, c.to_string())).into());
+        }
+        let context = Context::default()
+            .messages(messages)
+            .tools((0..tools).map(|i| peach_domain::ToolDefinition::new(format!("tool_{i}"))).collect::<Vec<_>>());
+        SetCache.transform(Request::try_from(context).expect("Failed to convert context to request"))
+    }
+
+    #[test]
+    fn test_only_the_last_tool_gets_a_breakpoint() {
+        let request = transformed_with_tools(1, "uau", 5);
+
+        let actual: Vec<bool> = request.tools.iter().map(|tool| tool.is_cached()).collect();
+
+        assert_eq!(actual, vec![false, false, false, false, true]);
+    }
+
+    #[test]
+    fn test_breakpoints_never_exceed_anthropics_limit_for_the_shapes_peach_sends() {
+        // Peach sends 2 system messages (prompt + system information), 3 under
+        // OAuth; 0 and 1 also occur. Short and long conversations each.
+        for system in 0..=3 {
+            for turns in ["u", "uau", "uauauauaua"] {
+                let request = transformed_with_tools(system, turns, 12);
+
+                let actual = count_cache_breakpoints(&request);
+
+                assert!(actual <= MAX_CACHE_BREAKPOINTS, "{system} system + {turns}: {actual} breakpoints");
+            }
+        }
+    }
+
+    #[test]
+    fn test_the_tool_breakpoint_never_pushes_a_request_over_the_limit() {
+        // With 4 system messages upstream's own markers already reach 5 (every
+        // system message + the last message; recorded in D-084). The tool
+        // marker must not add to that.
+        let request = transformed_with_tools(4, "u", 12);
+
+        let actual = request.tools.iter().any(|tool| tool.is_cached());
+
+        assert!(!actual);
+    }
+
+    #[test]
+    fn test_the_tool_breakpoint_is_dropped_when_the_limit_is_already_reached() {
+        let request = transformed_with_tools(3, "uau", 4);
+
+        let actual = (count_cache_breakpoints(&request), request.tools.iter().any(|tool| tool.is_cached()));
+
+        assert_eq!(actual, (4, false));
     }
 
     fn create_test_context(message: impl ToString) -> String {
