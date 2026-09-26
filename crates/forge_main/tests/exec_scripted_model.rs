@@ -1615,3 +1615,37 @@ fn test_noisy_build_output_is_untouched_without_the_flag() {
 
     assert!(!model.requests()[1].contains("similar or passing lines"));
 }
+
+/// Reads the handle named in the first offload stub of a request.
+fn read_the_offloaded_result(body: &str) -> Turn {
+    let unescaped = body.replace("\\\\/", "/");
+    let start = unescaped.find("Full result: read ").expect("no offload stub in the request") + 18;
+    let path: String = unescaped[start..].chars().take_while(|c| !c.is_whitespace() && *c != '"').collect();
+    Turn::Tool("read", serde_json::json!({"file_path": path}))
+}
+
+#[test]
+fn test_offload_moves_old_bulk_out_of_context_and_keeps_it_readable() {
+    let project = project_with_a_test();
+    let big: String = (0..400).map(|i| format!("line {i:04}: the quick brown fox jumps over\n")).collect();
+    std::fs::write(project.path().join("big.txt"), &big).unwrap();
+    let read = || Turn::Tool("read", serde_json::json!({"file_path": "big.txt"}));
+    let echo = || Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "echo"}));
+    let model =
+        ScriptedModel::start(vec![read(), echo(), echo(), Turn::FromRequest(read_the_offloaded_result), Turn::Text("Done.")]);
+    let env = [
+        ("FORGE_HARNESS_OFFLOAD", "1"),
+        ("FORGE_COMPACT__TOKEN_THRESHOLD", "7000"),
+        ("FORGE_COMPACT__RETENTION_WINDOW", "2"),
+    ];
+
+    let run = run_exec_with_env(project.path(), &model, None, &env);
+
+    let requests = model.requests();
+    let stubbed = requests.iter().position(|body| body.contains("[offloaded by the harness:")).expect("no stub reached the model");
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert!(!requests[stubbed].contains("line 0200: the quick brown fox"), "the bulk is still in context");
+    assert!(!requests.iter().any(|b| b.contains("summary frames")), "the lossy summary ran although offload sufficed");
+    assert!(requests.last().unwrap().contains("line 0200: the quick brown fox"), "reading the handle did not restore it");
+    assert_eq!(run.report["metrics"]["recovery"]["offload_read"], 1, "report: {}", run.report);
+}
