@@ -153,3 +153,62 @@ fn test_a_test_edited_mid_run_is_reported_restored_and_logged() {
         ]
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn test_a_signal_still_restores_tests_and_writes_the_bundle() {
+    // A runner's hard timeout or a person stopping the run sends SIGTERM.
+    // Before the handler existed, the default action killed forge with no
+    // integrity check and no evidence.
+    let config = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let evidence = tempfile::tempdir().unwrap();
+    write_unroutable_provider_config(config.path());
+    std::fs::create_dir_all(project.path().join("tests")).unwrap();
+    std::fs::write(project.path().join("tests/test_math.py"), ORIGINAL_TEST).unwrap();
+    let bundle = evidence.path().join("bundle");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args(["exec", "fix add", "--json", "--test-command", "true", "--evidence-dir"])
+        .arg(&bundle)
+        .env("FORGE_CONFIG", config.path())
+        .env("FORGE_TEST_BOGUS_KEY", "bogus-key-value")
+        .current_dir(project.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_for_run_start(&bundle.join("telemetry.jsonl"));
+    std::fs::write(project.path().join("tests/test_math.py"), "def test_add():\n    pass\n").unwrap();
+    // Give the handler a moment to be polled once the agent is running.
+    std::thread::sleep(Duration::from_millis(300));
+    let killed = Command::new("kill").args(["-TERM", &child.id().to_string()]).status().unwrap();
+    assert!(killed.success());
+
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if started.elapsed() > BOUND {
+            let _ = child.kill();
+            panic!("forge exec did not exit within {BOUND:?} of SIGTERM");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let mut stdout = String::new();
+    child.stdout.take().unwrap().read_to_string(&mut stdout).unwrap();
+
+    assert_eq!(status.code(), Some(5), "stdout:\n{stdout}");
+    let exec: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(bundle.join("exec.json")).unwrap()).unwrap();
+    assert_eq!(exec["outcome"], "interrupted");
+    assert_eq!(exec["error"], "stopped by SIGTERM");
+    assert_eq!(exec["integrity"]["violations"][0]["restored"], true);
+    assert_eq!(std::fs::read_to_string(project.path().join("tests/test_math.py")).unwrap(), ORIGINAL_TEST);
+    let tests: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(bundle.join("tests.json")).unwrap()).unwrap();
+    assert_eq!(tests["ran"], false);
+    assert!(bundle.join("manifest.json").exists() && bundle.join("report.md").exists());
+}

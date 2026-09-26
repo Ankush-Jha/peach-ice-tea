@@ -137,7 +137,7 @@ impl ExecHarness {
     /// integrity, diff and test files of the bundle — in that order, so the
     /// diff reflects the restored tree. Must run after the agent has stopped,
     /// on every exit path; [`Self::seal`] completes the bundle.
-    pub fn finish(&mut self) -> ExecIntegrity {
+    pub fn finish(&mut self, interrupted: bool) -> ExecIntegrity {
         let report = integrity::verify_and_restore(
             &self.repo_root,
             &self.protect_globs,
@@ -151,6 +151,15 @@ impl ExecHarness {
             evidence.write_json(evidence::INTEGRITY, &report);
             evidence.write_diff(&self.repo_root, self.start_commit.as_deref());
             match &self.test_command {
+                // Whoever stopped the run wants it to end now; a full test
+                // run could take minutes. Integrity and the diff are cheap.
+                Some(_) if interrupted => evidence.write_json(
+                    evidence::TESTS,
+                    &serde_json::json!({
+                        "ran": false,
+                        "reason": "the run was interrupted by a signal; the final test run was skipped",
+                    }),
+                ),
                 Some(test) => {
                     let timeout = std::env::var("FORGE_HARNESS_FINAL_TEST_TIMEOUT_SECS")
                         .ok()
@@ -228,6 +237,31 @@ impl ExecHarness {
             evidence.write_report();
             evidence.write_manifest(&self.started_at, outcome);
         }
+    }
+}
+
+/// Resolves with the signal's name when SIGINT or (on Unix) SIGTERM
+/// arrives. Installing this replaces the default "terminate now" action for
+/// the life of the future.
+pub async fn shutdown_signal() -> &'static str {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut terminate = signal(SignalKind::terminate()).ok();
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => "SIGINT",
+            _ = async {
+                match terminate.as_mut() {
+                    Some(terminate) => { terminate.recv().await; }
+                    None => std::future::pending::<()>().await,
+                }
+            } => "SIGTERM",
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+        "SIGINT"
     }
 }
 
