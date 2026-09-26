@@ -80,6 +80,14 @@ The evals shell out to a binary named `peache`, which is a **manually created** 
 ln -sf $(pwd)/target/debug/peach ~/bin/peache   # ~/bin must be on PATH
 ```
 
+## Provider credentials
+
+Set the provider's key (`OPENROUTER_API_KEY` for the eval arms — see
+`crates/peach_repo/src/provider/provider.json` for the full provider-to-variable mapping). Peach prints
+"Peach no longer reads API keys from environment variables" and then migrates the key **once** into its
+stored credentials; the variable is not re-read per request. Keep the key in a mode-600 file sourced from
+your shell profile rather than in `~/.zshrc` itself, which is world-readable.
+
 > **Warning — the eval harness does not currently work.** 10 of the 14 evals invoke
 > `peache --provider ... --model ...`, flags removed from the CLI in `b3ec4d17a` (clap exits 2), and
 > `todo_write_usage` uses `PEACH_OVERRIDE_PROVIDER`/`PEACH_OVERRIDE_MODEL`, which map to no config field.
@@ -91,7 +99,7 @@ fields; a single `_` does not). This is parallel-safe — unlike `peach config s
 unlocked read-modify-write of a shared `~/.peach/.peach.toml`. Useful ones:
 
 ```bash
-PEACH_SESSION__PROVIDER_ID=open_router PEACH_SESSION__MODEL_ID=anthropic/claude-sonnet-4.5   # select provider+model
+PEACH_SESSION__PROVIDER_ID=open_router PEACH_SESSION__MODEL_ID=anthropic/claude-sonnet-4.6   # select provider+model
 PEACH_DEBUG_REQUESTS=/path/to/context.json    # append each outgoing provider request body (JSONL)
 PEACH_AUTO_DUMP=json                          # write a full structured Conversation dump on TaskComplete
 ```
