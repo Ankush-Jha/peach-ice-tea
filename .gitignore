@@ -48,3 +48,6 @@ jobs/**
 node_modules/
 bench/__pycache__
 .ai/
+
+# make run evidence bundles (D-070)
+/evidence/

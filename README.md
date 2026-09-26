@@ -22,32 +22,50 @@ names so upstream merges stay possible (D-004). What we built, and why, is in
 
 ## Setup
 
-Requirements: Rust (the version is pinned by `rust-toolchain.toml`), `protoc` (D-009), Node 20+ for the eval suite.
+Requirements: Rust (pinned by `rust-toolchain.toml`; `make setup` installs it with rustup if missing), `protoc`
+(D-009; installed with Homebrew if missing, otherwise `apt-get install protobuf-compiler`), Node 22+.
 
 ```bash
-harness/build.sh                     # release build → target/release/forge
-export GEMINI_API_KEY=...            # environment only; never commit it
+git clone <this repository> && cd <it>
+export AI_API_KEY=...        # the only credential; environment only, never written anywhere
+make setup                   # release build → target/release/forge, npm deps, layout check
 ```
 
 ## Running a task
 
+The evaluator interface is the root `Makefile` (MAKEFILE_EVAL.md, D-070). `make run` takes the issue from stdin
+(piped, or typed and ended with Ctrl-D) or from `PROMPT=`, and runs it once, unattended, in the repository named by
+`REPO` (by default the directory `make` was invoked from; it refuses to work on the harness itself):
+
 ```bash
-harness/peach-ice-tea --evidence-dir /path/outside/the/repo/evidence \
-  --test-command "python3 -m unittest discover -s tests -t . -v" \
-  --prompt-file prompt.md
+make run REPO=/path/to/repository < issue.md
+make run REPO=/path/to/repository PROMPT="Fix the failing test in stats.py"
+cd /path/to/repository && make -f /path/to/harness/Makefile run    # REPO defaults to here
 ```
 
-It runs in the current directory (the repository to work on) with the evaluation profile
-(`configuration/profiles/gemini`). The last stdout line is the JSON outcome. Exit codes: 0 completed,
-1 error, 2 tool-failure limit, 3 request limit, 4 time budget, 5 interrupted. `forge report <evidence-dir>`
-regenerates the report offline.
+`AI_API_KEY` is handed to the selected profile as the provider variable it expects, so a prescribed model is a
+variable, not a source change: `make run PROFILE=openrouter MODEL=<model id>`, or `PROFILE=gemini` for Google
+AI Studio. Optional: `TEST_COMMAND=` (otherwise detected), `EVIDENCE_DIR=` (default `evidence/<UTC time>/`),
+`MAX_DURATION_SECS=` (default 1800). `make test` runs the local hackathon suite live; `make check` runs the
+offline checks (no key, no model); `make clean` removes build output and evidence.
+
+Underneath, `make run` calls the entry point `harness/peach-ice-tea`, which can also be used directly from the
+repository to work on:
+
+```bash
+OPENROUTER_API_KEY=... harness/peach-ice-tea --profile openrouter --evidence-dir /path/outside/the/repo \
+  --test-command "python3 -m unittest discover -s tests -t . -v" --prompt-file issue.md
+```
+
+The last stdout line is the JSON outcome. Exit codes: 0 completed, 1 error, 2 tool-failure limit, 3 request
+limit, 4 time budget, 5 interrupted. `forge report <evidence-dir>` regenerates the report offline.
 
 ## Evaluating locally
 
 ```bash
 npm run hackathon -- --agent reference             # fixtures solve; runner check is green
 npm run hackathon -- --agent forge-cheat           # proves forge's own integrity guard (no model, no spend)
-GEMINI_API_KEY=... npm run hackathon -- --agent forge --profile gemini --max-requests 40 --max-duration-secs 900
+OPENROUTER_API_KEY=... npm run hackathon -- --agent forge --profile openrouter --max-requests 60 --max-duration-secs 1500
 ```
 
 `cargo insta test --workspace` runs the full suite (≈2,940 tests), including end-to-end tests of the real
@@ -57,7 +75,8 @@ binary against a scripted model.
 
 | Path | Contents |
 |---|---|
-| `harness/` | Entry point (`peach-ice-tea`) and build script |
+| `Makefile` | Evaluator interface: `setup`, `run`, `test`, `check`, `clean` (D-070) |
+| `harness/` | Entry point (`peach-ice-tea`), `run-task` (what `make run` calls), build and layout scripts |
 | `crates/` | The harness itself (Rust workspace; stays here for upstream merges, D-021) |
 | `telemetry/` | Where the organizers' telemetry files will be vendored; describes our internal stream |
 | `reporting/` | Where the organizers' reporting files will be vendored; describes our report |
@@ -69,7 +88,8 @@ binary against a scripted model.
 ## Configuration
 
 Provider profiles and feature flags are listed in [`configuration/README.md`](configuration/README.md).
-The judged profile is always `gemini`. Two DeepSeek profiles exist for development only (D-036, D-043).
+Any model may be used (D-049). The default is `openrouter` on a free-tier model (D-051, D-069); `.env.example`
+shows the one variable the harness reads.
 
 ## Major design decisions
 
@@ -86,5 +106,7 @@ changes stay behind default-off flags until an A/B supports them (D-039, D-041, 
 - SIGKILL cannot be caught. A run killed that way keeps only what was written as it went: the prompt, streamed
   telemetry, a provisional `manifest.json` reading `incomplete`, and `integrity.baseline.json` with each test's
   pre-run hash and the location of its copy. There is no transcript, report or restore (D-038, D-056).
-- No A/B has been affordable yet (D-025), so the flagged features are unmeasured.
-- Live-model evidence so far is limited (D-032, D-040, D-043).
+- No A/B has run on two model families yet (free tier only, D-069), so the flagged features stay off.
+- Live-model evidence so far is limited (D-032, D-040, D-043, D-051).
+- `make run` is one-shot: it takes one issue and exits. If the organisers want a harness that stays resident and
+  takes several issues in one session, that is new scope (MAKEFILE_EVAL.md).
