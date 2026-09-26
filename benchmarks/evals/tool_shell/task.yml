@@ -1,0 +1,30 @@
+# Micro-eval for `shell` (R-EVAL-3, D-079): the harness shapes noisy build output (T1.5).
+# Isolates wrong-sequence: the model must find the one error in a noisy build and fix it,
+# without re-running the build blind to see output it was already given a handle to.
+run:
+  - mkdir -p test_repo && cd test_repo && git init -q
+  - |
+    cat > test_repo/make.sh << 'EOF'
+    #!/bin/sh
+    for i in $(seq 1 300); do echo "   Compiling crate$i v0.$i.1"; done
+    if grep -q 'return a - b' calc.py; then echo 'error: calc.py: add() subtracts'; exit 1; fi
+    echo 'build ok'
+    EOF
+  - chmod +x test_repo/make.sh
+  - printf 'def add(a, b):\n    return a - b\n' > test_repo/calc.py
+  - |
+    cd test_repo && PEACH_HARNESS_NOISE_COMPRESSION=1 PEACH_SESSION__PROVIDER_ID={{provider}} PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p 'Run ./make.sh, fix the error it reports, and run it again until it prints build ok.'
+parallelism: 1
+timeout: 300
+validations:
+  - name: "The build error was fixed"
+    type: shell
+    command: "grep -q 'return a + b' test_repo/calc.py"
+  - name: "The compressed output carried the recovery sentence"
+    type: shell
+    command: "jq -e '[.messages[]? | select(.role == \"tool\") | .content | tostring | select(contains(\"similar or passing lines not shown\"))] | length > 0' {{dir}}/context.json"
+  - name: "No shell tool errors"
+    type: shell
+    command: "! jq -e '[.messages[]? | select(.role == \"tool\" and .name == \"shell\") | .content | tostring | select(contains(\"tool_call_error\"))] | length > 0' {{dir}}/context.json"
+sources:
+  - csv: ../../models.free.csv

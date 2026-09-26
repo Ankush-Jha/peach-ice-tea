@@ -95,6 +95,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
         subagent check moves to T3.13.
 - [ ] **T0.9** `R-EVAL-3` per-tool micro-eval template + CI job reporting per-tool error rate by model.
       Every task below that adds or changes a tool must add its micro-eval and follow `R-TOOL-2` naming.
+      → micro-evals `tool_shell`/`tool_read`/`tool_write` (free models) + `tool_errors.ts` report on real runs (D-079);
+        not yet run; CI job needs a team decision on a CI key.
 
 ## M1 — Output shaping (cheap, measurable wins)
 - [x] **T1.1** `R-OUT-4` loud-truncation audit across read/shell/fetch/search/MCP + snapshots.

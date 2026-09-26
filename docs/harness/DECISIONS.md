@@ -1481,3 +1481,25 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   there is nothing to validate a check against. It moves to T3.13 with the other behaviours that need specific
   tasks.
 - **T0.7 ticked:** green on the baseline (every run that completed passes), with the one true negative explained.
+
+## D-079 — T0.9: tool micro-evals for the tools this project changed, and a per-tool error-rate report from real runs (2026-09-27)
+- **Micro-evals (R-EVAL-3), `benchmarks/evals/tool_<name>/task.yml`**, in the existing eval format, one per tool this
+  project changed, each isolating one failure class with its feature flag on:
+  - `tool_shell` (T1.5 compression, wrong sequence): find and fix the one error in a 300-line build without a blind
+    re-run; the recovery sentence must be present; no shell tool errors.
+  - `tool_read` (T1.2 line numbers off, wrong args): the read comes before the patch, and no patch fails to match
+    (for example a search text carrying `  3:` prefixes).
+  - `tool_write` (T2.6 correction, wrong args): the file is written, and no write is rejected for unknown or
+    missing fields.
+
+  They run over `benchmarks/models.free.csv` (Nemotron Ultra and the three fallbacks; D-069), not the paid default
+  list. **They have not been run yet:** each run spends free requests, and today's went to the bake-off.
+- **Per-tool error rate by model:** `benchmarks/hackathon/tool_errors.ts` reads run reports (peach's own
+  `tool_calls` / `tool_errors`). It takes the model from each run's **telemetry** (`model_call.model`), because the
+  report files do not record it and file-name parsing proved brittle. Over every real run so far
+  (`benchmarks/reports/tools/2026-09-27-tool-errors.md`), the default model has **0 errors in 67 tool calls**.
+  Lightning's 1/2 patch errors is the call peach's read-before-edit guard refused (D-078), and DeepSeek Pro had one
+  failed read in 13.
+- **Not built: the CI job.** A CI job that runs live micro-evals needs a provider key in CI and would spend the
+  50 free requests a day. The report script is the CI-ready half. **T0.9 stays unticked** until the micro-evals
+  have run on the free models and the CI question is decided (team: whether to store a free key as a CI secret).

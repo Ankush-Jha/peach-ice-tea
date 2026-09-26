@@ -1,0 +1,22 @@
+# Micro-eval for `read` (R-EVAL-3, D-079): with line numbers off (T1.2) the model must still
+# patch the right line. Isolates wrong-args: a patch whose search text includes line-number
+# prefixes (`  3:`) fails to match.
+run:
+  - mkdir -p test_repo
+  - printf 'def area(w, h):\n    """Rectangle area."""\n    return w + h\n' > test_repo/geometry.py
+  - |
+    cd test_repo && PEACH_HARNESS_LINE_NUMBERS_OFF=1 PEACH_SESSION__PROVIDER_ID={{provider}} PEACH_SESSION__MODEL_ID={{model}} PEACH_DEBUG_REQUESTS='{{dir}}/context.json' peache -p 'area() in geometry.py should multiply width by height. Read the file and fix it with a patch.'
+parallelism: 1
+timeout: 240
+validations:
+  - name: "The function was fixed"
+    type: shell
+    command: "grep -q 'return w \\* h' test_repo/geometry.py"
+  - name: "The file was read before it was patched"
+    type: shell
+    command: "jq -e '[.messages[]?.tool_calls[]?.function.name] | (index(\"read\") // 99) < (index(\"patch\") // index(\"multi_patch\") // 100)' {{dir}}/context.json"
+  - name: "No patch failed to match"
+    type: shell
+    command: "! jq -e '[.messages[]? | select(.role == \"tool\") | .content | tostring | select(contains(\"Could not find match\"))] | length > 0' {{dir}}/context.json"
+sources:
+  - csv: ../../models.free.csv

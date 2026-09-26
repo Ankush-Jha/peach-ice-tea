@@ -1,0 +1,5 @@
+family,provider,model
+nvidia,open_router,nvidia/nemotron-3-ultra-550b-a55b:free
+nvidia-super,open_router,nvidia/nemotron-3-super-120b-a12b:free
+dots,open_router,dots-studio/dots-3-note-preview:free
+cohere,open_router,cohere/north-mini-code:free
