@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use forge_domain::{Agent, Conversation, Environment, EventData, EventHandle, ResponsePayload};
 use tracing::{debug, info};
 
-use crate::compaction_pipeline::{Pipeline, handoff};
+use crate::compaction_pipeline::{Pipeline, handoff, recall};
 
 /// Hook handler that performs context compaction when needed
 ///
@@ -58,7 +58,13 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionHandler {
                     self.agent.compact.token_threshold.unwrap_or(0),
                 )
                 .handoff_note(note.flatten())
+                // harness: R-CTX-3 (T3.3) — off unless FORGE_HARNESS_RECALL_HANDLES=1 (D-066).
+                .recall_handles(recall::enabled())
                 .run(context.clone())?;
+                // Reading a handle back counts as `offload_read` (R-OUT-3).
+                for handle in &outcome.recall_handles {
+                    conversation.metrics.task.record_dump_file(handle.path.display().to_string());
+                }
                 debug!(stage = outcome.stage_reached, "Compaction pipeline finished");
                 let compacted = outcome.context;
                 // harness: R-EVAL-2 — record what this compaction reclaimed.
