@@ -29,6 +29,8 @@ enum Turn {
     Text(&'static str),
     /// Fails with this HTTP status, as a rate limit or outage would.
     Status(u16),
+    /// Fails with this HTTP status and JSON body.
+    StatusBody(u16, &'static str),
     /// An empty completion: no content, no tool call, no finish reason —
     /// with this `(prompt, completion)` usage, or none at all.
     Empty(Option<(u64, u64)>),
@@ -74,6 +76,8 @@ impl ScriptedModel {
                 };
                 let response = match turn {
                     Turn::Status(code) => tiny_http::Response::from_string("{}")
+                        .with_status_code(code),
+                    Turn::StatusBody(code, body) => tiny_http::Response::from_string(body)
                         .with_status_code(code),
                     turn => tiny_http::Response::from_string(sse(turn)).with_header(
                         "Content-Type: text/event-stream".parse::<tiny_http::Header>().unwrap(),
@@ -147,7 +151,9 @@ fn sse(turn: Turn) -> String {
             "tool_calls",
         ),
         Turn::Text(text) => (serde_json::json!({"role": "assistant", "content": text}), "stop"),
-        Turn::Status(_) | Turn::Empty(_) | Turn::DeepSeek { .. } => unreachable!("handled above"),
+        Turn::Status(_) | Turn::StatusBody(..) | Turn::Empty(_) | Turn::DeepSeek { .. } => {
+            unreachable!("handled above")
+        }
     };
     let chunk = |delta: serde_json::Value, finish: Option<&str>| {
         serde_json::json!({
@@ -909,4 +915,27 @@ fn test_compacted_tool_docs_shrink_every_request_and_drop_only_examples() {
         full.len(),
         compact.len()
     );
+}
+
+#[test]
+fn test_an_exhausted_daily_quota_fails_at_once_and_says_why() {
+    // D-040: exactly what Gemini's free tier returned on 2026-09-25. Before,
+    // peach retried it 8 times over 5.5 minutes and the evidence said only
+    // "Invalid Status Code: 429".
+    const DAILY_QUOTA: &str = r#"{"error":{"code":429,"message":"You exceeded your current quota","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaValue":"20"}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"59s"}]}}"#;
+    let project = project_with_a_test();
+    let model = ScriptedModel::start(vec![Turn::StatusBody(429, DAILY_QUOTA), Turn::Text("unreachable")]);
+    let started = std::time::Instant::now();
+
+    let run = run_exec(project.path(), &model, None);
+
+    assert_eq!(run.exit_code, Some(1), "report: {}", run.report);
+    assert_eq!(model.requests().len(), 1, "a daily quota must not be retried");
+    assert_eq!(run.report["metrics"]["retried_llm_calls"], 0);
+    let error = run.report["error"].as_str().unwrap();
+    assert!(
+        error.starts_with("provider quota exhausted (GenerateRequestsPerDayPerProjectPerModel-FreeTier)"),
+        "{error}"
+    );
+    assert!(started.elapsed() < Duration::from_secs(20));
 }

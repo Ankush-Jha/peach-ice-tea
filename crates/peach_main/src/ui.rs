@@ -5513,6 +5513,12 @@ fn exec_error_summary(error: &anyhow::Error) -> String {
     } else {
         outer
     };
+    // harness: D-040 — the body is left out (it can carry account data), but
+    // an exhausted quota is the one fact in it a reviewer needs.
+    let first_line = match peach_domain::provider_quota::exhausted_quota(error) {
+        Some(quota) => format!("provider quota exhausted ({quota}), not retried: {first_line}"),
+        None => first_line,
+    };
     if first_line.chars().count() <= EXEC_ERROR_MAX_CHARS {
         return first_line;
     }
@@ -5540,6 +5546,18 @@ mod harness_exec_tests {
         let actual = exec_error_summary(&fixture);
         assert_eq!(actual.chars().count(), EXEC_ERROR_MAX_CHARS + 1);
         assert!(actual.ends_with('…'));
+    }
+
+    #[test]
+    fn test_exec_error_summary_names_an_exhausted_quota_but_not_the_body() {
+        let fixture = anyhow::anyhow!("Invalid Status Code: 429")
+            .context(r#"429 Too Many Requests Reason: {"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","project":"p-123"}"#)
+            .context("POST https://g/v1beta/models/m");
+        let actual = exec_error_summary(&fixture);
+        let expected = "provider quota exhausted (GenerateRequestsPerDayPerProjectPerModel-FreeTier), not retried: \
+                        POST https://g/v1beta/models/m: Invalid Status Code: 429"
+            .to_string();
+        assert_eq!(actual, expected);
     }
 
     #[test]
