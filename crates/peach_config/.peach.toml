@@ -29,7 +29,7 @@ top_k = 30
 top_p = 0.8
 verify_todos = true
 # Runtime verification gate (R-HACK-10, D-083): off until an A/B.
-runtime_verify_gate = false
+runtime_verify_gate = true
 research_subagent = false
 currency_symbol = "$"
 currency_conversion_rate = 1.0

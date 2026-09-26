@@ -280,7 +280,7 @@
       }
     },
     "runtime_verify_gate": {
-      "description": "Runtime verification gate (harness, R-HACK-10): before accepting a\nvoluntary stop in `peach exec` as task completion, the harness itself\nruns the repository's test command (`--test-command`, or detected) and\nrequires it to exit clean. On failure, the real command output — not the\nmodel's report of it — is fed back into the conversation as the next\nturn's input, and the run continues instead of ending.\n\nFails open (principle 5): inert outside an installed `exec` runtime, and\ninert when no test command is configured or detected, in which case\ncompletion is accepted exactly as it is today. Off by default until an\nA/B (principle 6).",
+      "description": "Runtime verification gate (harness, R-HACK-10): before accepting a\nvoluntary stop in `peach exec` as task completion, the harness itself\nruns the repository's test command (`--test-command`, or detected) and\nrequires it to exit clean. On failure, the real command output — not the\nmodel's report of it — is fed back into the conversation as the next\nturn's input, and the run continues instead of ending.\n\nFails open (principle 5): inert outside an installed `exec` runtime, and\ninert when no test command is configured or detected, in which case\ncompletion is accepted exactly as it is today. On by default since the\nA/Bs on two model families (D-088); set it to `false` to fall back to\nthe soft, model-reported gate.",
       "type": "boolean",
       "default": false
     },

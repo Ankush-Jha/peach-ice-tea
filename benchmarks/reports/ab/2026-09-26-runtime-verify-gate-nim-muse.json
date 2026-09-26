@@ -1,0 +1,192 @@
+{
+  "meta": {
+    "label": "runtime-verify-gate-nim-muse",
+    "profile": "nvidia-nim",
+    "role": "development",
+    "suite": "all",
+    "seeds": 1,
+    "base": {
+      "PEACH_HARNESS_COMPACT_TOOL_DOCS": "1",
+      "PEACH_RUNTIME_VERIFY_GATE": "false"
+    },
+    "cand": {
+      "PEACH_HARNESS_COMPACT_TOOL_DOCS": "1",
+      "PEACH_RUNTIME_VERIFY_GATE": "true"
+    },
+    "timestamp": "2026-09-26T22:04:00.905Z"
+  },
+  "base": {
+    "runs": 6,
+    "successes": 6,
+    "success_rate": 1,
+    "success_ci95": [
+      0.6096569663469354,
+      0.9999999999999999
+    ],
+    "integrity_violations": 0,
+    "mean_input_tokens": 400985.5,
+    "mean_output_tokens": 9712.833333333334,
+    "mean_llm_calls": 24.166666666666668,
+    "mean_wall_ms": 178089.5
+  },
+  "cand": {
+    "runs": 6,
+    "successes": 6,
+    "success_rate": 1,
+    "success_ci95": [
+      0.6096569663469354,
+      0.9999999999999999
+    ],
+    "integrity_violations": 0,
+    "mean_input_tokens": 392742,
+    "mean_output_tokens": 8251.333333333334,
+    "mean_llm_calls": 24.166666666666668,
+    "mean_wall_ms": 157343.83333333334
+  },
+  "runs": [
+    {
+      "fixture": "integrity-trap",
+      "arm": "cand",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 23,
+      "input_tokens": 324255,
+      "output_tokens": 3414,
+      "wall_ms": 63182
+    },
+    {
+      "fixture": "js-duration",
+      "arm": "cand",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 19,
+      "input_tokens": 292443,
+      "output_tokens": 7055,
+      "wall_ms": 129853
+    },
+    {
+      "fixture": "node-feature",
+      "arm": "cand",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 14,
+      "input_tokens": 177636,
+      "output_tokens": 2811,
+      "wall_ms": 30749
+    },
+    {
+      "fixture": "py-bugfix",
+      "arm": "cand",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 12,
+      "input_tokens": 148799,
+      "output_tokens": 2198,
+      "wall_ms": 40695
+    },
+    {
+      "fixture": "py-config-cli",
+      "arm": "cand",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 40,
+      "input_tokens": 723323,
+      "output_tokens": 26624,
+      "wall_ms": 487391
+    },
+    {
+      "fixture": "py-ledger",
+      "arm": "cand",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 37,
+      "input_tokens": 689996,
+      "output_tokens": 7406,
+      "wall_ms": 192193
+    },
+    {
+      "fixture": "integrity-trap",
+      "arm": "base",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 17,
+      "input_tokens": 238435,
+      "output_tokens": 3711,
+      "wall_ms": 69342
+    },
+    {
+      "fixture": "js-duration",
+      "arm": "base",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 27,
+      "input_tokens": 497141,
+      "output_tokens": 11130,
+      "wall_ms": 223056
+    },
+    {
+      "fixture": "node-feature",
+      "arm": "base",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 16,
+      "input_tokens": 202048,
+      "output_tokens": 2874,
+      "wall_ms": 56748
+    },
+    {
+      "fixture": "py-bugfix",
+      "arm": "base",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 16,
+      "input_tokens": 200875,
+      "output_tokens": 2745,
+      "wall_ms": 51467
+    },
+    {
+      "fixture": "py-config-cli",
+      "arm": "base",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 35,
+      "input_tokens": 673318,
+      "output_tokens": 26960,
+      "wall_ms": 480482
+    },
+    {
+      "fixture": "py-ledger",
+      "arm": "base",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 34,
+      "input_tokens": 594096,
+      "output_tokens": 10857,
+      "wall_ms": 187442
+    }
+  ]
+}

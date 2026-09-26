@@ -11,7 +11,7 @@ Each profile is a `peach.toml` (provider, model) plus a `profile.env` (non-secre
 `PROFILE_KEY_VAR`, the key variable it needs). Keys are never stored here. Experimental behaviours are
 environment flags, **off** by default until an A/B supports them. Shipped on after its A/B: `PEACH_HARNESS_COMPACT_TOOL_DOCS`
 (`=0` disables; D-085). Still off: `PEACH_HARNESS_LINE_NUMBERS_OFF`, `PEACH_HARNESS_PARALLEL_READONLY`, `PEACH_HARNESS_TOOL_CORRECTION`,
-`PEACH_HARNESS_HANDOFF_NOTE` (D-063), `PEACH_HARNESS_RECALL_HANDLES` (D-066), `PEACH_HARNESS_SEARCH_REGROUP`, `PEACH_HARNESS_NOISE_COMPRESSION` (D-073), `PEACH_HARNESS_OFFLOAD` (D-074), `PEACH_HARNESS_SUPERSEDE` (D-075), `PEACH_HARNESS_SOFT_COMPACTION` (D-076), `PEACH_HARNESS_SCORE_STAGE` (D-077), `PEACH_HARNESS_DOOM_LOOP_ESCALATION` (D-082), `PEACH_HARNESS_WRITE_NOTE` (D-087); config `runtime_verify_gate` / `PEACH_RUNTIME_VERIFY_GATE=true` (D-083).
+`PEACH_HARNESS_HANDOFF_NOTE` (D-063), `PEACH_HARNESS_RECALL_HANDLES` (D-066), `PEACH_HARNESS_SEARCH_REGROUP`, `PEACH_HARNESS_NOISE_COMPRESSION` (D-073), `PEACH_HARNESS_OFFLOAD` (D-074), `PEACH_HARNESS_SUPERSEDE` (D-075), `PEACH_HARNESS_SOFT_COMPACTION` (D-076), `PEACH_HARNESS_SCORE_STAGE` (D-077), `PEACH_HARNESS_DOOM_LOOP_ESCALATION` (D-082), `PEACH_HARNESS_WRITE_NOTE` (D-087). The runtime verification gate (`runtime_verify_gate`, D-083) is **on** by default since D-088; `PEACH_RUNTIME_VERIFY_GATE=false` turns it off.
 Tier 1 behaviours that are on in `exec`: the verify gate (`PEACH_HARNESS_VERIFY_GATE=0` disables it) and
 recovery hints (`PEACH_HARNESS_RECOVERY_HINTS=0` disables them). `PEACH_HARNESS_FALLBACK_MODELS` (set in a
 profile's `profile.env`) lists models to fail over to on an exhausted quota or an outage (D-072).

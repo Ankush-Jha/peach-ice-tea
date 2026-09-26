@@ -5,8 +5,8 @@
 //! command before a voluntary stop is accepted as completion. On failure,
 //! the real output goes back into the conversation as the next turn's
 //! input and the run continues; on a pass, completion is allowed. Config-
-//! gated (`PeachConfig::runtime_verify_gate`, default off — CLAUDE.md
-//! principle 6) and fails open with no test command configured or no `exec`
+//! gated (`PeachConfig::runtime_verify_gate`, default on since D-088's A/Bs
+//! on two model families) and fails open with no test command configured or no `exec`
 //! runtime installed (principle 5). Never touches the test-integrity guard's
 //! own refusal/restore path — it only re-verifies through
 //! `peach_harness::runtime::restore_integrity_if_installed`, the same
