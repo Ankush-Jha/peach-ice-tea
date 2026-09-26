@@ -314,7 +314,21 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
                     }
                 }),
             )
-            .await?;
+            .await;
+
+            // harness: R-EVAL-2 — a request that never produced a response is
+            // not counted by `record_llm_call` below, because the error
+            // propagates first. Record it on the conversation directly: the
+            // end-of-iteration sync from the tool context never runs on this
+            // path, but `app.rs` still persists the conversation afterwards.
+            let message = match message {
+                Ok(message) => message,
+                Err(error) => {
+                    self.conversation.metrics.task.record_failed_llm_call();
+                    self.services.update(self.conversation.clone()).await.ok();
+                    return Err(error);
+                }
+            };
 
             // Fire the Response lifecycle event
             let response_event = LifecycleEvent::Response(EventData::new(

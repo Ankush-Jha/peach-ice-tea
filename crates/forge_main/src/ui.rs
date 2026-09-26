@@ -4262,6 +4262,12 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(ForgeConfig) -> A + Send + Sync> UI
                 writer.write_dimmed(&content)?;
             }
             ChatResponse::TaskComplete => {
+                // harness: R-PROTO-7 — the loop can continue past an interrupt
+                // (the pending-todos end hook resets `should_yield`). If it
+                // then completes, the earlier interrupt no longer describes how
+                // the task ended, and a stale value here would make `exec`
+                // report a limit failure for a task that finished.
+                self.state.interruption = None;
                 writer.finish()?;
                 if let Some(conversation_id) = self.state.conversation_id {
                     self.writeln_title(
