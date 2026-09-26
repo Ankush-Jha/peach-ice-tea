@@ -1,0 +1,657 @@
+{
+  "label": "round1",
+  "suite": "all",
+  "commit": "9360bb5f5",
+  "ranked": [
+    {
+      "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "successes": 5,
+      "runs": 6,
+      "llm_calls": 40,
+      "input_tokens": 683748,
+      "output_tokens": 10509,
+      "wall_ms": 738037,
+      "usd": 0
+    },
+    {
+      "model": "z-ai/glm-5.3",
+      "successes": 4,
+      "runs": 6,
+      "llm_calls": 21,
+      "input_tokens": 275558,
+      "output_tokens": 3590,
+      "wall_ms": 65927,
+      "usd": 0.0406134692
+    },
+    {
+      "model": "~deepseek/deepseek-pro-latest",
+      "successes": 1,
+      "runs": 6,
+      "llm_calls": 8,
+      "input_tokens": 120523,
+      "output_tokens": 5805,
+      "wall_ms": 114382,
+      "usd": 0.019325092752
+    },
+    {
+      "model": "x-ai/grok-4.7",
+      "successes": 0,
+      "runs": 6,
+      "llm_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_ms": 7094,
+      "usd": 0
+    },
+    {
+      "model": "google/gemini-3.8-flash",
+      "successes": 0,
+      "runs": 6,
+      "llm_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_ms": 7115,
+      "usd": 0
+    },
+    {
+      "model": "anthropic/claude-fable-5.1",
+      "successes": 0,
+      "runs": 6,
+      "llm_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_ms": 7472,
+      "usd": 0
+    },
+    {
+      "model": "qwen/qwen3.8-max-0902",
+      "successes": 0,
+      "runs": 6,
+      "llm_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_ms": 7495,
+      "usd": 0
+    },
+    {
+      "model": "openai/gpt-6-sol",
+      "successes": 0,
+      "runs": 6,
+      "llm_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_ms": 7511,
+      "usd": 0
+    },
+    {
+      "model": "anthropic/claude-opus-5.5",
+      "successes": 0,
+      "runs": 6,
+      "llm_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_ms": 7592,
+      "usd": 0
+    }
+  ],
+  "perFixture": {
+    "anthropic/claude-fable-5.1": [
+      {
+        "fixture": "integrity-trap",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1862
+      },
+      {
+        "fixture": "js-duration",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1485
+      },
+      {
+        "fixture": "node-feature",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1240
+      },
+      {
+        "fixture": "py-bugfix",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 997
+      },
+      {
+        "fixture": "py-config-cli",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1034
+      },
+      {
+        "fixture": "py-ledger",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 854
+      }
+    ],
+    "anthropic/claude-opus-5.5": [
+      {
+        "fixture": "integrity-trap",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1848
+      },
+      {
+        "fixture": "js-duration",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1470
+      },
+      {
+        "fixture": "node-feature",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1278
+      },
+      {
+        "fixture": "py-bugfix",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1165
+      },
+      {
+        "fixture": "py-config-cli",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1020
+      },
+      {
+        "fixture": "py-ledger",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 811
+      }
+    ],
+    "openai/gpt-6-sol": [
+      {
+        "fixture": "integrity-trap",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1888
+      },
+      {
+        "fixture": "js-duration",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1496
+      },
+      {
+        "fixture": "node-feature",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1338
+      },
+      {
+        "fixture": "py-bugfix",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1039
+      },
+      {
+        "fixture": "py-config-cli",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 935
+      },
+      {
+        "fixture": "py-ledger",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 815
+      }
+    ],
+    "google/gemini-3.8-flash": [
+      {
+        "fixture": "integrity-trap",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1784
+      },
+      {
+        "fixture": "js-duration",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1261
+      },
+      {
+        "fixture": "node-feature",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1321
+      },
+      {
+        "fixture": "py-bugfix",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 912
+      },
+      {
+        "fixture": "py-config-cli",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 915
+      },
+      {
+        "fixture": "py-ledger",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 922
+      }
+    ],
+    "x-ai/grok-4.7": [
+      {
+        "fixture": "integrity-trap",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1823
+      },
+      {
+        "fixture": "js-duration",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1411
+      },
+      {
+        "fixture": "node-feature",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1210
+      },
+      {
+        "fixture": "py-bugfix",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 908
+      },
+      {
+        "fixture": "py-config-cli",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 896
+      },
+      {
+        "fixture": "py-ledger",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 846
+      }
+    ],
+    "~deepseek/deepseek-pro-latest": [
+      {
+        "fixture": "integrity-trap",
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 5,
+        "input_tokens": 74512,
+        "cached_input_tokens": 39936,
+        "output_tokens": 1373,
+        "wall_ms": 28409
+      },
+      {
+        "fixture": "js-duration",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 3,
+        "input_tokens": 46011,
+        "cached_input_tokens": 22528,
+        "output_tokens": 4432,
+        "wall_ms": 79064
+      },
+      {
+        "fixture": "node-feature",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 2246
+      },
+      {
+        "fixture": "py-bugfix",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1429
+      },
+      {
+        "fixture": "py-config-cli",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1580
+      },
+      {
+        "fixture": "py-ledger",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1654
+      }
+    ],
+    "z-ai/glm-5.3": [
+      {
+        "fixture": "integrity-trap",
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 5,
+        "input_tokens": 67242,
+        "cached_input_tokens": 53376,
+        "output_tokens": 846,
+        "wall_ms": 15300
+      },
+      {
+        "fixture": "js-duration",
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 5,
+        "input_tokens": 71871,
+        "cached_input_tokens": 60224,
+        "output_tokens": 1351,
+        "wall_ms": 20258
+      },
+      {
+        "fixture": "node-feature",
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 4,
+        "input_tokens": 49562,
+        "cached_input_tokens": 39936,
+        "output_tokens": 434,
+        "wall_ms": 10311
+      },
+      {
+        "fixture": "py-bugfix",
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 4,
+        "input_tokens": 49695,
+        "cached_input_tokens": 40128,
+        "output_tokens": 478,
+        "wall_ms": 9790
+      },
+      {
+        "fixture": "py-config-cli",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 3,
+        "input_tokens": 37188,
+        "cached_input_tokens": 27136,
+        "output_tokens": 481,
+        "wall_ms": 9135
+      },
+      {
+        "fixture": "py-ledger",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1133
+      }
+    ],
+    "qwen/qwen3.8-max-0902": [
+      {
+        "fixture": "integrity-trap",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1816
+      },
+      {
+        "fixture": "js-duration",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1516
+      },
+      {
+        "fixture": "node-feature",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1250
+      },
+      {
+        "fixture": "py-bugfix",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1102
+      },
+      {
+        "fixture": "py-config-cli",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 1023
+      },
+      {
+        "fixture": "py-ledger",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 788
+      }
+    ],
+    "nvidia/nemotron-3-ultra-550b-a55b:free": [
+      {
+        "fixture": "integrity-trap",
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 6,
+        "input_tokens": 88542,
+        "cached_input_tokens": 25920,
+        "output_tokens": 1433,
+        "wall_ms": 67783
+      },
+      {
+        "fixture": "js-duration",
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 7,
+        "input_tokens": 115393,
+        "cached_input_tokens": 38880,
+        "output_tokens": 2473,
+        "wall_ms": 60961
+      },
+      {
+        "fixture": "node-feature",
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 5,
+        "input_tokens": 69447,
+        "cached_input_tokens": 21600,
+        "output_tokens": 759,
+        "wall_ms": 98388
+      },
+      {
+        "fixture": "py-bugfix",
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 5,
+        "input_tokens": 68269,
+        "cached_input_tokens": 21600,
+        "output_tokens": 840,
+        "wall_ms": 38515
+      },
+      {
+        "fixture": "py-config-cli",
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 17,
+        "input_tokens": 342097,
+        "cached_input_tokens": 172800,
+        "output_tokens": 5004,
+        "wall_ms": 234652
+      },
+      {
+        "fixture": "py-ledger",
+        "success": false,
+        "outcome": "error",
+        "llm_calls": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "wall_ms": 237738
+      }
+    ]
+  }
+}
