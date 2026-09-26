@@ -13,6 +13,11 @@ const OPENAI_RETRYABLE_ERROR_CODES: [&str; 2] = ["server_is_overloaded", "server
 /// * `error` - The provider error to classify.
 /// * `retry_config` - Configured retryable HTTP status codes.
 pub fn into_retry(error: anyhow::Error, retry_config: &RetryConfig) -> anyhow::Error {
+    // harness: D-040 — a per-day or billing quota cannot clear within the run;
+    // retrying it only burns wall time (and, on some tiers, more quota).
+    if forge_app::domain::provider_quota::exhausted_quota(&error).is_some() {
+        return error;
+    }
     if let Some(code) = get_req_status_code(&error)
         .or(get_event_req_status_code(&error))
         .or(get_api_status_code(&error))
@@ -223,6 +228,20 @@ mod tests {
         let error = ErrorResponse::default().code(ErrorCode::String("404".to_string()));
         let error = anyhow::Error::from(Error::Response(error));
         assert!(!is_retryable(into_retry(error, &retry_config)));
+    }
+
+    #[test]
+    fn test_an_exhausted_daily_quota_is_not_retried_but_a_rate_limit_is() {
+        let retry_config = fixture_retry_config(vec![429]);
+        let with_body = |body: &str| {
+            anyhow::Error::from(Error::InvalidStatusCode(429)).context(format!("429 Too Many Requests Reason: {body}"))
+        };
+
+        let daily = with_body(r#"{"violations":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}"#);
+        let per_minute = with_body(r#"{"violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel"}]}"#);
+
+        assert!(!is_retryable(into_retry(daily, &retry_config)));
+        assert!(is_retryable(into_retry(per_minute, &retry_config)));
     }
 
     #[test]

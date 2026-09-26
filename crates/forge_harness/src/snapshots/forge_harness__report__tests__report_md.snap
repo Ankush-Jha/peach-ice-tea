@@ -35,14 +35,9 @@ Compactions: 1 · tokens reclaimed (estimated): 7500 · messages: 40→6
 
 Retries: empty_completion ×1, http_429 ×1 · unmetered empty completions: 1 · tool errors: 1 · refused test edits: 1 · suppressed prompts: 0
 
-## Testing
+## Testing (the harness's own run after the agent stopped)
 
-```json
-{
-  "ran": false,
-  "reason": "the harness does not run a final test pass yet (TH.6)"
-}
-```
+Not run: the harness does not run a final test pass yet (TH.6)
 
 ## Repository changes
 
