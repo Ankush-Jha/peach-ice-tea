@@ -90,10 +90,11 @@ make run REPO=/path/to/repository PROMPT="Fix the failing test in stats.py"
 cd /path/to/repository && make -f /path/to/harness/Makefile run    # REPO defaults to here
 ```
 
-`AI_API_KEY` is handed to the selected profile as the provider variable it expects. With no `PROFILE`, the key's
-shape picks it (D-081): an AI Studio key (`AIza…`) runs `gemini`, the model HACKATHON.md names; an OpenRouter key
-(`sk-or-…`) runs `openrouter`; anything else runs `gemini`. A prescribed model is a variable, not a source change:
-`make run MODEL=<model id>` or `PROFILE=<name>`. Optional: `TEST_COMMAND=` (otherwise detected), `EVIDENCE_DIR=` (default `evidence/<UTC time>/`),
+A model the Organising Committee prescribes is set with `make run MODEL=<model id>` or `PROFILE=<name>` — a
+variable, never a source change (MAKEFILE_EVAL.md §4). `AI_API_KEY` is then handed to that profile as the provider
+variable it expects. Without either set, the key's own shape picks a profile as a convenience (D-081): an AI Studio
+key (`AIza…`) → `gemini`, an OpenRouter key (`sk-or-…`) → `openrouter`, anything else → `gemini` as the fallback.
+Optional: `TEST_COMMAND=` (otherwise detected), `EVIDENCE_DIR=` (default `evidence/<UTC time>/`),
 `MAX_DURATION_SECS=` (default 1800). `make test` runs the local hackathon suite live; `make check` runs the
 offline checks (no key, no model); `make clean` removes build output and evidence.
 
@@ -139,10 +140,12 @@ binary against a scripted model.
 
 ## Configuration
 
-Provider profiles and feature flags are listed in [`configuration/README.md`](configuration/README.md).
-Any model may be used (D-049). `make run` picks the profile from the key (D-081): `gemini` for AI Studio keys and by
-default, `openrouter` (free-tier model, D-069) for OpenRouter keys. `.env.example` shows the one variable the harness
-reads.
+Provider profiles and feature flags are listed in [`configuration/README.md`](configuration/README.md). The model
+is never fixed in source: whatever the Organising Committee prescribes at evaluation time is set with
+`MODEL=<model id>` or `PROFILE=<name>` (MAKEFILE_EVAL.md §4) — both read from the environment, no code change
+either way (D-049). Without either set, `make run` infers a profile from `AI_API_KEY`'s own shape as a convenience
+(D-081): an AI Studio key (`AIza…`) → `gemini`, an OpenRouter key (`sk-or-…`) → `openrouter`, anything else →
+`gemini` as the fallback. `.env.example` shows the one variable the harness reads.
 
 ## Major design decisions
 
