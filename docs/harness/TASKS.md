@@ -6,6 +6,18 @@ append the A/B report path where one is required.
 
 Legend: **[A/B]** requires an A/B report before ticking.
 
+## MH — Hackathon track (governs; see `HACKATHON.md`, `ALIGNMENT.md`, D-017…D-022)
+Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
+- [ ] **TH.1** `R-HACK-1` one-shot autonomy: no reachable interactive prompt in `exec`; fail fast on missing config; wall-clock/request budgets.
+- [ ] **TH.2** `R-HACK-2` test-integrity guard: protected-path manifest, tool + shell refusal, loud notice to the model, post-run verify + restore.
+- [ ] **TH.3** `R-HACK-6` Gemini first: capture thoughts/cached tokens, tool-schema compatibility, reasoning-effort mapping, Gemini registry.
+- [ ] **TH.4** `R-HACK-3` telemetry event stream (`TelemetrySink`, internal schema, organizer adapter stub).
+- [ ] **TH.5** `R-HACK-5` evidence bundle (`--evidence-dir`), transcript on every exit path, redaction (pulls T3.7 forward).
+- [ ] **TH.6** `R-HACK-7` verified completion: test-command detection, green-after-last-edit gate, failure classification + recovery hints.
+- [ ] **TH.7** `R-HACK-8` local hackathon-shaped evaluation suite and runner (replaces T0.5 as primary suite).
+- [ ] **TH.8** `R-HACK-4` standard report generator (`forge report`).
+- [ ] **TH.9** `R-HACK-9` submission layout, README, `documentation/ARCHITECTURE.md`, prompt template.
+
 ## M0 — Foundations (nothing else starts until M0 is done)
 - [ ] **T0.0** Repair the eval harness so it can invoke the agent at all. 10 of 14 evals use the
       `--provider`/`--model` flags removed in `b3ec4d17a` (clap exits 2), and `todo_write_usage` uses
