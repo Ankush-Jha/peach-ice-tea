@@ -1254,3 +1254,37 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
     `evidence/`.
   - The run is also **D-046 reproduced on the current default model through the evaluator path**, at zero
     spend (free tier).
+
+## D-071 — Free-tier round 2, day 1: a screen, not a ranking; a new default needs a full-suite result (2026-09-27)
+- **Budget (D-069):** free models only; 50 requests/day per OpenRouter account. One six-fixture suite takes ~40–50
+  requests (Nemotron Ultra: 40 in round 1), so a model can get one full suite per day at most. Day 1 therefore
+  screens instead of ranking. **Spend: $0.**
+- **Step 1, tool-call probe (1 request each):** 16 `:free` models support tools. Excluded: the incumbent, both
+  `inkling` models (403, allow-listed apps only; not spoofed), the 2.6B model (too small, 65k context), and the
+  two domain-tuned `ling` variants.
+  - Pass: `cohere/north-mini-code`, `nvidia/nemotron-3-super-120b-a12b`, `nvidia/nemotron-3.5-lightning`,
+    `dots-studio/dots-3-note-preview`, `poolside/laguna-s-2.1`, `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`.
+  - Upstream 429 (retry another day, not a model result): `qwen/qwen3.8-27b`, `poolside/laguna-xs-2.1`,
+    `google/gemma-4-31b-it`, `google/gemma-4-26b-a4b-it`.
+- **Step 2, `py-bugfix` through the real harness** (`benchmarks/reports/models/20260926-free-screen-1.md`, 1 seed,
+  capped at 7 requests):
+
+  | Model | Result | Calls | Wall |
+  |---|---|---|---|
+  | dots-3-note-preview | ✓ | 4 | 43 s |
+  | north-mini-code | ✓ | 6 | 46 s |
+  | nemotron-3-super-120b | ✓ | 5 | 51 s |
+  | laguna-s-2.1 | ✓ | 4 | 577 s |
+  | nemotron-3-nano-omni-30b | ✗ request limit | 7 | 211 s |
+  | nemotron-3.5-lightning | ✗ runner timeout (600 s) | 6 | 600 s |
+
+  For comparison, the incumbent `nemotron-3-ultra` passed `py-bugfix` in 5 calls in round 1, and in 5 calls /
+  64 s through `make run` today (D-070).
+- **Decision:** the default stays `nemotron-3-ultra`, the only free model with a record across all six fixtures
+  (D-051). `py-bugfix` is the easiest fixture, and one seed on it cannot unseat that. **Plan, one full suite per
+  day:** dots-3-note-preview, then nemotron-3-super, north-mini-code and laguna-s (the last is slow, so its wall
+  time counts against it). The four 429'd models get re-probed on a spare day. A challenger replaces the default
+  only with a higher full-suite success rate, or an equal one with fewer calls (D-050's order, with cost replaced
+  by calls since every model here is free).
+- **Where it stops today:** ~3 free requests remain. Resume tomorrow with
+  `OPENROUTER_API_KEY=… npx tsx benchmarks/hackathon/bakeoff.ts --label free-suite-dots --suite all --seeds 1 --bin "$PWD/target/debug/forge" --max-requests 50 --max-duration-secs 1500 --models dots-studio/dots-3-note-preview:free`.
