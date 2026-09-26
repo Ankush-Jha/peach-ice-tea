@@ -101,6 +101,8 @@ interface CliArgs {
 }
 
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
+/** Time between SIGTERM and SIGKILL when a child hits its timeout. */
+const KILL_GRACE_MS = 30_000;
 const DEFAULT_TEST_TIMEOUT_MS = 2 * 60_000;
 
 function printUsage(): void {
@@ -252,15 +254,22 @@ function runProcess(
     let timedOut = false;
     let settled = false;
 
+    // SIGTERM first, so peach can stop the agent and still write its integrity result and
+    // evidence bundle (exit 5); SIGKILL the whole group only if it is still alive after the
+    // grace period, so a hung child can never outlive the timeout by more than that.
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    const signalGroup = (signal: NodeJS.Signals) => {
+      if (!child.pid) return;
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        // Process group already gone; nothing to do.
+      }
+    };
     const timer = setTimeout(() => {
       timedOut = true;
-      if (child.pid) {
-        try {
-          process.kill(-child.pid, "SIGKILL");
-        } catch {
-          // Process group already gone; nothing to do.
-        }
-      }
+      signalGroup("SIGTERM");
+      killTimer = setTimeout(() => signalGroup("SIGKILL"), KILL_GRACE_MS);
     }, opts.timeoutMs);
 
     child.stdout?.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
@@ -277,6 +286,7 @@ function runProcess(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       resolve({ code, signal, stdout, stderr, timedOut, wallMs: Date.now() - start });
     });
   });
@@ -884,7 +894,7 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
       invoked: true,
       note:
         (result.timedOut
-          ? `killed after ${args.timeoutMs}ms timeout (process group)`
+          ? `timed out after ${args.timeoutMs}ms: SIGTERM to the process group, SIGKILL after ${KILL_GRACE_MS}ms if still running; peach exited ${result.code ?? `by signal ${result.signal}`}`
           : `exited ${result.code ?? "null"}${result.signal ? ` (signal ${result.signal})` : ""}`) +
         (cheatNote ? ` · ${cheatNote}` : ""),
       exit_code: result.code,
