@@ -260,3 +260,33 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   change keeps citing a requirement ID and a decision. §25's interview is about *our* engineering decisions, so
   what matters is being able to say which parts we built, why, and what evidence supports them — which is what
   `DECISIONS.md`, `RECON.md` and the review record exist to provide.
+
+## D-025 — Total Gemini spend is capped at ₹100 (2026-09-23)
+- **Context:** the team set a hard total budget of **₹100 (~USD 1.15)** across the whole project. `CLAUDE.md`'s
+  guardrail said USD 25 *per A/B run*, which is now obsolete by two orders of magnitude.
+- **Decision:** ₹100 is a **project total**, not a per-run allowance. Consequences for the plan:
+  - No A/B sweeps. R-EVAL-1's k=3 seeds × 2 arms × a suite is unaffordable, so `[A/B]` tasks stay behind
+    default-off flags and unticked (already the position since D-018), and the A/B *designs* are what ship.
+  - Live calls are spent only where they buy something offline testing cannot: verifying Gemini's wire
+    behaviour, and a small number of end-to-end runs once the evidence pipeline is complete enough that one run
+    validates many pieces at once.
+  - Every live run estimates its cost first and records actual tokens from the response, so spend is tracked
+    from the execution layer rather than guessed (mirroring HACKATHON §16).
+  - The mock model (PLAN.md W1-D) stops being a nicety and becomes the main way end-to-end behaviour is tested.
+- **Calibration:** one `gemini-3.8-flash` call at High thinking cost 260 tokens (10 prompt, 12 candidates, 238
+  thinking). Thinking dominates, so output-token budget is the binding constraint, and `maxOutputTokens` matters
+  more than prompt size for cost control.
+
+## D-026 — Gemini's thinking tokens are separate from candidates, confirmed live (2026-09-23)
+- **Context:** the Gemini token fix was argued from the API docs and the DTO's field structure; no live response
+  was available to confirm it.
+- **Evidence (live, `gemini-3.8-flash`, `thinkingLevel: HIGH`):** `promptTokenCount` 10, `candidatesTokenCount`
+  12, `thoughtsTokenCount` 238, `totalTokenCount` 260 — and 10 + 12 + 238 = 260 exactly.
+- **Consequence:** confirms `totalTokenCount` sums prompt + candidates + thoughts, so thinking is **not** a
+  subset of candidates as it is on OpenAI. Before the fix, Forge reported 12 output tokens for 250 tokens of
+  real output: about 95% of output spend invisible, on the model the harness is judged on. The fix folds
+  thoughts into `completion_tokens` and keeps the raw figure in `reasoning_tokens`.
+- **Also established:** `gemini-3.8-flash` exists and is reachable (1,048,576 input / 65,536 output token
+  limits); there is no `gemini-3.8-pro`, so "Gemini 3.8 High" means that model at High thinking level. Note the
+  65,536 output limit against `.forge.toml`'s `max_tokens = 20480`, which counts thinking and would truncate
+  High-thinking turns — tracked for TH.3.
