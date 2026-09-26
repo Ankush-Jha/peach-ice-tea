@@ -124,6 +124,39 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> AgentEx
                 }
             }
         }
+        // harness: R-EVAL-2 — fold the subagent's costs into the parent task.
+        // The subagent ran on its own Conversation, so its tokens and tool
+        // calls landed on that conversation's metrics. `PeachApp::chat`
+        // persists it once the run completes, which has happened by the time
+        // the stream closes, so re-read it here. Failing to look it up must not
+        // fail the tool call: metrics are observational, and losing them is far
+        // better than losing the subagent's actual work.
+        match self
+            .services
+            .conversation_service()
+            .find_conversation(&conversation.id)
+            .await
+        {
+            Ok(Some(finished)) => {
+                ctx.with_metrics(|metrics| {
+                    metrics.task.absorb_subagent(&finished.metrics.task);
+                })?;
+            }
+            Ok(None) => {
+                tracing::debug!(
+                    conversation_id = %conversation.id,
+                    "Subagent conversation not found; its cost is not counted"
+                );
+            }
+            Err(error) => {
+                tracing::debug!(
+                    conversation_id = %conversation.id,
+                    ?error,
+                    "Could not read subagent metrics; its cost is not counted"
+                );
+            }
+        }
+
         if !output.is_empty() {
             // Create tool output
             Ok(ToolOutput::ai(
