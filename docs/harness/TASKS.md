@@ -10,7 +10,8 @@ Legend: **[A/B]** requires an A/B report before ticking.
 Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [x] **TH.1** `R-HACK-1` one-shot autonomy: no reachable interactive prompt in `exec`; fail fast on missing config; wall-clock/request budgets.
       → a test per path, the last two under a real TTY: permission confirm refused (D-053), continue-anyway → `request_limit`.
-- [ ] **TH.2** `R-HACK-2` test-integrity guard: protected-path manifest, tool + shell refusal, loud notice to the model, post-run verify + restore.
+- [x] **TH.2** `R-HACK-2` test-integrity guard: protected-path manifest, tool + shell refusal, loud notice to the model, post-run verify + restore.
+      → complete with mixed files: test sections of package.json/pyproject/Cargo/setup.cfg flagged as `test_config_changed` (D-054).
 - [ ] **TH.3** `R-HACK-6` Gemini first: capture thoughts/cached tokens, tool-schema compatibility, reasoning-effort mapping, Gemini registry.
 - [x] **TH.4** `R-HACK-3` telemetry event stream (`TelemetrySink`, internal schema, organizer adapter stub).
       → wired (D-033): run, agent_state, model_call, tool_call, retry (with billed usage), context_compaction,

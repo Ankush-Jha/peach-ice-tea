@@ -848,3 +848,34 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   `init_state_exec` never calls `on_update`. **TH.1 ticked.**
 - **Flaky upstream test, not touched:** `peach_app fmt::fmt_output::tests::test_fs_create_overwrite` failed once
   in a full parallel run, passed 3/3 alone, and the next full run was 2952/2952.
+
+## D-054 — Test sections of mixed files are watched and flagged; TH.2 is complete (2026-09-26)
+- **Gap (R-HACK-2):** `package.json`, `pyproject.toml`, `Cargo.toml` and `setup.cfg` cannot be protected wholesale,
+  because adding a dependency is legitimate. R-HACK-2 requires their test sections to be detected after the run and
+  flagged. Nothing did this: a model could replace `"test": "node --test"` with `"test": "true"` and the only
+  signal would be the runner's git diff.
+- **Built (`integrity/mixed.rs`):** before the run, each such file's *test sections* are rendered canonically:
+  - `package.json`: scripts whose name contains `test` (`pretest`, `test:unit`), plus the jest, mocha, ava,
+    vitest, c8 and nyc keys;
+  - `pyproject.toml`: `tool.pytest`, `tool.tox`;
+  - `Cargo.toml`: `[[test]]`, `profile.test`;
+  - `setup.cfg`: `[tool:pytest]` / `[pytest]`.
+
+  TOML goes through a parse-and-reserialise round trip, so formatting and comments do not count as a change.
+  Excluded trees such as `node_modules` are skipped. After the run a difference becomes a violation of the new kind
+  `test_config_changed`. It is **flagged, never restored**, because the rest of the file may be a legitimate edit.
+  It flows through the existing report, `exec.json` and `integrity` telemetry (`violation`).
+- **Told up front (principle 4):** when such sections exist, the model's protected-files notice adds "the test
+  sections of these files must not change: …, other edits are fine".
+- **Proof:** unit tests (non-test edits ignored; script, runner-config, pytest `addopts` and `[[test]]` changes caught;
+  reformatting ignored). End to end, a scripted model rewrites `package.json`'s `test` to `true`: the notice is in
+  the first request, and `integrity.violations == [{package.json, test_config_changed, restored: false}]`.
+- **Known limit, recorded:** the harness's own final test run (TH.6) calls the detected command (e.g. `npm test`),
+  which reads the *current* script. After such a cheat it could report a pass; the evidence now carries the
+  violation beside it, so a judge sees both.
+- **TH.2 ticked:** globs, tool refusal, shell detection, manifest diff and restore (unit), dispatch refusal
+  (scripted model), restore on every exit path including signals (D-030, D-038), and mixed files (this).
+- **Upstream flake, root cause found:** `peach_app` `test_fs_create_overwrite` (seen again). `todo_fmt.rs` tests
+  toggle `console`'s process-global colour flag. When one runs between this test's `actual` and `expected` renders,
+  one string has ANSI codes and the other does not. A race between upstream tests, unrelated to our code; recorded,
+  not changed (CLAUDE.md guardrail).

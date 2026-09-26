@@ -30,6 +30,10 @@ pub struct Manifest {
     /// Where file copies were written, when snapshotting succeeded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snapshot_dir: Option<PathBuf>,
+    /// Test sections of mixed files (`package.json`, `pyproject.toml`, ...),
+    /// compared after the run and flagged, never restored (D-054).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub test_sections: Vec<super::mixed::TestSections>,
 }
 
 /// How a protected file was altered.
@@ -42,6 +46,9 @@ pub enum ViolationKind {
     Deleted,
     /// A protected file exists that was not there before.
     Added,
+    /// The test section of a mixed file (`package.json`, `pyproject.toml`,
+    /// ...) changed. Flagged, never restored (D-054).
+    TestConfigChanged,
 }
 
 /// One protected file that changed during the run.
@@ -113,6 +120,7 @@ impl Manifest {
             root: root.to_path_buf(),
             files,
             snapshot_dir: snapshot_dir.map(Path::to_path_buf),
+            test_sections: Vec::new(),
         }
     }
 
@@ -183,6 +191,8 @@ impl Manifest {
                             .is_ok()
                     }
                     ViolationKind::Added => std::fs::remove_file(&target).is_ok(),
+                    // Flagged only: the rest of the file may be a legitimate edit (D-054).
+                    ViolationKind::TestConfigChanged => false,
                 };
                 if !restored {
                     tracing::warn!(path = %violation.path, "Could not restore protected file");
