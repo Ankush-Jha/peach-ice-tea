@@ -1430,3 +1430,25 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
     across hard thresholds from 13,000 to 16,000.
 - **T3.11 stays unticked** (`[A/B]`: long tasks; success, total input tokens, compaction count, and the cache rate
   around compactions, flag on vs off).
+
+## D-077 — T3.9 in part: S2 relevance scoring wired with the heuristic scorer; `LlmScorer` deferred under the free-tier stance (2026-09-27)
+- **Built (R-CTX-2 S2, `FORGE_HARNESS_SCORE_STAGE=1`, default off; order S0 → S1 → S2 → S3):**
+  `compaction_pipeline::score`.
+  - Every non-stub tool result gets a summary for the scorer: tool, redacted input preview of at most 200
+    characters, status, size, position, and `referenced_later` computed from the user and assistant text after it.
+  - T3.8's `build_plan` then applies the fail-open rules (pinning, redaction, keep-on-error).
+  - The decision is applied: keep; truncate to the head plus a handle; or drop to a stub with a handle. The call is
+    never removed, so calls and results stay paired.
+  - Stubs carry the offload marker, so the event log reads them as an in-place rewrite (D-074).
+  - Results get a synthetic id from their position (`m<index>`), because provider call ids can repeat and keying
+    by id stubbed the wrong result in D-075.
+- **Scorer choice, by decision:** the heuristic scorer (T3.8, no model). R-CTX-4's `LlmScorer` asks the compaction
+  model two questions per call. That is at least one extra request per compaction, and under D-069 (free tier,
+  50 requests a day across the account) it competes directly with the runs. The compaction hook also has no model
+  services today, so it would need new plumbing. `LlmScorer` stays deferred, and **T3.9 stays unticked**. The
+  stage takes any `RelevanceScorer`, so `LlmScorer` drops in without touching the pipeline.
+- **Proof:**
+  - Unit: an old unreferenced 20 kB read is cut while one whose file the assistant named later is kept (T3.8's
+    `referenced_later` doing its job); a second scoring pass changes nothing.
+  - End to end: a 16 KB read the conversation never mentions again, compaction on tokens. S2 cuts it, and **no
+    summary runs**. Stable at 6,000–7,000; 8,000 never triggers.
