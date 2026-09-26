@@ -211,8 +211,12 @@ pub struct ModelCall {
     /// `"length"`, ...), when the provider reports one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<String>,
-    /// How many tool calls the model requested in this response.
-    pub tool_calls_requested: usize,
+    /// `call_id` of every [`ToolCall`] the model requested in this response,
+    /// in the order requested. A bare count is not a safe way to correlate
+    /// tool calls back to the response that produced them once tool calls
+    /// can run in parallel (T2.1); carrying the ids instead makes that link
+    /// explicit, and the count is simply `tool_call_ids.len()`.
+    pub tool_call_ids: Vec<String>,
 }
 
 /// One tool invocation and its result.
@@ -241,6 +245,12 @@ pub struct ToolCall {
     /// to be handed off rather than returned inline.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handle: Option<String>,
+    /// `call_id` of the [`ModelCall`] whose response requested this tool
+    /// call, when known. Adjacent `seq` is not a safe way to infer this
+    /// once tool calls can run in parallel (T2.1), so the link is carried
+    /// explicitly rather than left to be reconstructed after the fact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_call_id: Option<String>,
 }
 
 /// Context was compacted.
@@ -258,6 +268,16 @@ pub struct ContextCompaction {
     /// Token size of the context immediately after compaction, as counted
     /// locally.
     pub tokens_after_estimated: Option<u64>,
+    /// What kinds of content survived compaction (e.g. `"reasoning_chain"`,
+    /// `"todo_list"`, `"recent_tool_result"`). §15 asks for "retained
+    /// state", and `CLAUDE.md` principle 7 requires reasoning-chain
+    /// preservation not to regress; neither claim is checkable from
+    /// telemetry without naming what was actually kept, so this is a list
+    /// of freeform kind labels rather than a bare "compaction happened"
+    /// fact. Empty when the compactor emitting this event does not yet
+    /// report retained-content kinds — not a claim that nothing survived.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub retained_content_kinds: Vec<String>,
 }
 
 /// A snapshot of what is currently occupying the context.
@@ -305,6 +325,10 @@ pub struct Retry {
     pub max_attempts: Option<u32>,
     /// Why the previous attempt failed.
     pub reason: String,
+    /// `call_id` of the [`ModelCall`] or [`ToolCall`] being retried, when
+    /// known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_call_id: Option<String>,
 }
 
 /// Something failed.
@@ -323,6 +347,10 @@ pub struct Error {
     /// known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// `call_id` of the [`ModelCall`] or [`ToolCall`] this error originated
+    /// from, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_call_id: Option<String>,
 }
 
 /// The harness took an action in response to a failure.
@@ -337,6 +365,10 @@ pub struct Recovery {
     /// logged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
+    /// `call_id` of the [`ModelCall`] or [`ToolCall`] that triggered this
+    /// recovery, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin_call_id: Option<String>,
 }
 
 /// A test command was executed.
@@ -430,6 +462,117 @@ mod tests {
         assert_eq!(actual.text, "caf");
         assert!(actual.truncated);
         assert_eq!(actual.original_chars, 4);
+    }
+
+    #[test]
+    fn test_tool_call_carries_an_optional_origin_call_id() {
+        let fixture = ToolCall {
+            call_id: "call-2".to_string(),
+            name: "shell".to_string(),
+            arguments: Truncated::whole("ls"),
+            success: true,
+            duration_ms: 5,
+            result_size_chars: 3,
+            result_summary: Truncated::whole("out"),
+            handle: None,
+            origin_call_id: Some("model-call-1".to_string()),
+        };
+
+        let actual = serde_json::to_value(&fixture).unwrap();
+
+        assert_eq!(actual["origin_call_id"], "model-call-1");
+    }
+
+    #[test]
+    fn test_origin_call_id_is_omitted_from_json_when_absent() {
+        let fixture = Retry {
+            operation: "model_call".to_string(),
+            attempt: 1,
+            max_attempts: Some(3),
+            reason: "timeout".to_string(),
+            origin_call_id: None,
+        };
+
+        let actual = serde_json::to_value(&fixture).unwrap();
+
+        assert!(actual.get("origin_call_id").is_none());
+    }
+
+    #[test]
+    fn test_error_and_recovery_also_carry_an_origin_call_id() {
+        let error = Error {
+            kind: "tool_error".to_string(),
+            message: "command not found".to_string(),
+            recoverable: true,
+            source: Some("tool:shell".to_string()),
+            origin_call_id: Some("call-3".to_string()),
+        };
+        let recovery = Recovery {
+            action: "recovery_hint_injected".to_string(),
+            trigger: "tool_error".to_string(),
+            outcome: None,
+            origin_call_id: Some("call-3".to_string()),
+        };
+
+        assert_eq!(serde_json::to_value(&error).unwrap()["origin_call_id"], "call-3");
+        assert_eq!(serde_json::to_value(&recovery).unwrap()["origin_call_id"], "call-3");
+    }
+
+    #[test]
+    fn test_model_call_carries_the_list_of_tool_call_ids_it_requested() {
+        let fixture = ModelCall {
+            call_id: "model-call-1".to_string(),
+            started_at: "2026-09-23T10:15:30.000Z".to_string(),
+            ended_at: "2026-09-23T10:15:31.000Z".to_string(),
+            duration_ms: 1_000,
+            model: "gemini-3.8-high".to_string(),
+            input_tokens: Some(100),
+            output_tokens: Some(20),
+            total_tokens: Some(120),
+            cached_tokens: None,
+            reasoning_tokens: None,
+            context_tokens_estimated: Some(90),
+            context_messages: 4,
+            finish_reason: Some("tool_calls".to_string()),
+            tool_call_ids: vec!["call-1".to_string(), "call-2".to_string()],
+        };
+
+        let actual = serde_json::to_value(&fixture).unwrap();
+
+        assert_eq!(actual["tool_call_ids"], serde_json::json!(["call-1", "call-2"]));
+    }
+
+    #[test]
+    fn test_context_compaction_names_what_content_was_retained() {
+        let fixture = ContextCompaction {
+            messages_before: 40,
+            messages_after: 10,
+            tokens_before_estimated: Some(20_000),
+            tokens_after_estimated: Some(4_000),
+            retained_content_kinds: vec!["reasoning_chain".to_string(), "todo_list".to_string()],
+        };
+
+        let actual = serde_json::to_value(&fixture).unwrap();
+
+        assert_eq!(
+            actual["retained_content_kinds"],
+            serde_json::json!(["reasoning_chain", "todo_list"])
+        );
+    }
+
+    #[test]
+    fn test_context_compaction_omits_retained_content_kinds_when_empty() {
+        let fixture = ContextCompaction {
+            messages_before: 40,
+            messages_after: 10,
+            tokens_before_estimated: Some(20_000),
+            tokens_after_estimated: Some(4_000),
+            retained_content_kinds: Vec::new(),
+        };
+
+        let actual = serde_json::to_value(&fixture).unwrap();
+
+        assert!(actual.get("retained_content_kinds").is_none());
     }
 
     #[test]
