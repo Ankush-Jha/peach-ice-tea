@@ -939,3 +939,17 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   `--agent forge-cheat` (real binary, tests tampered mid-run) gives 3/3 restored, integrity clean. The original
   three fixtures stay unit-only: they are one-function bugs, and their value is as fast smoke tests.
 - **TH.7 ticked.**
+
+## D-058 — Two of six fixtures had no JavaScript in git (2026-09-26)
+- **What broke:** the root `.gitignore` ignores `*.js` (build output), and that also matched the fixture
+  repositories' source and tests. `node-feature` (since TH.7) and `js-duration` (since `cfabb11b9`) were committed
+  without any `.js` file. Every run here passed because the files existed in this working tree. Any fresh clone
+  (a teammate, CI, a reviewer under HACKATHON §33) got two fixtures with nothing to test.
+- **Found by:** `git status` after adding `js-duration`'s integration test showed `meta.json` staged but not the new
+  `.js` files. `git check-ignore -v` pointed at `.gitignore:43`, and `git ls-files` showed the same gap in `node-feature`.
+- **Fix:** one negation, `!benchmarks/hackathon/fixtures/*/repo/**/*.js`, scoped to fixture repositories.
+  **Verified from a fresh clone** of `f4db04837`: `run.ts --agent reference --suite all` gives 6/6, including
+  integration. An ignored-files sweep of the harness directories found only `.DS_Store`. Per-run artifacts under
+  `benchmarks/reports/hackathon/` are ignored by design (TH.7); aggregate A/B and bake-off reports are committed.
+- **Process slip, recorded:** `f4db04837` was committed without running clippy first, against the standing rule.
+  It changed no Rust. Clippy was run right after (clean) and is included with this entry's commit.
