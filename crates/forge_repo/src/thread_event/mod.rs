@@ -1,5 +1,9 @@
 //! Storage for conversation event logs and their artifacts (R-CTX-1, T3.1).
 
+mod writer;
+
+pub use writer::EventLogWriter;
+
 use std::sync::Arc;
 
 use diesel::prelude::*;

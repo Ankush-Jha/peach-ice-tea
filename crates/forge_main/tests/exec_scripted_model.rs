@@ -267,6 +267,20 @@ fn run_exec_configured(
     extra_args: &[&str],
     extra_toml: &str,
 ) -> Run {
+    run_exec_keeping_config(project, model, agent_md, extra_env, task, extra_args, extra_toml).0
+}
+
+/// [`run_exec_configured`], also returning the run's `FORGE_CONFIG` dir (and
+/// with it forge's database) for inspection after the run.
+fn run_exec_keeping_config(
+    project: &Path,
+    model: &ScriptedModel,
+    agent_md: Option<(&str, &str)>,
+    extra_env: &[(&str, &str)],
+    task: &str,
+    extra_args: &[&str],
+    extra_toml: &str,
+) -> (Run, tempfile::TempDir) {
     let config = tempfile::tempdir().unwrap();
     let telemetry = config.path().join("telemetry.jsonl");
     std::fs::write(config.path().join(".forge.toml"), scripted_config_toml(model, extra_toml))
@@ -323,7 +337,7 @@ fn run_exec_configured(
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap()["event"].clone())
         .collect();
-    Run { exit_code: status.code(), report, telemetry }
+    (Run { exit_code: status.code(), report, telemetry }, config)
 }
 
 fn project_with_a_test() -> tempfile::TempDir {
@@ -1399,4 +1413,35 @@ fn test_the_handoff_note_survives_compaction_only_with_the_flag() {
     assert!(!has_note(&without), "a handoff note appeared without the flag");
     let last = with_flag.last().unwrap();
     assert!(last.contains("you must not rename add"), "the user's constraint was not kept verbatim");
+}
+
+#[test]
+fn test_a_run_that_compacts_leaves_its_full_history_in_the_event_log() {
+    let project = project_with_a_test();
+    let echo = |text: &'static str| {
+        Turn::Tool("shell", serde_json::json!({"command": format!("echo {text}"), "description": "echo"}))
+    };
+    let model = ScriptedModel::start(vec![echo("one"), echo("two"), echo("three"), echo("four"), Turn::Text("Done.")]);
+    let env = [("FORGE_COMPACT__MESSAGE_THRESHOLD", "6"), ("FORGE_COMPACT__RETENTION_WINDOW", "2")];
+
+    let (run, config) = run_exec_keeping_config(project.path(), &model, None, &env, "fix add", &[], "");
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let query = |sql: &str| {
+        let out = Command::new("sqlite3").arg(config.path().join(".forge.db")).arg(sql).output().unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    };
+    let compactions: u64 = query("SELECT COUNT(*) FROM thread_events WHERE kind = 'compaction'").parse().unwrap();
+    // Every call and result, including the ones summarised away from the
+    // working view, is in the log once as a message event (D-065).
+    let logged = |needle: &str| -> u64 {
+        query(&format!("SELECT COUNT(*) FROM thread_events WHERE kind = 'message' AND payload_json LIKE '%{needle}%'"))
+            .parse()
+            .unwrap()
+    };
+    assert!(compactions >= 1, "no compaction event");
+    for word in ["one", "two", "three", "four"] {
+        assert_eq!(logged(&format!("command=\\\"echo {word}")), 1, "echo {word}'s result");
+    }
+    assert_eq!(logged("\"content\":\"Done.\""), 1, "the final answer");
 }
