@@ -8,7 +8,8 @@ Legend: **[A/B]** requires an A/B report before ticking.
 
 ## MH — Hackathon track (governs; see `HACKATHON.md`, `ALIGNMENT.md`, D-017…D-022)
 Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
-- [ ] **TH.1** `R-HACK-1` one-shot autonomy: no reachable interactive prompt in `exec`; fail fast on missing config; wall-clock/request budgets.
+- [x] **TH.1** `R-HACK-1` one-shot autonomy: no reachable interactive prompt in `exec`; fail fast on missing config; wall-clock/request budgets.
+      → a test per path, the last two under a real TTY: permission confirm refused (D-053), continue-anyway → `request_limit`.
 - [ ] **TH.2** `R-HACK-2` test-integrity guard: protected-path manifest, tool + shell refusal, loud notice to the model, post-run verify + restore.
 - [ ] **TH.3** `R-HACK-6` Gemini first: capture thoughts/cached tokens, tool-schema compatibility, reasoning-effort mapping, Gemini registry.
 - [x] **TH.4** `R-HACK-3` telemetry event stream (`TelemetrySink`, internal schema, organizer adapter stub).

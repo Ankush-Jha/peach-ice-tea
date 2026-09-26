@@ -187,6 +187,12 @@ where
                     }
                 };
 
+                // harness: R-HACK-1 (D-053) — nobody can answer in an
+                // unattended run; asking stalls it until its budget.
+                if peach_harness::runtime::refuse_permission_prompt(&confirmation_msg) {
+                    return Ok(PolicyDecision { allowed: false, path });
+                }
+
                 match self
                     .infra
                     .select_one_enum::<PolicyPermission>(&confirmation_msg)

@@ -183,10 +183,14 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> ToolReg
                     .send(peach_domain::TitleFormat::error("Permission Denied"))
                     .await?;
 
-                return Ok(ToolOutput::text(
-                    Element::new("permission_denied")
-                        .cdata("User has denied the permission to execute this tool"),
-                ));
+                // harness: R-HACK-1 (D-053) — there is no user to have denied
+                // it in an unattended run; say what actually happened.
+                let reason = if peach_harness::runtime::is_non_interactive() {
+                    peach_harness::runtime::UNATTENDED_PERMISSION_REFUSAL
+                } else {
+                    "User has denied the permission to execute this tool"
+                };
+                return Ok(ToolOutput::text(Element::new("permission_denied").cdata(reason)));
             }
 
             // Validate tool modality support before execution
