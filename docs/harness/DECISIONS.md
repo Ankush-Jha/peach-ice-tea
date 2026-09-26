@@ -1061,3 +1061,39 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
     the plain summary.
   - End to end: a compacting run whose prompt says "you must not rename add" has "HANDOFF NOTE" and that sentence
     in its later requests with the flag, and no note without it.
+
+## D-064 — T3.1: an append-only event log and artifact store; replay reproduces the pre-compaction context (2026-09-26)
+- **Why (R-CTX-1):** `conversations.context` is the only copy of history, and compaction overwrites it. Reversible
+  compaction (T3.5, T3.6) and `recall` (T3.3) need the originals to still exist somewhere.
+- **Domain (`forge_domain::thread_event`, pure):**
+  - `ThreadEvent::Message { entry }` holds any context entry exactly: user, assistant with reasoning and tool calls,
+    or tool result.
+  - `ThreadEvent::Compaction { messages_before, view }` records the new working view. It deletes nothing.
+  - `replay_history` returns every message ever added; `replay_view` gives the working view with compactions applied.
+  - `events_between(before, after)` turns two snapshots into events (appends become messages; a rewrite becomes one
+    compaction). This lets T3.2's writer work from the snapshots the orchestrator already has.
+  - `ThreadEventRepository` trait.
+- **Storage (`forge_repo::ThreadEventRepositoryImpl`):**
+  - Migration `2026-09-26-000000_create_thread_events_and_artifacts` creates
+    `thread_events(conversation_id, seq, turn_id, kind, payload_json, artifact_hash, created_at)` (PK conversation_id
+    + seq) and `artifacts(hash PK, bytes, mime, size, created_at)`. `artifact_hash` is an addition to the spec's
+    columns, so GC can run by index.
+  - Appends run in one transaction with gap-free sequence numbers.
+  - Payloads of 16 KiB or more go to the artifact store, keyed by SHA-256 and deduplicated.
+  - **Cap 512 MiB.** An artifact that would exceed it stays inline in its row, so only deduplication is lost, never
+    data.
+  - `gc_artifacts` deletes artifacts that no event of a live conversation (one whose row exists) references.
+  - Event payloads are domain JSON, not repository-mirror records like `conversation_record.rs`. Replay has to be
+    exact, and a mirror would add a translation that could drift. The cost is that a breaking change to
+    `MessageEntry`'s serde shape breaks old logs; `list_events` then fails with the seq and the decode error, and
+    never returns a guessed event.
+- **Acceptance, tested:**
+  - Replaying a stored log (messages, then compaction) reproduces the pre-compaction messages byte for byte
+    (serialised JSON equal), and the view equals the compacted context.
+  - Two identical large payloads create one artifact.
+  - Over the cap, the payload is stored inline and read back intact.
+  - GC deletes the orphan's artifact and keeps the live one's.
+  - A conversation with no events (every conversation before this migration) reads as empty, not as an error.
+  - The migration is additive (`CREATE TABLE IF NOT EXISTS`), so existing databases upgrade in place.
+- **Not yet (T3.2):** nothing writes events during a run. The orchestrator append path, and making
+  `conversations.context` a projection, is the next task.
