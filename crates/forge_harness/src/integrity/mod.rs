@@ -151,3 +151,49 @@ mod tests {
         assert!(actual.contains("PROTECTED TEST FILES"));
     }
 }
+
+/// Lists every file under `root`, for the one place file discovery happens.
+///
+/// Uses `ignore::WalkBuilder`, which respects the repository's own
+/// `.gitignore` in addition to our exclude globs — a file the repo itself
+/// ignores is not a source of tests to protect. Symlinks are not followed, so
+/// a symlink pointing outside the repo cannot be used to smuggle a test
+/// file's manifest entry to an unexpected location.
+fn walk_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let walker = ignore::WalkBuilder::new(root).follow_links(false).hidden(false).build();
+    walker
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
+        .map(ignore::DirEntry::into_path)
+        .collect()
+}
+
+/// Discovers protected files under `root` and captures a manifest of them,
+/// starting the test-integrity guard for one run. `ProtectedSet::new` stays
+/// pure and testable against an explicit file list; this is the only caller
+/// that finds that list by walking a real repository.
+pub fn discover_and_capture(
+    root: &std::path::Path,
+    protect_globs: &[String],
+    exclude_globs: &[String],
+    snapshot_dir: Option<&std::path::Path>,
+) -> (ProtectedSet, Manifest) {
+    let protected = ProtectedSet::new(root, protect_globs, exclude_globs, walk_files(root));
+    let manifest = Manifest::capture(root, &protected.protected_files(), snapshot_dir);
+    (protected, manifest)
+}
+
+/// Verifies the manifest against the repository's current state, restoring
+/// any violation, and re-walks the repository first so a newly added test
+/// file is included as a candidate violation (`ViolationKind::Added`) rather
+/// than only files that existed when the manifest was captured.
+pub fn verify_and_restore(
+    root: &std::path::Path,
+    protect_globs: &[String],
+    exclude_globs: &[String],
+    manifest: &Manifest,
+) -> IntegrityReport {
+    let now = ProtectedSet::new(root, protect_globs, exclude_globs, walk_files(root));
+    let report = manifest.verify(&now.protected_files());
+    if report.is_clean() { report } else { manifest.restore(&report) }
+}
