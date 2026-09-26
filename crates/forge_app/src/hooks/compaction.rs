@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use forge_domain::{Agent, Conversation, Environment, EventData, EventHandle, ResponsePayload};
 use tracing::{debug, info};
 
-use crate::compact::Compactor;
+use crate::compaction_pipeline::Pipeline;
 
 /// Hook handler that performs context compaction when needed
 ///
@@ -38,9 +38,16 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionHandler {
             let token_count = context.token_count();
             if self.agent.compact.should_compact(context, *token_count) {
                 info!(agent_id = %self.agent.id, "Compaction triggered by hook");
-                let compacted =
-                    Compactor::new(self.agent.compact.clone(), self.environment.clone())
-                        .compact(context.clone(), false)?;
+                // harness: R-CTX-2 (T3.4) — staged pipeline; today its only
+                // stage is the `Compactor` this called directly before.
+                let outcome = Pipeline::new(
+                    self.agent.compact.clone(),
+                    self.environment.clone(),
+                    self.agent.compact.token_threshold.unwrap_or(0),
+                )
+                .run(context.clone())?;
+                debug!(stage = outcome.stage_reached, "Compaction pipeline finished");
+                let compacted = outcome.context;
                 // harness: R-EVAL-2 — record what this compaction reclaimed.
                 // The orchestrator's metrics sync deliberately preserves
                 // `compactions`, because hooks are the only writer.
