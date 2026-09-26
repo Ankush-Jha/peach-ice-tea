@@ -50,6 +50,7 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       on the next model in the profile's fallback list, with a `recovery` event, instead of exiting.
       → `FORGE_HARNESS_FALLBACK_MODELS`; quota + exhausted-retry cases fail over, a 400 does not; e2e tests (D-072).
 - [ ] **MM.5** Second-family A/Bs for the flagged work: compact tool docs (DeepSeek arm done), T2.1, T2.6, T1.2.
+      → blocked on budget: needs k = 3 A/B runs on a second model family; free tier only (D-069), after the bake-off (D-071).
 
 ## M0 — Foundations (nothing else starts until M0 is done)
 - [ ] **T0.0** Repair the eval harness so it can invoke the agent at all. 10 of 14 evals use the
@@ -78,13 +79,18 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       `MaxRequestPerTurnLimitReached` reasons onto exit codes rather than inventing new state.
       → done and reviewed; remaining autonomy gaps (followup gating, non-interactive init) belong to TH.1.
 - [ ] **T0.4** `R-EVAL-1` A/B runner over the existing 14 evals (depends T0.0, T0.2, T0.3).
+      → superseded for this project: `benchmarks/hackathon/ab.ts` is the A/B runner over the primary suite (TH.7). The 14 upstream
+        evals stay reachable through T0.0's repair; not pursued further (ALIGNMENT §3).
 - [ ] **T0.5** `R-EVAL-1` TermBench 2.0 subset suite via Harbor (pick ~30 tasks stratified by
       category; record the list in `benchmarks/suites/termbench-subset.txt`).
+      → deferred: replaced by TH.7 as the primary suite (ALIGNMENT §3, Tier 3).
 - [ ] **T0.6** Baseline report: run upstream-equivalent config on both suites × 2 model families ×
       3 seeds. Commit as `benchmarks/reports/baseline.md`. **All later A/Bs compare to this
       or to the previous shipped state.** Note: this baseline predates the non-interactive prompt
       profile (`R-LOOP-4`, T2.4), so footnote it — unattended runs can stall on clarifying questions
       and wall-time/success deltas are not comparable once T2.4 ships (`RECON.md` §5).
+      → blocked on budget: 2 families × 3 seeds × 2 suites is far beyond 50 free requests/day (D-069). Interim baseline:
+        round 1 + free screens (`benchmarks/reports/models/`, D-051, D-071).
 - [x] **T0.7** `R-EVAL-4` behavioural regression suite (parallel subagents, read-before-patch,
       todo usage, verification, truncation awareness). Must be green on baseline.
       Note: R-EVAL-4 also requires tests gated on R-LOOP-1/R-LOOP-2/R-CTX-3, which land in M2/M3 —
@@ -118,10 +124,16 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       → built behind `FORGE_HARNESS_PARALLEL_READONLY=1` (default off) with overlap/order specs and a real-binary
       test (D-041). Unticked pending A/B.
 - [ ] **T2.2** `R-LOOP-2` job registry + `run_in_background` for shell + `job_output` / `job_wait`.
+      → deferred: background jobs pay off on long commands; every fixture's tests run in under a second, so there is nothing
+        to measure yet. Revisit with T3.12's long tasks.
 - [ ] **T2.3** `R-LOOP-2` batched completion delivery in tool-result format + keep-alive when the
       model stops with jobs running; background subagents. **[A/B]**
+      → deferred with T2.2 (depends on it).
 - [ ] **T2.4** `R-LOOP-4` non-interactive profile (prompt variant, followup disabled); ambiguous-task eval. **[A/B]**
+      → non-interactive half done as TH.1 (followup answered, prompts refused; D-031, D-048, D-053); the prompt-variant half
+        is `[A/B]` and waits on budget (D-069).
 - [ ] **T2.5** `R-LOOP-3` progressive reasoning schedule behind config; ship on only if A/B wins. **[A/B]**
+      → deferred: `[A/B]`; reasoning controls differ across the free models, so it waits for the bake-off's winner (D-069, D-071).
 - [ ] **T2.6** `R-TOOL-3` pre-dispatch correction layer + correction counters. **[A/B]**
       → built behind `FORGE_HARNESS_TOOL_CORRECTION=1` (default off): unambiguous key renames, `recovery` events,
       real-binary test (D-042). Unticked pending A/B.
@@ -154,31 +166,49 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [ ] **T3.11** `R-CTX-7` soft/hard triggers + `R-CTX-8` cache accounting. **[A/B]**
       → soft trigger (S0+S1 only) behind `FORGE_HARNESS_SOFT_COMPACTION`; cache rate around compactions in the report (D-076). A/B pending.
 - [ ] **T3.12** Long-horizon eval suite (≥ 60-turn tasks) and final context-engine A/B. **[A/B]**
+      → blocked on budget: one ≥ 60-turn run exceeds a day's 50 free requests (D-069).
 - [ ] **T3.13** `R-EVAL-4` completion: extend the T0.7 behavioural suite with the tests that could not
       exist in M0 — parallel independent read-only tools (after T2.1), background job usage for long
       commands (after T2.2), and recall-when-needed (after T3.3). Closes the gap in `RECON.md` §5.
+      → deferred: its checks need real runs that use subagents, background jobs (T2.2) and recall (flagged, D-066); T0.7's
+        subagent check moved here (D-078).
 
 ## M4 — Safety
 - [ ] **T4.1** `R-SAFE-1` ask-by-default policy + TUI approval prompt + `--yolo`.
+      → deferred: interactive-only by D-022 (an unattended judged run must never ask); Tier 3.
 - [ ] **T4.2** `R-SAFE-2` Linux Landlock/bwrap isolation behind `--isolate`.
+      → deferred: Tier 3 (ALIGNMENT §3); the organisers provide the evaluation sandbox.
 - [ ] **T4.3** `R-SAFE-2` macOS sandbox-exec profile.
+      → deferred: Tier 3, as T4.2.
 
 ## M5 — Protocol
 - [ ] **T5.1** `R-PROTO-1` `forge_protocol` crate: initialize, thread, turn, item types; schemars.
+      → deferred: Tier 3 — the protocol server is not evaluated (ALIGNMENT §3).
 - [ ] **T5.2** `R-PROTO-2/3` `forge_app_server` runtime: stdio JSONL, thread manager, translation
       layer from `ChatResponse`; thread start/resume/list/read; turn start/interrupt; item lifecycle.
+      → deferred: Tier 3, with T5.1.
 - [ ] **T5.3** `R-PROTO-3` fork/archive using the event log.
+      → deferred: Tier 3, with T5.1 (the event log it needs now exists, D-064).
 - [ ] **T5.4** `R-PROTO-4` approvals as server requests wired to the policy engine.
+      → deferred: Tier 3, with T5.1.
 - [ ] **T5.5** `R-PROTO-5` codegen commands + CI check for generated files.
+      → deferred: Tier 3, with T5.1.
 - [ ] **T5.6** `R-PROTO-6` TS reference client + recorded-session conformance tests.
+      → deferred: Tier 3, with T5.1.
 - [ ] **T5.7** `R-PROTO-7` `exec --json` streams protocol notifications.
+      → deferred: Tier 3, with T5.1 (`exec --json` already emits the outcome line, T0.3).
 
 ## M6 — Prompts, extensibility, memory
 - [x] **T6.1** `R-PROMPT-1` per-component prompt token report.
       → `context_composition` at each conversation's first request (by role and source) + report line (D-047).
 - [ ] **T6.2** `R-PROMPT-2` compress `task.md` behind behaviour tests. **[A/B]**
+      → deferred: Tier 3 and `[A/B]` (D-069).
 - [ ] **T6.3** `R-EXT-1` external hooks incl. `pre_compact` + save-token-jev-compatible example.
+      → deferred: Tier 3; redaction for hook payloads is ready (T3.7).
 - [ ] **T6.4** `R-MEM-1` project memory file + `memory_write` tool.
       → memory file loaded (bounded, loud clip); `memory_write` deferred: it would edit the judged repo (D-067).
 - [ ] **T6.5** `R-TOOL-4` model profiles (Anthropic, OpenAI) consolidating per-model defaults.
+      → deferred until the bake-off gives per-model evidence (D-071); per-provider profiles and per-role models exist
+        (`configuration/profiles/`, MM.3).
 - [ ] **T6.6** `R-CTX-9` entry-point discovery hint. **[A/B]**
+      → deferred: Tier 3 and `[A/B]`.
