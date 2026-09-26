@@ -856,3 +856,57 @@ fn test_a_test_run_that_never_reached_the_code_gets_a_recovery_hint() {
         run.telemetry
     );
 }
+
+#[test]
+fn test_line_numbers_flag_changes_only_the_default() {
+    let project = calc_project();
+    let file = project.path().join("calc.py");
+    let model = ScriptedModel::start(vec![
+        Turn::Tool("read", serde_json::json!({"file_path": file})),
+        Turn::Tool("read", serde_json::json!({"file_path": file, "show_line_numbers": true})),
+        Turn::Text("Done."),
+    ]);
+
+    let run = run_exec_with_env(project.path(), &model, None, &[("FORGE_HARNESS_LINE_NUMBERS_OFF", "1")]);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let requests = model.requests();
+    // The tool results are JSON-escaped inside the request body.
+    assert!(requests[1].contains("def add(a, b):\\n    return a - b"), "unnumbered read expected");
+    assert!(!requests[1].contains("1:def add"));
+    assert!(requests[2].contains("1:def add"), "an explicit request for numbers is honoured");
+}
+
+#[test]
+fn test_compacted_tool_docs_shrink_every_request_and_drop_only_examples() {
+    let run_first_request = |flag: &str| {
+        let project = calc_project();
+        let model = ScriptedModel::start(vec![Turn::Text("Done.")]);
+        let run = run_exec_with_env(project.path(), &model, None, &[("FORGE_HARNESS_COMPACT_TOOL_DOCS", flag)]);
+        assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+        model.requests()[0].clone()
+    };
+
+    let full = run_first_request("0");
+    let compact = run_first_request("1");
+
+    assert!(full.contains("<example"));
+    let body: serde_json::Value = serde_json::from_str(&compact).unwrap();
+    let tools = body["tools"].to_string();
+    let where_found: Vec<String> = compact
+        .match_indices("<example")
+        .map(|(i, _)| compact[i.saturating_sub(80)..(i + 40).min(compact.len())].to_string())
+        .collect();
+    // Tools only: the system prompt has examples of its own, which this flag
+    // deliberately leaves alone (compressing it is T6.2, an A/B task).
+    assert!(!tools.contains("<example"), "in tools: {where_found:?}");
+    // Rules survive: a line from todo_write's rules and one from task's notes.
+    assert!(compact.contains("Exactly ONE task must be"));
+    assert!(compact.contains("Launch multiple agents concurrently whenever possible"));
+    assert!(
+        compact.len() * 100 < full.len() * 90,
+        "expected at least a 10% smaller request: {} -> {} bytes",
+        full.len(),
+        compact.len()
+    );
+}
