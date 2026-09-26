@@ -115,6 +115,7 @@ impl<S: Services + EnvironmentInfra<Config = forge_config::ForgeConfig>> ToolReg
                             trigger: format!("{}: `{from}` is not a parameter; used `{to}`", input.name),
                             outcome: None,
                             origin_call_id: input.call_id.as_ref().map(|id| id.as_str().to_string()),
+                            attribution: Some(forge_harness::telemetry::event::FailureAttribution::Model),
                         },
                     ));
                 }
