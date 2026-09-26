@@ -182,7 +182,8 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> PeachAp
                 tracing_handler
                     .clone()
                     .and(telemetry_handler.clone())
-                    .and(CompactionHandler::new(agent.clone(), environment.clone())),
+                    .and(CompactionHandler::new(agent.clone(), environment.clone()))
+                    .and(telemetry_handler.compaction_observer()),
             )
             .on_toolcall_start(tracing_handler.clone().and(telemetry_handler.clone()))
             .on_toolcall_end(tracing_handler.and(telemetry_handler))
