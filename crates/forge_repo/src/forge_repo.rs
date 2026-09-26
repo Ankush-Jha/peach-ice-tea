@@ -26,6 +26,7 @@ use url::Url;
 use crate::agent::ForgeAgentRepository;
 use crate::context_engine::ForgeContextEngineRepository;
 use crate::conversation::ConversationRepositoryImpl;
+use crate::thread_event::{EventLogWriter, ThreadEventRepositoryImpl};
 use crate::database::{DatabasePool, PoolConfig};
 use crate::fs_snap::ForgeFileSnapshotService;
 use crate::fuzzy_search::ForgeFuzzySearchRepository;
@@ -42,6 +43,8 @@ pub struct ForgeRepo<F> {
     infra: Arc<F>,
     file_snapshot_service: Arc<ForgeFileSnapshotService>,
     conversation_repository: Arc<ConversationRepositoryImpl>,
+    // harness: R-CTX-1 (T3.2) — the event log every save appends to.
+    event_log: Arc<EventLogWriter<ThreadEventRepositoryImpl>>,
     mcp_cache_repository: Arc<CacacheStorage>,
     provider_repository: Arc<ForgeProviderRepository<F>>,
     chat_repository: Arc<ForgeChatRepository<F>>,
@@ -69,6 +72,7 @@ impl<
             db_pool.clone(),
             env.workspace_hash(),
         ));
+        let event_log = Arc::new(EventLogWriter::new(Arc::new(ThreadEventRepositoryImpl::new(db_pool.clone()))));
 
         let mcp_cache_repository = Arc::new(CacacheStorage::new(
             env.cache_dir().join("mcp_cache"),
@@ -87,6 +91,7 @@ impl<
             infra,
             file_snapshot_service,
             conversation_repository,
+            event_log,
             mcp_cache_repository,
             provider_repository,
             chat_repository,
@@ -113,9 +118,17 @@ impl<F: Send + Sync> SnapshotRepository for ForgeRepo<F> {
 #[async_trait::async_trait]
 impl<F: Send + Sync> ConversationRepository for ForgeRepo<F> {
     async fn upsert_conversation(&self, conversation: Conversation) -> anyhow::Result<()> {
+        // harness: R-CTX-1 (T3.2, D-065) — the working view is saved first
+        // and stays authoritative; the log records what changed. A logging
+        // failure is reported and never fails the save (principle 5).
+        let logged = conversation.clone();
         self.conversation_repository
             .upsert_conversation(conversation)
-            .await
+            .await?;
+        if let Err(error) = self.event_log.record(&logged).await {
+            tracing::warn!(conversation_id = %logged.id, ?error, "Could not append to the conversation's event log");
+        }
+        Ok(())
     }
 
     async fn get_conversation(
