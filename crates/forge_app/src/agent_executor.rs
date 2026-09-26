@@ -190,7 +190,11 @@ impl<S: Services + EnvironmentInfra<Config = forge_config::ForgeConfig>> AgentEx
     /// generic tool error that tells it to correct its call, and it retries a
     /// delegation that cannot succeed. Name the model, say it is a provider
     /// failure, and tell the parent to carry on itself (fail open, principle 5).
-    async fn subagent_model_failed(&self, agent_id: &AgentId, error: anyhow::Error) -> anyhow::Error {
+    async fn subagent_model_failed(
+        &self,
+        agent_id: &AgentId,
+        error: anyhow::Error,
+    ) -> anyhow::Error {
         let model = match self.services.get_agent(agent_id).await {
             Ok(Some(agent)) => format!("{}/{}", agent.provider, agent.model),
             _ => "its model".to_string(),

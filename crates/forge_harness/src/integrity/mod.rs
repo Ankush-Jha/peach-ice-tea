@@ -18,6 +18,7 @@
 
 mod globs;
 mod manifest;
+pub mod mixed;
 mod shell_guard;
 
 pub use globs::{DEFAULT_EXCLUDE_GLOBS, DEFAULT_PROTECTED_GLOBS, ProtectedSet};
@@ -63,6 +64,27 @@ pub fn check_tool_path(protected: &ProtectedSet, op: WriteOp, path: &std::path::
          tests pass, rather than changing the tests.",
         op.describe(),
         shown
+    ))
+}
+
+/// Plain-text notice naming the mixed files whose test sections are watched,
+/// for the model's context. `None` when there are none.
+pub fn test_config_notice(manifest: &Manifest) -> Option<String> {
+    let watched: Vec<&str> = manifest
+        .test_sections
+        .iter()
+        .filter(|s| !s.canonical.is_empty())
+        .map(|s| s.path.as_str())
+        .collect();
+    if watched.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "TEST CONFIGURATION — the test sections of these files must not change: {}.\n\
+         That means test scripts, test-runner settings (jest, pytest, tox) and test targets. \
+         Other edits to these files are fine. Changes to their test sections are reported as \
+         integrity violations after the run.",
+        watched.join(", ")
     ))
 }
 
@@ -168,6 +190,18 @@ fn walk_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
         .collect()
 }
 
+/// `files` relative to `root`, without the excluded trees (dependencies,
+/// build output), whose `package.json` files are not the repository's own.
+fn relative_paths(root: &std::path::Path, files: &[std::path::PathBuf], exclude_globs: &[String]) -> Vec<String> {
+    let excluded: Vec<glob::Pattern> = exclude_globs.iter().filter_map(|g| glob::Pattern::new(g).ok()).collect();
+    files
+        .iter()
+        .filter_map(|path| path.strip_prefix(root).ok())
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+        .filter(|relative| !excluded.iter().any(|pattern| pattern.matches(relative)))
+        .collect()
+}
+
 /// Discovers protected files under `root` and captures a manifest of them,
 /// starting the test-integrity guard for one run. `ProtectedSet::new` stays
 /// pure and testable against an explicit file list; this is the only caller
@@ -178,8 +212,14 @@ pub fn discover_and_capture(
     exclude_globs: &[String],
     snapshot_dir: Option<&std::path::Path>,
 ) -> (ProtectedSet, Manifest) {
-    let protected = ProtectedSet::new(root, protect_globs, exclude_globs, walk_files(root));
-    let manifest = Manifest::capture(root, &protected.protected_files(), snapshot_dir);
+    let files = walk_files(root);
+    let mut manifest = Manifest::capture(
+        root,
+        &ProtectedSet::new(root, protect_globs, exclude_globs, files.clone()).protected_files(),
+        snapshot_dir,
+    );
+    let protected = ProtectedSet::new(root, protect_globs, exclude_globs, files.clone());
+    manifest.test_sections = mixed::capture(root, &relative_paths(root, &files, exclude_globs));
     (protected, manifest)
 }
 
@@ -195,7 +235,13 @@ pub fn verify_and_restore(
 ) -> IntegrityReport {
     let now = ProtectedSet::new(root, protect_globs, exclude_globs, walk_files(root));
     let report = manifest.verify(&now.protected_files());
-    if report.is_clean() { report } else { manifest.restore(&report) }
+    let mut report = if report.is_clean() { report } else { manifest.restore(&report) };
+    // D-054: test sections of mixed files are flagged, never restored.
+    report.checked += manifest.test_sections.len();
+    report.violations.extend(mixed::changed(root, &manifest.test_sections).into_iter().map(|path| {
+        Violation { path, kind: ViolationKind::TestConfigChanged, restored: false }
+    }));
+    report
 }
 
 /// Telemetry events describing a post-run integrity check: one summary
@@ -230,8 +276,11 @@ pub fn telemetry_events(report: &IntegrityReport) -> Vec<crate::telemetry::Telem
             ViolationKind::Modified => "modified",
             ViolationKind::Deleted => "deleted",
             ViolationKind::Added => "added",
+            ViolationKind::TestConfigChanged => "test_config_changed",
         };
-        let (event_kind, detail) = if violation.restored {
+        let (event_kind, detail) = if violation.kind == ViolationKind::TestConfigChanged {
+            ("violation", "its test configuration changed during the run; flagged, not restored".to_string())
+        } else if violation.restored {
             ("restored", format!("{kind} during the run; restored to its pre-run state"))
         } else {
             ("violation", format!("{kind} during the run; could NOT be restored"))

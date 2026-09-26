@@ -98,7 +98,10 @@ impl ExecHarness {
             &exclude_globs,
             snapshot.as_ref().map(tempfile::TempDir::path),
         );
-        let notice = integrity::model_notice(&protected);
+        let notice = match (integrity::model_notice(&protected), integrity::test_config_notice(&manifest)) {
+            (Some(files), Some(config)) => Some(format!("{files}\n\n{config}")),
+            (files, config) => files.or(config),
+        };
 
         let test_command = forge_harness::verify::detect(&repo_root, outputs.test_command);
         runtime::install(
@@ -295,6 +298,7 @@ fn to_exec_integrity(report: &IntegrityReport) -> ExecIntegrity {
                     ViolationKind::Modified => "modified",
                     ViolationKind::Deleted => "deleted",
                     ViolationKind::Added => "added",
+                    ViolationKind::TestConfigChanged => "test_config_changed",
                 }
                 .to_string(),
                 restored: violation.restored,
