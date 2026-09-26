@@ -903,3 +903,20 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   evidence is GPT-specific. With GPT models now in scope (D-049), it becomes an `[A/B]` candidate on a GPT model,
   not a default. The documenting test `test_t0_8_required_currently_orders_after_properties` will notice if this
   changes. **T0.8 ticked** (enforced part done; ordering deferred by decision).
+
+## D-056 — A SIGKILLed run now leaves a bundle that says so and can be restored from; TH.5 closed (2026-09-26)
+- **Gap:** TH.5's one recorded hole was SIGKILL (D-038). Nothing can run after it, and everything except
+  `prompt.txt` and streamed telemetry was written at the end, so a killed run left no manifest. A missing
+  manifest looks the same as "never ran". The integrity snapshot survived in the temp dir, but nothing said
+  where it was, so a tampered test could not be restored from the bundle.
+- **Fix:** at start, right after the integrity manifest is captured, the bundle gets `integrity.baseline.json`
+  (each protected file's pre-run hash and size, the snapshot location, and the mixed-file test sections) and a
+  **provisional `manifest.json` with outcome `incomplete`**. Its note says the process was killed and points at
+  the baseline. Every normal exit, signals included, overwrites it via `seal()`. The note is not carried into
+  the final manifest. Evidence layout version → 0.2.0.
+- **Proof:** `exec_integrity.rs::test_a_sigkilled_run_leaves_a_bundle_that_says_so_and_can_be_restored` tampers
+  with a test mid-run, then sends SIGKILL. The bundle's manifest reads `incomplete`, and the baseline lists the
+  test's original size and a snapshot copy with the original content. It failed before the change (no
+  `manifest.json`). The completed-bundle test's file list gains `integrity.baseline.json`: an intended layout
+  change, not a weakened assertion.
+- **TH.5 ticked.** The residual limit is inherent: after SIGKILL there is no transcript, report or automatic restore.

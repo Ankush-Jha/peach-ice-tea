@@ -219,3 +219,53 @@ fn test_a_signal_still_restores_tests_and_writes_the_bundle() {
     assert_eq!(tests["ran"], false);
     assert!(bundle.join("manifest.json").exists() && bundle.join("report.md").exists());
 }
+
+#[cfg(unix)]
+#[test]
+fn test_a_sigkilled_run_leaves_a_bundle_that_says_so_and_can_be_restored() {
+    // SIGKILL cannot be caught, so nothing can run at the end. What a killed
+    // run can still leave is what was written at the start: a manifest that
+    // says the run never finished, and the integrity baseline with the
+    // location of the pre-run copies, so the tests can be checked and restored.
+    let config = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let evidence = tempfile::tempdir().unwrap();
+    write_unroutable_provider_config(config.path());
+    std::fs::create_dir_all(project.path().join("tests")).unwrap();
+    std::fs::write(project.path().join("tests/test_math.py"), ORIGINAL_TEST).unwrap();
+    let bundle = evidence.path().join("bundle");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_forge"))
+        .args(["exec", "fix add", "--json", "--evidence-dir"])
+        .arg(&bundle)
+        .env("FORGE_CONFIG", config.path())
+        .env("FORGE_TEST_BOGUS_KEY", "bogus-key-value")
+        .current_dir(project.path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    wait_for_run_start(&bundle.join("telemetry.jsonl"));
+    std::fs::write(project.path().join("tests/test_math.py"), "def test_add():\n    pass\n").unwrap();
+    child.kill().unwrap();
+    child.wait().unwrap();
+
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(bundle.join("manifest.json")).unwrap()).unwrap();
+    let baseline: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(bundle.join("integrity.baseline.json")).unwrap(),
+    )
+    .unwrap();
+    let snapshot = Path::new(baseline["snapshot_dir"].as_str().unwrap()).join("tests/test_math.py");
+    let actual = (
+        manifest["outcome"].clone(),
+        baseline["files"]["tests/test_math.py"]["bytes"].clone(),
+        std::fs::read_to_string(&snapshot).unwrap(),
+    );
+    let _ = std::fs::remove_dir_all(baseline["snapshot_dir"].as_str().unwrap());
+
+    let expected = (serde_json::json!("incomplete"), serde_json::json!(ORIGINAL_TEST.len()), ORIGINAL_TEST.to_string());
+    assert_eq!(actual, expected);
+    assert!(bundle.join("prompt.txt").exists());
+}
