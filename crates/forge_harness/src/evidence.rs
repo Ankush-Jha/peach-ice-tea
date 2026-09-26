@@ -17,8 +17,9 @@ use sha2::{Digest, Sha256};
 
 use crate::identity::HarnessIdentity;
 
-/// Version of this directory layout, recorded in the manifest.
-pub const EVIDENCE_LAYOUT_VERSION: &str = "0.1.0";
+/// Version of this directory layout, recorded in the manifest. 0.2.0 adds
+/// `integrity.baseline.json` and the provisional manifest (D-056).
+pub const EVIDENCE_LAYOUT_VERSION: &str = "0.2.0";
 
 /// The frozen prompt, exactly as given to `exec` (redacted).
 pub const PROMPT: &str = "prompt.txt";
@@ -28,6 +29,9 @@ pub const TRANSCRIPT: &str = "transcript.json";
 pub const TELEMETRY: &str = "telemetry.jsonl";
 /// The post-run test-integrity result.
 pub const INTEGRITY: &str = "integrity.json";
+/// The pre-run integrity manifest: hashes of every protected file and where
+/// their copies are kept. Written at the start, so it survives a SIGKILL.
+pub const INTEGRITY_BASELINE: &str = "integrity.baseline.json";
 /// Every repository change against the commit the run started from.
 pub const DIFF: &str = "diff.patch";
 /// The harness's own final test run.
@@ -154,6 +158,30 @@ impl Evidence {
         if let Err(error) = std::fs::write(self.path(MANIFEST), text) {
             tracing::warn!(?error, "Could not write evidence manifest");
         }
+    }
+}
+
+impl Evidence {
+    /// Writes a provisional `manifest.json` with outcome `incomplete`, at the
+    /// start of the run. Every normal exit replaces it via
+    /// [`Evidence::write_manifest`]; if it is still there, the process was
+    /// killed (SIGKILL cannot be caught), and it says so and where the
+    /// pre-run test copies are. Its note is not kept for the final manifest.
+    ///
+    /// # Arguments
+    /// * `started_at` - RFC 3339 time the run started.
+    pub fn write_provisional_manifest(&mut self, started_at: &str) {
+        let notes = std::mem::replace(
+            &mut self.notes,
+            vec![format!(
+                "Provisional manifest written when the run started. If it is still here, the process \
+                 was killed before it could finish (e.g. SIGKILL): no transcript, integrity check or \
+                 report was written, and the repository may still hold the run's changes. \
+                 {INTEGRITY_BASELINE} lists every protected file's pre-run hash and where its copy is kept."
+            )],
+        );
+        self.write_manifest(started_at, "incomplete");
+        self.notes = notes;
     }
 }
 
