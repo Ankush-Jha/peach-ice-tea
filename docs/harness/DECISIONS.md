@@ -99,3 +99,29 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Consequences:** M0 grows one task. A failed baseline can no longer be misread as a regression.
   The longer-term fix is that T0.3's JSON metrics line should replace `jq`-scraping outright, so T0.0
   should avoid investing in the transcript-dump approach beyond what unblocks a baseline.
+
+## D-012 — Correction to D-011: `FORGE_DEBUG_REQUESTS` works; T0.0 is TypeScript-only (2026-09-20)
+- **Context:** D-011 and the first draft of `RECON.md` §2 stated that `FORGE_DEBUG_REQUESTS` "has never existed in
+  `crates/`", inferred from `grep -rn FORGE_DEBUG_REQUESTS crates/` returning zero hits. The grep is accurate; the
+  inference was wrong. `ForgeConfig` has a `debug_requests: Option<PathBuf>` field
+  (`forge_config/src/config.rs:173`) and `ConfigReader::read_env()` (`forge_config/src/reader.rs:104`) maps every
+  `FORGE_<FIELD>` env var onto `ForgeConfig` generically, with `__` as the only nesting separator — so no literal
+  string exists to grep for. It is consumed by `write_debug_request` (`forge_infra/src/http.rs:238`).
+- **Verified empirically** against `target/debug/forge`: `FORGE_DEBUG_REQUESTS=/tmp/probe.json forge config list`
+  prints `debug_requests = "/tmp/probe.json"`; `FORGE_SESSION__PROVIDER_ID`/`FORGE_SESSION__MODEL_ID` populate
+  `[session]`; `FORGE_AUTO_DUMP=json` sets `auto_dump`. Conversely `--provider` exits 2
+  ("unexpected argument"), and `FORGE_OVERRIDE_PROVIDER`/`FORGE_OVERRIDE_MODEL` — used only by `todo_write_usage`,
+  a third naming scheme D-011 missed — map to no `ForgeConfig` field and are silently ignored.
+- **Decision:** T0.0 stays in scope but shrinks to a TypeScript-only repair of `benchmarks/evals/*/task.yml`:
+  replace `--provider X --model Y` and the `FORGE_OVERRIDE_*` pair with
+  `FORGE_SESSION__PROVIDER_ID=X FORGE_SESSION__MODEL_ID=Y`, and **keep** `FORGE_DEBUG_REQUESTS` as-is. No Rust
+  change, and no need to choose a replacement for the transcript-dump convention as D-011 assumed.
+- **Consequences:** M0 is less blocked than D-011 implied — the only genuinely dead mechanisms are the two
+  provider/model ones. Two caveats carry forward to T0.4 and are recorded in `RECON.md` §2: `debug_requests` is
+  JSONL and captures requests only (never the final assistant message), and the evals' `jq` filters assume the
+  OpenAI wire shape, so an Anthropic-native arm would silently match nothing. R-EVAL-1 requires ≥2 model families,
+  so the Anthropic arm must either route through an OpenAI-compatible gateway or switch to
+  `FORGE_AUTO_DUMP=json`, whose `Context` structure is provider-agnostic and also carries tool results and the
+  final message.
+- **Process note:** the error was reasoning from the absence of a grep hit to the absence of a feature. For a
+  config value, check the config struct and its env-mapping layer before concluding it is unimplemented.

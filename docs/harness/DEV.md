@@ -81,10 +81,20 @@ ln -sf $(pwd)/target/debug/forge ~/bin/forgee   # ~/bin must be on PATH
 ```
 
 > **Warning — the eval harness does not currently work.** 10 of the 14 evals invoke
-> `forgee --provider ... --model ...`, flags that were removed from the CLI in `b3ec4d17a`,
-> and 11 rely on a `FORGE_DEBUG_REQUESTS` env var that does not exist anywhere in `crates/`.
-> See `docs/harness/RECON.md` and task **T0.0** in `TASKS.md`. Do not interpret a 0% pass rate
-> as a regression until T0.0 is done.
+> `forgee --provider ... --model ...`, flags removed from the CLI in `b3ec4d17a` (clap exits 2), and
+> `todo_write_usage` uses `FORGE_OVERRIDE_PROVIDER`/`FORGE_OVERRIDE_MODEL`, which map to no config field.
+> See `docs/harness/RECON.md` §2 and task **T0.0**. Do not interpret a 0% pass rate as a regression
+> until T0.0 is done.
+
+Any `ForgeConfig` field can be set per-process via a `FORGE_<FIELD>` env var (`__` separates nested
+fields; a single `_` does not). This is parallel-safe — unlike `forge config set`, which does an
+unlocked read-modify-write of a shared `~/.forge/.forge.toml`. Useful ones:
+
+```bash
+FORGE_SESSION__PROVIDER_ID=open_router FORGE_SESSION__MODEL_ID=anthropic/claude-sonnet-4.5   # select provider+model
+FORGE_DEBUG_REQUESTS=/path/to/context.json    # append each outgoing provider request body (JSONL)
+FORGE_AUTO_DUMP=json                          # write a full structured Conversation dump on TaskComplete
+```
 
 ## Guardrails
 

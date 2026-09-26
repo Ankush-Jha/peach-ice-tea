@@ -184,7 +184,7 @@ run:
        Trade-offs: More flexible and extensible architecture, but adds abstraction layers and complexity. The current approach of checking tool type is simpler for the immediate use case.
     EOF
   - |  
-      FORGE_DEBUG_REQUESTS='{{dir}}/context.json' forgee --provider open_router --model {{model}} -p '{{task}}'
+      FORGE_SESSION__PROVIDER_ID=open_router FORGE_SESSION__MODEL_ID={{model}} FORGE_DEBUG_REQUESTS='{{dir}}/context.json' forgee -p '{{task}}'
 parallelism: 2
 timeout: 180
 early_exit: true

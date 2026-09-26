@@ -22,7 +22,7 @@ run:
     }
     EOF
   - cd test_repo && git add example.js
-  - cd test_repo && forgee --provider {{provider}} --model {{model}} commit --preview
+  - cd test_repo && FORGE_COMMIT__PROVIDER_ID={{provider}} FORGE_COMMIT__MODEL_ID={{model}} forgee commit --preview
   
 parallelism: 2
 timeout: 120
