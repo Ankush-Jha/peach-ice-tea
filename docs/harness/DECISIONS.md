@@ -732,3 +732,19 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   running from `target/debug/forge` never had its binary replaced mid-run.
 - TH.4 is ticked: every event in `event.rs` is now emitted. What remains is the organizer adapter, blocked
   on the unpublished schema (D-020).
+
+## D-048 — A project `.mcp.json` blocked unattended runs under a terminal; now refused without asking (2026-09-25)
+- **Found by reproduction, not assumption:** forge asks whether to trust a project's MCP servers. Run under a
+  pseudo-terminal (`script`), which is how a judge's shell runs it, `exec` drew the "Accept / Reject" prompt
+  and sat on it until its budget, with **0 model calls**. With no budget it would wait forever. The
+  `followup` fix (D-031) did not cover this path, and the earlier never-block tests missed it because they
+  run without a TTY, where the widget returns immediately.
+- **Decision:** in an unattended run, project-local MCP servers are rejected without prompting
+  (`runtime::refuse_untrusted_mcp`, `prompt_suppressed{prompt_kind: mcp_trust}`). The rejection is **not**
+  persisted to the trust store, so the person's later interactive choice is unaffected. Starting an
+  unreviewed server in the judged environment would also be an unauthorised external service (§31).
+- **Proof:** `exec_never_blocks.rs` runs `exec` under `script` with a project `.mcp.json`. No prompt appears,
+  and the run reaches the provider. Disabling the guard makes the test fail with "the trust prompt was shown".
+- **Flaky upstream test, not touched:** `forge_main info::tests::test_format_path_for_display_no_home` failed
+  once in a full parallel run and passed 4/4 in isolation and on the next full run (2944/2944). It is likely
+  sensitive to shared environment state under parallelism, as with D-031's note.

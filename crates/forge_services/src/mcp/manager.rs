@@ -93,6 +93,13 @@ where
             return Ok(McpConfig::default());
         }
 
+        // harness: R-HACK-1 / D-048 — never ask in an unattended run. The
+        // rejection is not persisted, so the person's own choice later is
+        // unaffected.
+        if forge_harness::runtime::refuse_untrusted_mcp(local_path) {
+            return Ok(McpConfig::default());
+        }
+
         let prompt = format_trust_prompt(local_path);
         match self
             .infra
