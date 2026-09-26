@@ -424,7 +424,7 @@ impl<
 
         let operation = execution_result?;
         // harness: R-HACK-7 — edits and test runs, with exact exit codes.
-        crate::hooks::observe_for_verification(&operation, started.elapsed());
+        let recovery_hint = crate::hooks::observe_for_verification(&operation, started.elapsed());
 
         // Send formatted output message
         if let Some(output) = operation.to_content(&env) {
@@ -433,8 +433,12 @@ impl<
 
         let truncation_path = self.dump_operation(&operation).await?;
 
-        context.with_metrics(|metrics| {
+        let output = context.with_metrics(|metrics| {
             operation.into_tool_output(tool_kind, truncation_path, &env, &config, metrics)
+        })?;
+        Ok(match recovery_hint {
+            Some(hint) => output.combine(ToolOutput::text(hint)),
+            None => output,
         })
     }
 }
