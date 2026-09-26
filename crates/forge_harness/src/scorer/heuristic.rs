@@ -13,6 +13,11 @@ use super::RelevanceScorer;
 /// by truncating, expensive to keep verbatim.
 const LARGE_RESULT_CHARS: f32 = 4_000.0;
 
+/// Lowest score a call referenced by later text can get, for both
+/// `keep_call` and `keep_result`: comfortably above the default 0.5
+/// threshold, so the decision is a keep.
+const REFERENCED_FLOOR: f32 = 0.8;
+
 /// A scorer that needs no model at all.
 ///
 /// Scores are built from four factors, each documented on the field of the
@@ -96,6 +101,15 @@ impl RelevanceScorer for HeuristicScorer {
                 let keep_result =
                     (0.35 + 0.2 * recency_score + error_bonus - size_penalty - recoverable_penalty).clamp(0.0, 1.0);
 
+                // R-CTX-4: a result whose path or file name the conversation
+                // mentioned afterwards is still in use, whatever its size or
+                // tool; never score it below a keep.
+                let (keep_call, keep_result) = if call.referenced_later {
+                    (keep_call.max(REFERENCED_FLOOR), keep_result.max(REFERENCED_FLOOR))
+                } else {
+                    (keep_call, keep_result)
+                };
+
                 let decision = decide(Some(keep_call), Some(keep_result), false, config);
 
                 ScoredCall {
@@ -161,6 +175,23 @@ mod tests {
         let read_score = actual.iter().find(|scored| scored.call_id == "read").unwrap().keep_result.unwrap();
         let shell_score = actual.iter().find(|scored| scored.call_id == "shell").unwrap().keep_result.unwrap();
         assert!(read_score < shell_score, "large recoverable read {read_score} should score below small shell result {shell_score}");
+    }
+
+    #[test]
+    fn test_a_read_the_conversation_referred_to_is_kept_and_an_unreferenced_one_is_not() {
+        let read = |id: &str| ToolCallSummary::new(id, "read", r#"{"file_path":"/repo/src/stats.py"}"#, ResultStatus::Ok, 20_000, 5);
+        let later = "The bug is in stats.py: dedupe keeps insertion order.";
+        let calls = vec![
+            read("referenced").referenced_later(super::super::plan::is_referenced_later(r#"{"file_path":"/repo/src/stats.py"}"#, later)),
+            read("unreferenced"),
+        ];
+        let config = ScorerConfig::default();
+
+        let actual = HeuristicScorer::new().score(&calls, "goal", &config).unwrap();
+
+        let decision = |id: &str| actual.iter().find(|scored| scored.call_id == id).unwrap().decision;
+        assert_eq!(decision("referenced"), super::super::plan::Decision::Keep);
+        assert_ne!(decision("unreferenced"), super::super::plan::Decision::Keep);
     }
 
     #[test]

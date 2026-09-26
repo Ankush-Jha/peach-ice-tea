@@ -41,6 +41,11 @@ pub struct ToolCallSummary {
     /// Position of this call's message in the conversation, used to
     /// determine pinning and recency.
     pub message_index: usize,
+    /// Whether a path or file name from this call's input appears in later
+    /// assistant or user text (see [`is_referenced_later`]). R-CTX-4: such a
+    /// result is still in use and is kept.
+    #[serde(default)]
+    pub referenced_later: bool,
 }
 
 impl ToolCallSummary {
@@ -60,7 +65,14 @@ impl ToolCallSummary {
             result_status,
             result_chars,
             message_index,
+            referenced_later: false,
         }
+    }
+
+    /// Sets whether the call's input is referenced by later text.
+    pub fn referenced_later(mut self, referenced_later: bool) -> Self {
+        self.referenced_later = referenced_later;
+        self
     }
 
     /// Sets the call identifier.
@@ -98,6 +110,34 @@ impl ToolCallSummary {
         self.message_index = message_index;
         self
     }
+}
+
+/// Whether `later_text` (assistant and user text after the call) mentions a
+/// path-like identifier from `input_preview`: a token with a `/`, or a file
+/// name with an extension, matched in full or by its file name, since a model
+/// usually writes `stats.py` rather than `/repo/src/stats.py`. Plain words are
+/// ignored: "hi" in `echo hi` says nothing about whether the result matters.
+///
+/// # Arguments
+/// * `input_preview` - The call's (redacted) input.
+/// * `later_text` - Everything said after the call, concatenated.
+pub fn is_referenced_later(input_preview: &str, later_text: &str) -> bool {
+    input_preview
+        .split(|c: char| c.is_whitespace() || "\"'=,(){}[]:;<>`".contains(c))
+        .filter(|token| is_path_like(token))
+        .flat_map(|token| {
+            let name = token.rsplit('/').next().unwrap_or(token);
+            [token, name]
+        })
+        .filter(|candidate| candidate.len() >= 4 && is_path_like(candidate))
+        .any(|candidate| later_text.contains(candidate))
+}
+
+fn is_path_like(token: &str) -> bool {
+    let has_extension = token
+        .rsplit_once('.')
+        .is_some_and(|(stem, ext)| !stem.is_empty() && !ext.is_empty() && ext.chars().all(|c| c.is_ascii_alphanumeric()));
+    token.contains('/') || has_extension
 }
 
 /// What to do with one tool call and its result during compaction.
@@ -278,6 +318,22 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn test_references_are_matched_by_path_or_file_name_and_plain_words_are_ignored() {
+        let preview = r#"{"file_path":"/repo/src/stats.py"}"#;
+
+        let actual = [
+            is_referenced_later(preview, "I changed stats.py to sort."),
+            is_referenced_later(preview, "see /repo/src/stats.py"),
+            is_referenced_later(preview, "All tests pass now."),
+            is_referenced_later("echo hi", "hi there"),
+            is_referenced_later("cat a.b", "a.b"),
+        ];
+
+        let expected = [true, true, false, false, false];
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn test_pinned_always_keeps_regardless_of_scores() {
