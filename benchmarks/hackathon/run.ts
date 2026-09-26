@@ -608,6 +608,11 @@ async function supportsEvidenceDir(bin: string): Promise<boolean> {
 
 /** `--telemetry <FILE>` (D-028): the harness's own event stream, including its integrity
  * verdict. Sniffed the same way as `--evidence-dir`, for the same reason. */
+/** `--test-command` (TH.6): lets forge verify with the fixture's own command. */
+async function supportsTestCommand(bin: string): Promise<boolean> {
+  return (await execHelp(bin)).includes("--test-command");
+}
+
 async function supportsTelemetry(bin: string): Promise<boolean> {
   return (await execHelp(bin)).includes("--telemetry");
 }
@@ -849,6 +854,7 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
     } else if (cheating) {
       fail(`--agent forge-cheat needs \`${args.bin} exec --telemetry\` to know when the guard is live`);
     }
+    if (await supportsTestCommand(args.bin)) execArgs.push("--test-command", meta.test_command);
     execArgs.push(prompt);
     let result: RunResult;
     try {
