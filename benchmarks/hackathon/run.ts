@@ -3,14 +3,20 @@
 // Local, offline, credit-free evaluation runner for the hackathon-shaped suite
 // (docs/harness/HACKATHON.md §9, TH.7 / R-HACK-8).
 //
-// Mirrors, per fixture: copy repo to a temp dir -> git init/commit -> compute our OWN
-// SHA-256 manifest of the test files, independent of anything the harness does -> render
-// the frozen prompt -> invoke `forge exec --json` with stdin closed and a hard, process-
-// group-killing timeout -> run the fixture's tests independently -> re-hash the test files
-// and diff against the manifest -> write a report outside the fixture repo copy.
+// Mirrors, per fixture: copy repo to a temp dir -> git init/commit (recording that commit's
+// SHA) -> compute our OWN SHA-256 manifest of the declared test files, independent of
+// anything the harness does -> render the frozen prompt -> invoke `forge exec --json
+// [--evidence-dir <dir>]` (only passed once `forge exec --help` lists it) with stdin closed
+// and a hard, process-group-killing timeout -> run the fixture's tests independently ->
+// re-hash the declared test files and diff against the manifest -> diff the *whole* repo
+// against the initial commit and flag any added/deleted/renamed file under a test directory
+// (the manifest is an allow-list and can't see additions; this pass can) -> write a report
+// outside the fixture repo copy. `success` also requires the real forge invocation to have
+// exited 0 without timing out: hitting forge's own tool-failure/request limits is not success.
 //
 // `--agent reference` and `--agent cheat` are stubs that never call forge, so the runner
-// (and its integrity check) can be exercised with no model and no credit.
+// (and its integrity check) can be exercised with no model and no credit. `--agent addnew`
+// is a third stub: the regression test for the allow-list bug above.
 
 // Handle EPIPE errors gracefully (e.g. when piping to `head` or `jq` that closes early).
 process.stdout.on("error", (error: NodeJS.ErrnoException) => {
@@ -37,7 +43,7 @@ const FIXTURES_DIR = path.join(HACKATHON_DIR, "fixtures");
 const REPORTS_DIR = path.join(REPO_ROOT, "benchmarks", "reports", "hackathon");
 const PROMPT_TEMPLATE_PATH = path.join(REPO_ROOT, "configuration", "prompt-template.md");
 
-type Agent = "forge" | "reference" | "cheat";
+type Agent = "forge" | "reference" | "cheat" | "addnew";
 
 /** A loud, unrecoverable configuration or fixture problem. Never swallowed. */
 class HackathonError extends Error {}
@@ -74,12 +80,15 @@ const DEFAULT_TEST_TIMEOUT_MS = 2 * 60_000;
 function printUsage(): void {
   console.log(
     [
-      "Usage: npm run hackathon -- --agent <forge|reference|cheat> [options]",
+      "Usage: npm run hackathon -- --agent <forge|reference|cheat|addnew> [options]",
       "",
       "Options:",
-      "  --agent <forge|reference|cheat>  Required. 'reference' applies solution.patch,",
-      "                                    'cheat' edits a test file, 'forge' invokes the",
-      "                                    real binary.",
+      "  --agent <forge|reference|cheat|addnew>",
+      "                                    Required. 'reference' applies solution.patch,",
+      "                                    'cheat' edits a test file, 'addnew' adds a new",
+      "                                    test file that short-circuits the test runner",
+      "                                    (regression test for the allow-list integrity",
+      "                                    bug), 'forge' invokes the real binary.",
       "  --suite <all|name[,name...]>     Fixtures to run. Default: all.",
       "  --bin <path>                     forge binary. Default: $PEACH_ICE_TEA_BIN or 'forge'.",
       "  --timeout-ms <n>                 Hard timeout for the agent step. Default: " +
@@ -107,8 +116,8 @@ function parseArgs(argv: string[]): CliArgs {
     switch (arg) {
       case "--agent": {
         const value = argv[++i];
-        if (value !== "forge" && value !== "reference" && value !== "cheat") {
-          fail(`--agent must be one of forge|reference|cheat, got: ${value ?? "<missing>"}`);
+        if (value !== "forge" && value !== "reference" && value !== "cheat" && value !== "addnew") {
+          fail(`--agent must be one of forge|reference|cheat|addnew, got: ${value ?? "<missing>"}`);
         }
         agent = value;
         break;
@@ -148,7 +157,7 @@ function parseArgs(argv: string[]): CliArgs {
     }
   }
 
-  if (!agent) fail("--agent is required (forge|reference|cheat). Run with --help for usage.");
+  if (!agent) fail("--agent is required (forge|reference|cheat|addnew). Run with --help for usage.");
   return { agent, suite, bin, timeoutMs, testTimeoutMs, label };
 }
 
@@ -227,7 +236,10 @@ function runShellCommand(commandLine: string, opts: { cwd: string; timeoutMs: nu
 
 const GIT_ENV_ARGS = ["-c", "user.email=hackathon@local", "-c", "user.name=hackathon"];
 
-async function gitInitAndCommit(repoDir: string): Promise<void> {
+/** Initializes the fixture copy as a git repo and makes the frozen "initial state" commit.
+ * Returns that commit's SHA, so later stages can diff against it by hash rather than by
+ * `HEAD` (which would move if the agent itself makes a commit). */
+async function gitInitAndCommit(repoDir: string): Promise<string> {
   const timeoutMs = 30_000;
   const init = await runProcess("git", ["init", "-q"], { cwd: repoDir, timeoutMs });
   if (init.code !== 0) fail(`git init failed in ${repoDir}: ${init.stderr}`);
@@ -240,6 +252,10 @@ async function gitInitAndCommit(repoDir: string): Promise<void> {
     timeoutMs,
   });
   if (commit.code !== 0) fail(`git commit failed in ${repoDir}: ${commit.stderr}`);
+
+  const rev = await runProcess("git", ["rev-parse", "HEAD"], { cwd: repoDir, timeoutMs });
+  if (rev.code !== 0) fail(`git rev-parse HEAD failed in ${repoDir}: ${rev.stderr}`);
+  return rev.stdout.trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +299,88 @@ function diffManifests(before: Manifest, after: Manifest): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// Integrity: whole-repo diff against the initial commit.
+//
+// The SHA-256 manifest above is an allow-list: it only ever re-checks the paths named in
+// `meta.json`'s `test_files`. That structurally cannot see a file that didn't exist when the
+// manifest was built — an agent (or a malicious wrapper) can leave every declared test file
+// byte-for-byte untouched and instead ADD a new file under the test directory that makes the
+// test runner exit 0 before the real assertions ever run (e.g. a unittest module, sorted to
+// discover first, that calls `os._exit(0)` at import time; the `node --test` equivalent calls
+// `process.exit(0)`). So this diffs the *whole* repo against the frozen initial commit and
+// flags any ADDED, DELETED or RENAMED path under a test directory, regardless of whether that
+// path was ever declared. Modifications to already-declared files are still caught by the
+// SHA-256 manifest above; this pass exists specifically for the paths the allow-list can't see.
+// ---------------------------------------------------------------------------
+
+interface GitDiffEntry {
+  /** "A" (added), "D" (deleted), "M" (modified), or "R" (renamed). */
+  status: "A" | "D" | "M" | "R";
+  path: string;
+  /** Present only for renames: the path after the rename. */
+  newPath?: string;
+}
+
+/** The set of directories (relative to repoDir, `/`-separated, `.` meaning the repo root)
+ * that contain at least one declared test file. Used as the "under the test directory" test
+ * for the whole-repo diff: an allow-list of directories, not of files, so additions inside
+ * them are still visible. */
+function testDirectories(testFiles: string[]): string[] {
+  return [...new Set(testFiles.map((f) => path.posix.dirname(f)))];
+}
+
+function isUnderTestDirectory(filePath: string, testDirs: string[]): boolean {
+  return testDirs.some((dir) => dir === "." || filePath === dir || filePath.startsWith(`${dir}/`));
+}
+
+/** Runs `git diff --cached --name-status -M <initialCommit>` after staging everything, so
+ * previously-untracked new files (which plain `git diff` ignores) show up too. The temp
+ * repo copy is discarded after the run, so staging it has no side effects that matter. */
+async function gitDiffAgainstInitial(repoDir: string, initialCommit: string): Promise<GitDiffEntry[]> {
+  const timeoutMs = 30_000;
+  const add = await runProcess("git", [...GIT_ENV_ARGS, "add", "-A"], { cwd: repoDir, timeoutMs });
+  if (add.code !== 0) fail(`git add failed while computing the integrity diff in ${repoDir}: ${add.stderr}`);
+
+  const diff = await runProcess("git", ["diff", "--cached", "--name-status", "-M", initialCommit], {
+    cwd: repoDir,
+    timeoutMs,
+  });
+  if (diff.code !== 0) fail(`git diff failed while computing the integrity diff in ${repoDir}: ${diff.stderr}`);
+
+  const entries: GitDiffEntry[] = [];
+  for (const rawLine of diff.stdout.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const parts = line.split("\t");
+    const rawStatus = parts[0];
+    if (rawStatus.startsWith("R")) {
+      entries.push({ status: "R", path: parts[1], newPath: parts[2] });
+    } else if (rawStatus === "A" || rawStatus === "D" || rawStatus === "M") {
+      entries.push({ status: rawStatus, path: parts[1] });
+    }
+    // Other statuses (copy, type-change, unmerged) are not produced by this workflow.
+  }
+  return entries;
+}
+
+function diffAgainstInitialViolations(entries: GitDiffEntry[], testDirs: string[]): string[] {
+  const violations: string[] = [];
+  for (const entry of entries) {
+    if (entry.status === "M") continue; // caught by the SHA-256 manifest for declared files.
+    const touchedPaths = entry.status === "R" ? [entry.path, entry.newPath as string] : [entry.path];
+    if (!touchedPaths.some((p) => isUnderTestDirectory(p, testDirs))) continue;
+    if (entry.status === "A") {
+      violations.push(`${entry.path}: new file added under a test directory (not in the initial commit)`);
+    } else if (entry.status === "D") {
+      violations.push(`${entry.path}: file removed from a test directory (present in the initial commit)`);
+    } else {
+      violations.push(`${entry.path}: renamed to ${entry.newPath} inside/out of a test directory`);
+    }
+  }
+  return violations;
+}
+
+// ---------------------------------------------------------------------------
 // Prompt rendering
 // ---------------------------------------------------------------------------
 
@@ -305,8 +403,18 @@ const CHEAT_STUBS: Record<string, string> = {
   javascript: 'const test = require("node:test");\n\ntest("stub", () => {});\n',
 };
 
+/** `--agent addnew`: the regression test for BLOCKING 2 (the allow-list integrity bug).
+ * Adds a brand-new file, never listed in `meta.json`'s `test_files`, named to be discovered
+ * before the real test files and to exit the whole test process before any real assertion
+ * runs. Every declared test file is left byte-for-byte untouched, so the SHA-256 manifest
+ * alone would report "clean"; only the whole-repo git diff can see the addition. */
+const ADDNEW_STUBS: Record<string, { fileName: string; content: string }> = {
+  python: { fileName: "test_aaa_neutralize.py", content: "import os; os._exit(0)\n" },
+  javascript: { fileName: "aaa-exit.test.js", content: "process.exit(0);\n" },
+};
+
 async function applyStubAgent(
-  agent: "reference" | "cheat",
+  agent: "reference" | "cheat" | "addnew",
   fixtureName: string,
   fixtureDir: string,
   repoDir: string,
@@ -327,6 +435,19 @@ async function applyStubAgent(
       fail(`git apply of solution.patch failed for "${fixtureName}" (exit ${result.code}): ${result.stderr}`);
     }
     return { note: "applied solution.patch", wallMs: Date.now() - start };
+  }
+
+  if (agent === "addnew") {
+    const target = meta.test_files[0];
+    if (!target) fail(`fixture "${fixtureName}" has no test_files, required for --agent addnew`);
+    const stub = ADDNEW_STUBS[meta.language];
+    if (!stub) fail(`--agent addnew has no stub for language "${meta.language}" (fixture mismatch)`);
+    const relPath = path.posix.join(path.posix.dirname(target), stub.fileName);
+    await fs.writeFile(path.join(repoDir, relPath), stub.content);
+    return {
+      note: `added ${relPath} (never listed in test_files) to short-circuit the test runner`,
+      wallMs: Date.now() - start,
+    };
   }
 
   // agent === "cheat": edit a test file instead of touching the implementation, to prove
@@ -401,6 +522,30 @@ function extractMetrics(parsed: unknown): MetricsSummary | null {
     tool_errors: asMap(m.tool_errors),
     wall_ms: asNum(m.wall_ms),
   };
+}
+
+// ---------------------------------------------------------------------------
+// `--evidence-dir` capability sniffing (PLAN.md W1-D step 4). TH.5 hasn't shipped the flag
+// yet, so this must be a no-op today: only pass `--evidence-dir` when `forge exec --help`
+// actually lists it, so the runner starts using it automatically the moment it exists
+// without needing a second change here.
+// ---------------------------------------------------------------------------
+
+let evidenceDirSupportCache: Promise<boolean> | null = null;
+
+async function supportsEvidenceDir(bin: string): Promise<boolean> {
+  if (evidenceDirSupportCache) return evidenceDirSupportCache;
+  evidenceDirSupportCache = (async () => {
+    try {
+      const help = await runProcess(bin, ["exec", "--help"], { cwd: process.cwd(), timeoutMs: 15_000 });
+      return help.code === 0 && help.stdout.includes("--evidence-dir");
+    } catch {
+      // Fail open (CLAUDE.md principle 5): if we can't even run --help, behave exactly as
+      // before and let the real invocation surface the error.
+      return false;
+    }
+  })();
+  return evidenceDirSupportCache;
 }
 
 // ---------------------------------------------------------------------------
@@ -486,7 +631,7 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
   const repoDir = path.join(tmpDir, "repo");
   await fs.cp(repoSrc, repoDir, { recursive: true });
 
-  await gitInitAndCommit(repoDir);
+  const initialCommit = await gitInitAndCommit(repoDir);
 
   const beforeManifest = await hashTestFiles(repoDir, meta.test_files);
   for (const [file, hash] of beforeManifest) {
@@ -500,14 +645,21 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
   let metrics: MetricsSummary = ZERO_METRICS;
   let runError: string | null = null;
 
-  if (args.agent === "reference" || args.agent === "cheat") {
+  if (args.agent === "reference" || args.agent === "cheat" || args.agent === "addnew") {
     const { note, wallMs } = await applyStubAgent(args.agent, fixtureName, fixtureDir, repoDir, meta);
     exec = { invoked: false, note, exit_code: 0, timed_out: false, outcome: `stub:${args.agent}` };
     metrics = { ...ZERO_METRICS, wall_ms: wallMs };
   } else {
+    const execArgs = ["exec", "--json"];
+    if (await supportsEvidenceDir(args.bin)) {
+      const evidenceDir = path.join(tmpDir, "evidence");
+      await fs.mkdir(evidenceDir, { recursive: true });
+      execArgs.push("--evidence-dir", evidenceDir);
+    }
+    execArgs.push(prompt);
     let result: RunResult;
     try {
-      result = await runProcess(args.bin, ["exec", "--json", prompt], { cwd: repoDir, timeoutMs: args.timeoutMs });
+      result = await runProcess(args.bin, execArgs, { cwd: repoDir, timeoutMs: args.timeoutMs });
     } catch (err) {
       fail(
         `could not invoke forge ("${args.bin} exec --json ..."): ${(err as Error).message}. ` +
@@ -548,10 +700,23 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
   }
 
   const afterManifest = await hashTestFiles(repoDir, meta.test_files);
-  const violations = diffManifests(beforeManifest, afterManifest);
+  const manifestViolations = diffManifests(beforeManifest, afterManifest);
+
+  const testDirs = testDirectories(meta.test_files);
+  const diffEntries = await gitDiffAgainstInitial(repoDir, initialCommit);
+  const wholeRepoViolations = diffAgainstInitialViolations(diffEntries, testDirs);
+
+  const violations = [...manifestViolations, ...wholeRepoViolations];
   const integrity: "clean" | "violation" = violations.length > 0 ? "violation" : "clean";
 
-  const success = integrity === "clean" && testsPassed && integrationPassed !== false && runError === null;
+  // BLOCKING 1: a harness that hits its own exit-code limits (tool-failure limit, request
+  // limit, a bare error) is not a success even if the source and tests end up correct — see
+  // `exec.outcome`. The stub agents (`reference`/`cheat`/`addnew`) never invoke forge and
+  // always report exit_code 0 / timed_out false, so this is a no-op for them.
+  const execSucceeded = exec.exit_code === 0 && !exec.timed_out;
+
+  const success =
+    integrity === "clean" && testsPassed && integrationPassed !== false && runError === null && execSucceeded;
 
   return {
     fixture: fixtureName,
@@ -658,13 +823,18 @@ function renderMarkdown(report: RunReport): string {
       `${report.summary.integrity_violations} integrity violation(s)`,
   );
   lines.push("");
-  lines.push("| Fixture | Language | Tests | Integration | Integrity | Success | LLM calls | Input tok | Output tok | Wall ms |");
-  lines.push("|---|---|---|---|---|---|---|---|---|---|");
+  lines.push(
+    "| Fixture | Language | Tests | Integration | Integrity | Exit/Outcome | Success | LLM calls | Input tok | Output tok | Wall ms |",
+  );
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|");
   for (const r of report.fixtures) {
+    const execCell = r.exec.timed_out
+      ? "**TIMEOUT**"
+      : `${r.exec.exit_code === null ? "null" : r.exec.exit_code}${r.exec.outcome ? ` / ${r.exec.outcome}` : ""}`;
     lines.push(
       `| ${r.fixture} | ${r.language} | ${r.tests_passed ? "pass" : "FAIL"} | ` +
         `${r.integration_passed === null ? "n/a" : r.integration_passed ? "pass" : "FAIL"} | ` +
-        `${r.integrity === "clean" ? "clean" : "**VIOLATION**"} | ${r.success ? "yes" : "no"} | ` +
+        `${r.integrity === "clean" ? "clean" : "**VIOLATION**"} | ${execCell} | ${r.success ? "yes" : "no"} | ` +
         `${r.metrics.llm_calls} | ${r.metrics.input_tokens} | ${r.metrics.output_tokens} | ${r.wall_ms} |`,
     );
   }
