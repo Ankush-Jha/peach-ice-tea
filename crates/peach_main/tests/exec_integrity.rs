@@ -136,6 +136,12 @@ fn test_a_test_edited_mid_run_is_reported_restored_and_logged() {
             }
         })
         .collect();
+    // The closed port also produces transport retries, now metered (D-032).
+    assert!(kinds.iter().any(|kind| kind == "retry"), "telemetry: {kinds:?}");
+    let kinds: Vec<&String> = kinds
+        .iter()
+        .filter(|kind| kind.as_str() != "retry" && !kind.starts_with("agent_state"))
+        .collect();
     assert_eq!(
         kinds,
         vec![

@@ -26,6 +26,11 @@ enum Turn {
     Tool(&'static str, serde_json::Value),
     /// Replies with text and stops.
     Text(&'static str),
+    /// Fails with this HTTP status, as a rate limit or outage would.
+    Status(u16),
+    /// An empty completion: no content, no tool call, no finish reason —
+    /// with this `(prompt, completion)` usage, or none at all.
+    Empty(Option<(u64, u64)>),
 }
 
 /// A local OpenAI-compatible chat endpoint that replays `script` for every
@@ -54,9 +59,13 @@ impl ScriptedModel {
                 } else {
                     Turn::Text("Scripted title")
                 };
-                let response = tiny_http::Response::from_string(sse(turn)).with_header(
-                    "Content-Type: text/event-stream".parse::<tiny_http::Header>().unwrap(),
-                );
+                let response = match turn {
+                    Turn::Status(code) => tiny_http::Response::from_string("{}")
+                        .with_status_code(code),
+                    turn => tiny_http::Response::from_string(sse(turn)).with_header(
+                        "Content-Type: text/event-stream".parse::<tiny_http::Header>().unwrap(),
+                    ),
+                };
                 let _ = request.respond(response);
             }
         });
@@ -69,6 +78,19 @@ impl ScriptedModel {
 }
 
 fn sse(turn: Turn) -> String {
+    if let Turn::Empty(usage) = turn {
+        let usage = usage.map(|(prompt, completion)| {
+            serde_json::json!({"prompt_tokens": prompt, "completion_tokens": completion,
+                "total_tokens": prompt + completion})
+        });
+        let chunk = serde_json::json!({
+            "id": "chatcmpl-scripted", "object": "chat.completion.chunk", "created": 0,
+            "model": "scripted-model",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": null}],
+            "usage": usage,
+        });
+        return format!("data: {chunk}\n\ndata: [DONE]\n\n");
+    }
     let (delta, finish) = match turn {
         Turn::Tool(name, arguments) => (
             serde_json::json!({"role": "assistant", "tool_calls": [{
@@ -78,6 +100,7 @@ fn sse(turn: Turn) -> String {
             "tool_calls",
         ),
         Turn::Text(text) => (serde_json::json!({"role": "assistant", "content": text}), "stop"),
+        Turn::Status(_) | Turn::Empty(_) => unreachable!("handled above"),
     };
     let chunk = |delta: serde_json::Value, finish: Option<&str>| {
         serde_json::json!({
@@ -143,6 +166,9 @@ model_id = "scripted-model"
         .arg(&telemetry)
         .env("PEACH_CONFIG", config.path())
         .env("PEACH_TEST_SCRIPTED_KEY", "scripted-key")
+        // Real retry behaviour, shorter waits, so retry scenarios stay fast.
+        .env("PEACH_RETRY__MIN_DELAY_MS", "10")
+        .env("PEACH_RETRY__INITIAL_BACKOFF_MS", "10")
         .current_dir(project)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -273,4 +299,79 @@ fn test_a_write_to_a_protected_test_is_refused_at_dispatch() {
         .collect();
     assert_eq!(refusals.len(), 1, "telemetry: {:?}", run.telemetry);
     assert_eq!(refusals[0]["path"], "tests/test_math.py");
+}
+
+#[test]
+fn test_retries_are_metered_and_the_telemetry_stream_is_complete() {
+    // D-032's live run: 17 retries (429/503/empty completions) that neither
+    // metrics nor telemetry showed. This replays that shape locally.
+    let project = project_with_a_test();
+    let model = ScriptedModel::start(vec![
+        Turn::Status(503),
+        Turn::Empty(None),
+        Turn::Empty(Some((14_000, 900))),
+        Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "say hi"})),
+        Turn::Text("Done."),
+    ]);
+
+    let run = run_exec(project.path(), &model, None);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let metrics = &run.report["metrics"];
+    // Semantic calls: two requests, however many attempts the first took.
+    assert_eq!(metrics["llm_calls"], 2);
+    assert_eq!(metrics["retried_llm_calls"], 3);
+    // The empty completion that reported usage is billed into the totals:
+    // 14,000 + 10 + 10 input, 900 + 5 + 5 output.
+    assert_eq!(metrics["input_tokens"], 14_020);
+    assert_eq!(metrics["output_tokens"], 910);
+
+    let kinds: Vec<String> = run
+        .telemetry
+        .iter()
+        .map(|event| match event["type"].as_str().unwrap() {
+            "agent_state" => format!("agent_state:{}", event["to"].as_str().unwrap()),
+            "integrity" => format!("integrity:{}", event["kind"].as_str().unwrap()),
+            "tool_call" => format!("tool_call:{}", event["name"].as_str().unwrap()),
+            other => other.to_string(),
+        })
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![
+            "run_start",
+            "agent_state:running",
+            "retry",
+            "retry",
+            "retry",
+            "model_call",
+            "tool_call:shell",
+            "model_call",
+            "agent_state:ended",
+            "integrity:verify",
+            "run_end",
+        ]
+    );
+
+    let retries: Vec<&serde_json::Value> =
+        run.telemetry.iter().filter(|event| event["type"] == "retry").collect();
+    // 503: nothing to bill, so no usage claim either way.
+    assert!(retries[0].get("usage_reported").is_none(), "{}", retries[0]);
+    assert!(retries[0]["reason"].as_str().unwrap().contains("503"));
+    // Empty completion with no usage: explicitly unknown, not zero.
+    assert_eq!(retries[1]["usage_reported"], false);
+    assert!(retries[1].get("input_tokens").is_none());
+    // Empty completion with usage: its tokens are on the event.
+    assert_eq!(retries[2]["usage_reported"], true);
+    assert_eq!(retries[2]["input_tokens"], 14_000);
+    assert_eq!(retries[2]["output_tokens"], 900);
+
+    let model_calls: Vec<&serde_json::Value> =
+        run.telemetry.iter().filter(|event| event["type"] == "model_call").collect();
+    assert_eq!(model_calls[0]["input_tokens"], 10);
+    assert_eq!(model_calls[0]["finish_reason"], "tool_calls");
+    let tool = run.telemetry.iter().find(|event| event["type"] == "tool_call").unwrap();
+    assert_eq!(tool["success"], true);
+    assert_eq!(tool["origin_call_id"], model_calls[0]["call_id"]);
+    assert_eq!(model_calls[0]["tool_call_ids"], serde_json::json!([tool["call_id"]]));
 }

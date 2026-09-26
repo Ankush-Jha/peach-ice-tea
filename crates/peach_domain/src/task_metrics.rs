@@ -44,6 +44,15 @@ pub struct TaskMetrics {
     /// cost wall time and may still have been billed provider-side.
     pub failed_llm_calls: u64,
 
+    /// harness: R-HACK-3 — provider attempts that failed and were retried
+    /// (rate limits, 5xx, empty completions). Not in `llm_calls` or
+    /// `failed_llm_calls`, since the request eventually succeeded or failed
+    /// once as a whole. Without this, a run that spent much of its wall time
+    /// in retry backoff reported none of it (D-032). Some of these, such as
+    /// empty completions, may still have been billed.
+    #[serde(default)]
+    pub retried_llm_calls: u64,
+
     /// Prompt tokens billed across every request, including the cached portion.
     pub input_tokens: u64,
 
@@ -244,6 +253,24 @@ impl TaskMetrics {
         self.failed_llm_calls += 1;
     }
 
+    /// Adds the tokens of a failed attempt the provider still reported usage
+    /// for (an empty completion) to the task's token totals. Not a call:
+    /// `llm_calls` stays one per request, however many attempts it took.
+    pub fn record_retried_usage(&mut self, usage: &Usage) {
+        self.input_tokens += token_value(usage.prompt_tokens);
+        self.output_tokens += token_value(usage.completion_tokens);
+        self.cached_input_tokens += token_value(usage.cached_tokens);
+        self.reasoning_tokens += token_value(usage.reasoning_tokens);
+        if let Some(cost) = usage.cost {
+            self.cost = Some(self.cost.unwrap_or(0.0) + cost);
+        }
+    }
+
+    /// Records provider attempts that failed and were retried.
+    pub fn record_retried_llm_calls(&mut self, count: u64) {
+        self.retried_llm_calls += count;
+    }
+
     /// Records one completed tool call. `is_error` counts it as a failure in
     /// addition to, not instead of, counting it as a call.
     pub fn record_tool_call(&mut self, name: &ToolName, is_error: bool) {
@@ -333,6 +360,7 @@ impl TaskMetrics {
     pub fn absorb_subagent(&mut self, child: &TaskMetrics) {
         self.llm_calls += child.llm_calls;
         self.failed_llm_calls += child.failed_llm_calls;
+        self.retried_llm_calls += child.retried_llm_calls;
         self.input_tokens += child.input_tokens;
         self.cached_input_tokens += child.cached_input_tokens;
         self.output_tokens += child.output_tokens;
@@ -376,6 +404,7 @@ impl TaskMetrics {
         TaskMetrics {
             llm_calls: self.llm_calls.saturating_sub(baseline.llm_calls),
             failed_llm_calls: self.failed_llm_calls.saturating_sub(baseline.failed_llm_calls),
+            retried_llm_calls: self.retried_llm_calls.saturating_sub(baseline.retried_llm_calls),
             input_tokens: self.input_tokens.saturating_sub(baseline.input_tokens),
             cached_input_tokens: self
                 .cached_input_tokens
@@ -432,6 +461,31 @@ mod tests {
             reasoning_tokens: TokenCount::Actual(0),
             cost: None,
         }
+    }
+
+    #[test]
+    fn test_retries_add_billed_tokens_but_not_calls() {
+        let mut fixture = TaskMetrics::default();
+        fixture.record_llm_call(Some(&Usage {
+            prompt_tokens: TokenCount::Actual(100),
+            completion_tokens: TokenCount::Actual(10),
+            ..Usage::default()
+        }));
+
+        fixture.record_retried_llm_calls(3);
+        fixture.record_retried_usage(&Usage {
+            prompt_tokens: TokenCount::Actual(100),
+            completion_tokens: TokenCount::Actual(7),
+            ..Usage::default()
+        });
+
+        let actual = (
+            fixture.llm_calls,
+            fixture.retried_llm_calls,
+            fixture.input_tokens,
+            fixture.output_tokens,
+        );
+        assert_eq!(actual, (1, 3, 200, 17));
     }
 
     #[test]
@@ -646,7 +700,7 @@ mod tests {
     fn test_default_serializes_to_the_minimal_object() {
         let fixture = TaskMetrics::default();
         let actual = serde_json::to_string(&fixture).unwrap();
-        let expected = r#"{"llm_calls":0,"failed_llm_calls":0,"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_tokens":0,"wall_ms":0,"compactions":{"count":0,"tokens_before":0,"tokens_after":0}}"#;
+        let expected = r#"{"llm_calls":0,"failed_llm_calls":0,"retried_llm_calls":0,"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_tokens":0,"wall_ms":0,"compactions":{"count":0,"tokens_before":0,"tokens_after":0}}"#;
 
         assert_eq!(actual, expected);
     }

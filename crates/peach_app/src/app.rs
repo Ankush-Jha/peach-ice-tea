@@ -10,8 +10,8 @@ use crate::apply_tunable_parameters::ApplyTunableParameters;
 use crate::changed_files::ChangedFiles;
 use crate::dto::ToolsOverview;
 use crate::hooks::{
-    CompactionHandler, DoomLoopDetector, PendingTodosHandler, TitleGenerationHandler,
-    TracingHandler,
+    CompactionHandler, DoomLoopDetector, PendingTodosHandler, TelemetryHandler,
+    TitleGenerationHandler, TracingHandler,
 };
 use crate::init_conversation_metrics::InitConversationMetrics;
 use crate::orch::Orchestrator;
@@ -147,28 +147,45 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> PeachAp
         // Create the orchestrator with all necessary dependencies
         let tracing_handler = TracingHandler::new();
         let title_handler = TitleGenerationHandler::new(services.clone());
+        // harness: R-HACK-3 — inert unless `exec --telemetry` installed a sink.
+        let telemetry_handler = TelemetryHandler::new();
 
         // Build the on_end hook, conditionally adding PendingTodosHandler based
         // on config
         let on_end_hook = if peach_config.verify_todos {
             tracing_handler
                 .clone()
+                .and(telemetry_handler.clone())
                 .and(title_handler.clone())
                 .and(PendingTodosHandler::new())
         } else {
-            tracing_handler.clone().and(title_handler.clone())
+            tracing_handler
+                .clone()
+                .and(telemetry_handler.clone())
+                .and(title_handler.clone())
         };
 
         let hook = Hook::default()
-            .on_start(tracing_handler.clone().and(title_handler))
-            .on_request(tracing_handler.clone().and(DoomLoopDetector::default()))
+            .on_start(
+                tracing_handler
+                    .clone()
+                    .and(telemetry_handler.clone())
+                    .and(title_handler),
+            )
+            .on_request(
+                tracing_handler
+                    .clone()
+                    .and(telemetry_handler.clone())
+                    .and(DoomLoopDetector::default()),
+            )
             .on_response(
                 tracing_handler
                     .clone()
+                    .and(telemetry_handler.clone())
                     .and(CompactionHandler::new(agent.clone(), environment.clone())),
             )
-            .on_toolcall_start(tracing_handler.clone())
-            .on_toolcall_end(tracing_handler)
+            .on_toolcall_start(tracing_handler.clone().and(telemetry_handler.clone()))
+            .on_toolcall_end(tracing_handler.and(telemetry_handler))
             .on_end(on_end_hook);
 
         let orch = Orchestrator::new(
