@@ -229,6 +229,10 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> ToolReg
             let output = self
                 .call_with_timeout(&tool_name, || self.mcp_executor.execute(input, context))
                 .await?;
+            // harness: T1.1 (R-OUT-4) — clip MCP output like shell output, with
+            // a loud recovery sentence and the full text saved for `read`.
+            let output =
+                crate::truncation::shape_mcp_output(output, &self.services.get_config()?);
             let text = output
                 .values
                 .iter()

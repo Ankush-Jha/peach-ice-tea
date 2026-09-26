@@ -94,7 +94,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       Every task below that adds or changes a tool must add its micro-eval and follow `R-TOOL-2` naming.
 
 ## M1 — Output shaping (cheap, measurable wins)
-- [ ] **T1.1** `R-OUT-4` loud-truncation audit across read/shell/fetch/search/MCP + snapshots.
+- [x] **T1.1** `R-OUT-4` loud-truncation audit across read/shell/fetch/search/MCP + snapshots.
+      → one shared recovery sentence; snapshots for read/shell/search/fetch; MCP shaper finally wired (D-059).
 - [ ] **T1.2** `R-OUT-1` line numbers off by default; update fs_read.md / fs_patch.md. **[A/B]**
       → behind `PEACH_HARNESS_LINE_NUMBERS_OFF=1` (default off; explicit `show_line_numbers` honoured), D-039.
       Related, not a task yet: `PEACH_HARNESS_COMPACT_TOOL_DOCS=1` cuts 15.4% of every request.
@@ -126,7 +127,9 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       today; golden test proves it).
 - [ ] **T3.5** `R-CTX-2` S0 supersede. **[A/B]**
 - [ ] **T3.6** `R-CTX-2` S1 offload. **[A/B]**
-- [ ] **T3.7** `R-SAFE-3` redaction utility (needed before any scorer sends data).
+- [x] **T3.7** `R-SAFE-3` redaction utility (needed before any scorer sends data).
+      → `peach_harness::redact` (36 tests); applied to evidence files, telemetry free text and scorer previews.
+      External hooks (T6.3) must call it when built.
 - [ ] **T3.8** `R-CTX-4` scorer trait + HeuristicScorer + fake-scorer tests.
 - [ ] **T3.9** `R-CTX-4` LlmScorer (port of save-token-jev core) + `R-CTX-5` fail-open gate. **[A/B]**
 - [ ] **T3.10** `R-CTX-6` handoff note in S3.

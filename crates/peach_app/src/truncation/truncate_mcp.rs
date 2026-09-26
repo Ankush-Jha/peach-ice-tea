@@ -1,10 +1,3 @@
-// Not called anywhere in this crate yet: MCP tools are dispatched in
-// `tool_registry.rs`, which this piece (W1-C) does not own. This module is
-// the hand-off for T1.1's MCP branch (see `shape_mcp_output`'s doc comment
-// for the exact call site) and is fully tested on its own; remove this once
-// that call site lands.
-#![allow(dead_code)]
-
 use std::path::PathBuf;
 
 use peach_config::PeachConfig;
@@ -17,15 +10,8 @@ use super::truncate_shell::truncate_shell_output;
 /// (R-OUT-4): head/tail line clipping plus per-line character clipping, with
 /// a loud, plain-text recovery sentence whenever anything is withheld.
 ///
-/// MCP tool output is dispatched in `tool_registry.rs`, which this crate
-/// (`peach_app`) does not own here, so this function is not wired in yet.
-/// The insertion point is the MCP branch of `ToolRegistry::call_inner`,
-/// right after the MCP executor returns and before the output is used to
-/// build the chat message:
-///
-/// ```ignore
-/// let output = crate::truncation::shape_mcp_output(output, &config);
-/// ```
+/// Called from the MCP branch of `ToolRegistry::call_inner`, right after the
+/// MCP executor returns (D-059).
 ///
 /// Reuses the shell output caps (`max_stdout_prefix_lines`,
 /// `max_stdout_suffix_lines`, `max_stdout_line_chars`) rather than adding a
