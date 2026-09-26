@@ -49,6 +49,17 @@ const REPO_ROOT = path.resolve(HACKATHON_DIR, "..", "..");
 const FIXTURES_DIR = path.join(HACKATHON_DIR, "fixtures");
 const REPORTS_DIR = path.join(REPO_ROOT, "benchmarks", "reports", "hackathon");
 const PROMPT_TEMPLATE_PATH = path.join(REPO_ROOT, "configuration", "prompt-template.md");
+const PROFILES_DIR = path.join(REPO_ROOT, "configuration", "profiles");
+
+/** Provider key variables stripped from peach's environment unless the chosen profile names
+ * them, so a run can never fall back to another provider's credentials. */
+const PROVIDER_KEY_VARS = [
+  "GEMINI_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "OPENROUTER_API_KEY",
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+];
 
 type Agent = "peach" | "peach-cheat" | "reference" | "cheat" | "addnew";
 
@@ -81,6 +92,12 @@ interface CliArgs {
   timeoutMs: number;
   testTimeoutMs: number;
   label?: string;
+  /** `configuration/profiles/<name>`: provider, model and non-secret settings for peach. */
+  profile?: string;
+  /** Passed to peach as `--max-duration-secs`. */
+  maxDurationSecs?: number;
+  /** Passed to peach as `PEACH_MAX_REQUESTS_PER_TURN`. */
+  maxRequests?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 10 * 60_000;
@@ -110,6 +127,11 @@ function printUsage(): void {
         DEFAULT_TEST_TIMEOUT_MS +
         ".",
       "  --label <string>                 Report file label. Default: '<agent>-<suite>'.",
+      "  --profile <name>                 peach profile from configuration/profiles/<name>",
+      "                                   (gemini = evaluation, deepseek = development only).",
+      "                                   The profile's key must be set in the environment.",
+      "  --max-duration-secs <n>          peach's own wall-clock budget (exit 4).",
+      "  --max-requests <n>               peach's per-turn request limit (exit 3).",
       "  -h, --help                       Show this help.",
     ].join("\n"),
   );
@@ -122,6 +144,14 @@ function parseArgs(argv: string[]): CliArgs {
   let timeoutMs = DEFAULT_TIMEOUT_MS;
   let testTimeoutMs = DEFAULT_TEST_TIMEOUT_MS;
   let label: string | undefined;
+  let profile: string | undefined;
+  let maxDurationSecs: number | undefined;
+  let maxRequests: number | undefined;
+  const positiveNumber = (flag: string, raw: string | undefined): number => {
+    const value = Number(raw ?? fail(`${flag} requires a value`));
+    if (!Number.isInteger(value) || value <= 0) fail(`${flag} must be a positive integer, got: ${raw}`);
+    return value;
+  };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -159,6 +189,15 @@ function parseArgs(argv: string[]): CliArgs {
       case "--label":
         label = argv[++i] ?? fail("--label requires a value");
         break;
+      case "--profile":
+        profile = argv[++i] ?? fail("--profile requires a value");
+        break;
+      case "--max-duration-secs":
+        maxDurationSecs = positiveNumber("--max-duration-secs", argv[++i]);
+        break;
+      case "--max-requests":
+        maxRequests = positiveNumber("--max-requests", argv[++i]);
+        break;
       case "-h":
       case "--help":
         printUsage();
@@ -170,7 +209,8 @@ function parseArgs(argv: string[]): CliArgs {
   }
 
   if (!agent) fail(`--agent is required (${AGENTS.join("|")}). Run with --help for usage.`);
-  return { agent, suite, bin, timeoutMs, testTimeoutMs, label };
+  if (profile && agent !== "peach") fail("--profile only applies to --agent peach");
+  return { agent, suite, bin, timeoutMs, testTimeoutMs, label, profile, maxDurationSecs, maxRequests };
 }
 
 // ---------------------------------------------------------------------------
@@ -602,6 +642,8 @@ interface FixtureResult {
   telemetry_path: string | null;
   /** peach's evidence bundle (`--evidence-dir`), when the binary supports it. */
   evidence_dir: string | null;
+  /** The `--profile` peach ran under, when one was given. */
+  profile: Profile | null;
   wall_ms: number;
   error: string | null;
 }
@@ -618,6 +660,41 @@ function extractHarnessIntegrity(parsed: unknown): HarnessIntegrity | null {
   const obj = integrity as Record<string, unknown>;
   if (typeof obj.checked !== "number" || !Array.isArray(obj.violations)) return null;
   return { checked: obj.checked, violations: obj.violations as HarnessIntegrity["violations"] };
+}
+
+interface Profile {
+  name: string;
+  /** "evaluation" or "development". */
+  role: string;
+  keyVar: string;
+}
+
+/** Loads `configuration/profiles/<name>` into an isolated PEACH_CONFIG under `tmpDir` and
+ * returns peach's environment for it. Fails loudly when the profile's key is not set: a run
+ * that silently used no key, or another provider's, would be evidence about the wrong thing. */
+async function profilePeachEnv(name: string, tmpDir: string): Promise<{ env: NodeJS.ProcessEnv; profile: Profile }> {
+  const dir = path.join(PROFILES_DIR, name);
+  const toml = await fs.readFile(path.join(dir, "peach.toml"), "utf8").catch(() =>
+    fail(`profile "${name}" not found (expected ${dir}/peach.toml)`),
+  );
+  const vars: Record<string, string> = {};
+  for (const line of (await fs.readFile(path.join(dir, "profile.env"), "utf8")).split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq > 0) vars[trimmed.slice(0, eq)] = trimmed.slice(eq + 1);
+  }
+  const keyVar = vars.PROFILE_KEY_VAR ?? fail(`profile "${name}" has no PROFILE_KEY_VAR`);
+  if (!process.env[keyVar]) fail(`profile "${name}" needs ${keyVar} set in the environment`);
+  const configDir = path.join(tmpDir, "peach-config");
+  await fs.mkdir(configDir, { recursive: true });
+  await fs.writeFile(path.join(configDir, ".peach.toml"), toml);
+
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const other of PROVIDER_KEY_VARS) if (other !== keyVar) delete env[other];
+  for (const [key, value] of Object.entries(vars)) if (!key.startsWith("PROFILE_")) env[key] = value;
+  env.PEACH_CONFIG = configDir;
+  return { env, profile: { name, role: vars.PROFILE_ROLE ?? "unspecified", keyVar } };
 }
 
 /** An isolated PEACH_CONFIG whose only provider is a closed local port: `peach exec` starts
@@ -738,6 +815,7 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
   let telemetryPath: string | null = null;
   let evidenceDir: string | null = null;
   let cheatNote: string | null = null;
+  let profileUsed: Profile | null = null;
 
   if (args.agent === "reference" || args.agent === "cheat" || args.agent === "addnew") {
     const { note, wallMs } = await applyStubAgent(args.agent, fixtureName, fixtureDir, repoDir, meta);
@@ -750,6 +828,14 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
     if (cheating) {
       env = await unroutablePeachEnv(tmpDir);
       execArgs.push("--max-duration-secs", String(PEACH_CHEAT_BUDGET_SECS));
+    } else if (args.profile) {
+      const loaded = await profilePeachEnv(args.profile, tmpDir);
+      env = loaded.env;
+      profileUsed = loaded.profile;
+    }
+    if (!cheating && args.maxDurationSecs) execArgs.push("--max-duration-secs", String(args.maxDurationSecs));
+    if (!cheating && args.maxRequests) {
+      env = { ...(env ?? process.env), PEACH_MAX_REQUESTS_PER_TURN: String(args.maxRequests) };
     }
     if (await supportsEvidenceDir(args.bin)) {
       // Outside the repo copy, like the judges' evidence (TH.5). Telemetry is left to
@@ -861,6 +947,7 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
     harness_integrity: harnessIntegrity,
     telemetry_path: telemetryPath,
     evidence_dir: evidenceDir,
+    profile: profileUsed,
     wall_ms: Date.now() - fixtureStart,
     error: runError,
   };

@@ -110,3 +110,21 @@ PEACH_AUTO_DUMP=json                          # write a full structured Conversa
   no fork). **Never push to either.** Create a fork and repoint `origin` before any push.
 - API keys come from the environment only (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Never write them
   to files, logs or reports.
+
+## Running the hackathon suite on a provider profile
+
+`configuration/profiles/<name>/` holds a `peach.toml` (provider, model) and a `profile.env` (non-secret
+settings plus `PROFILE_KEY_VAR`, the key variable the profile needs). The runner materialises it into an
+isolated `PEACH_CONFIG`, so `~/.peach` is never read or written, and it strips every other provider's key
+from peach's environment.
+
+```bash
+# Evaluation profile (the only one allowed in a judged run):
+GEMINI_API_KEY=... npm run hackathon -- --agent peach --profile gemini --suite py-bugfix \
+  --max-duration-secs 600 --max-requests 40
+# Development profile (not for judged runs, D-036):
+DEEPSEEK_API_KEY=... npm run hackathon -- --agent peach --profile deepseek --suite py-bugfix
+```
+
+Estimate the cost before any live run (D-025). The `₹100` budget is for Gemini; DeepSeek spend needs its own
+agreement.

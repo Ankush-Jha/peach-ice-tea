@@ -493,3 +493,31 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   is recorded here as known and not done, since the report already states both.
 - Retry reasons are classed as `http_NNN`, `empty_completion`, `transport` or `other`. The organizer
   `report.schema.json` adapter waits on publication (D-020).
+
+## D-036 — DeepSeek is supported for development; the judged profile stays Gemini (2026-09-25)
+- **Context:** the team asked for DeepSeek compatibility. HACKATHON.md §6 and §31 fix the evaluation model to
+  Gemini and prohibit unauthorised external models, and D-017 applies that to the judged run. D-027 set the
+  pattern: build the capability fully, and keep the frozen run compliant through configuration.
+- **What "compatible" needed:** upstream peach already speaks DeepSeek's wire format (a `deepseek` provider,
+  flat `reasoning_content` replay, `reasoning_effort`). The gaps were in the harness's own accounting:
+  - DeepSeek reports cache hits as `prompt_cache_hit_tokens`, top-level or inside `prompt_tokens_details`,
+    not as OpenAI's `cached_tokens`. Peach read them as **0**, so the report's cache-hit rate and any cost
+    estimate would be wrong. Cache hits cost about 50× less than misses on DeepSeek, so this is not cosmetic.
+    Fixed by a fallback chain in `dto/openai/response.rs`.
+  - `PromptTokenDetails.cached_tokens` was a required field. A DeepSeek-shaped details block without it would
+    have failed to deserialise the whole usage object. It is now defaulted.
+  - Effort: DeepSeek accepts `none`/`low`/`high`/`max`, and maps `minimal`→low and `medium`/`xhigh`→high
+    (API docs, 2026-09-25). Peach's defaults are therefore accepted as-is; no change was made.
+- **Verified locally, no spend:** `exec_scripted_model.rs::test_deepseek_thinking_mode_runs_with_full_accounting`
+  registers the mock as provider `deepseek`, so peach's DeepSeek transformers really run. It streams
+  `reasoning_content` and DeepSeek-shaped usage. It asserts cached tokens (1200) and reasoning tokens in the
+  metrics, the flat `reasoning_content` replayed on the next request, the protected-file notice delivered, and
+  `cache_hit_rate` 0.6 in the generated report. Reverting the usage fix makes it fail with cached tokens 0.
+- **Profiles:** `configuration/profiles/gemini` (role `evaluation`) and `configuration/profiles/deepseek`
+  (role `development`, model `deepseek-flash`; that is the direct-API id, confirmed from the docs twice, while
+  other gateways call it `deepseek-v4-flash`). `run.ts --profile <name>` materialises one into an isolated
+  `PEACH_CONFIG`, fails if its key is unset, and strips all other provider keys. `--max-duration-secs` and
+  `--max-requests` replace the wrapper script D-032 needed.
+- **Not done:** no live DeepSeek call. There is no key, and no budget was agreed for it. TH.9's
+  `harness/peach-ice-tea` wrapper should hard-code the `gemini` profile, so the judged entry point cannot run
+  anything else.
