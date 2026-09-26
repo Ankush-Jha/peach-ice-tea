@@ -1375,3 +1375,31 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   - End to end: a 16 KB `read`, then compaction on a 7,000-token threshold. The stub reaches the model, the bulk is
     gone from context, **no summary runs**, reading the handle restores the text, and `offload_read == 1`.
 - **T3.6 stays unticked** (`[A/B]`: long tasks, with success and total input tokens against flag off).
+
+## D-075 — T3.5: S0 supersede; the end-to-end test caught it stubbing the newest result when call ids repeat (2026-09-27)
+- **Built (R-CTX-2 S0, `FORGE_HARNESS_SUPERSEDE=1`, default off; it runs first, then S1, then S3):**
+  `compaction_pipeline::supersede`. Deterministic, with no model. Outside the retention window, a result becomes a
+  stub naming what superseded it, with the full text one `read` away, in two cases:
+  - a `read` of a file that was later read again, or changed by `write`, `patch`, `multi_patch`, `remove` or
+    `undo`;
+  - a shell command later re-run verbatim.
+
+  Stubs carry the offload marker, so the event log treats them as an in-place rewrite (D-074).
+- **Not built, by decision:** R-CTX-2's "search superseded by a narrower search in the same path". Deciding that one
+  search is narrower than another (pattern subsumption, path containment, flags) needs a judgement that a wrong
+  answer turns into silently hiding live matches, which is lossy in the worst way. It can be revisited with the
+  relevance scorer (T3.9).
+- **Bug found by the end-to-end test:** the first version keyed staleness by call id. The scripted provider reuses
+  `call_1` for every call, and some OpenAI-compatible gateways reuse simple ids across turns too, so marking the
+  first read's id stale also stubbed **the newest read**. The model would have lost the current file entirely,
+  with a stub pointing at an old copy. **Fix:** each result is paired with the most recent unanswered call of the
+  same id, by occurrence, and staleness is decided per result position. A unit test pins the reused-id case: the
+  newest result is never stubbed.
+- **Proof:**
+  - Unit: stale by re-read, by edit, and by re-run; untouched files and the newest run are kept; the retention
+    window is untouched; the reused-id case.
+  - End to end: a 16 KB file read twice, compaction on tokens. The first read reaches the model as "big.txt was
+    read again later", the newest read's content is intact in the last request, and **no summary runs**. While
+    tuning, thresholds where S0 alone was not enough correctly fell through to S3, which is the D-074 stop rule
+    working as intended.
+- **T3.5 stays unticked** (`[A/B]`).
