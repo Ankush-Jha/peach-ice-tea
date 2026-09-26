@@ -27,6 +27,8 @@ pub struct ExecHarness {
     evidence: Option<Evidence>,
     /// Commit the repository was at when the run started, for the diff.
     start_commit: Option<String>,
+    /// The repository's test command, explicit or detected.
+    test_command: Option<peach_harness::verify::TestCommand>,
     started_at: String,
 }
 
@@ -37,7 +39,13 @@ pub struct ExecOutputs<'a> {
     pub evidence_dir: Option<&'a Path>,
     /// `--telemetry`: overrides `<evidence-dir>/telemetry.jsonl`.
     pub telemetry: Option<&'a Path>,
+    /// `--test-command`: overrides detection (R-HACK-7).
+    pub test_command: Option<&'a str>,
 }
+
+/// Wall-clock limit for the harness's final test run, in seconds, unless
+/// `PEACH_HARNESS_FINAL_TEST_TIMEOUT_SECS` says otherwise.
+const FINAL_TEST_TIMEOUT_SECS: u64 = 300;
 
 impl ExecHarness {
     /// Captures the integrity manifest, installs the runtime (activating the
@@ -92,10 +100,12 @@ impl ExecHarness {
         );
         let notice = integrity::model_notice(&protected);
 
+        let test_command = peach_harness::verify::detect(&repo_root, outputs.test_command);
         runtime::install(
             runtime::HarnessRuntime::new(repo_root.clone())
                 .non_interactive(true)
-                .protected(protected),
+                .protected(protected)
+                .test_command_is(test_command.clone()),
         );
 
         telemetry::emit(TelemetryEvent::RunStart(event::RunStart {
@@ -115,6 +125,7 @@ impl ExecHarness {
                 _snapshot: snapshot,
                 evidence,
                 start_commit,
+                test_command,
                 started_at,
             },
             notice,
@@ -139,15 +150,45 @@ impl ExecHarness {
         if let Some(evidence) = self.evidence.as_mut() {
             evidence.write_json(evidence::INTEGRITY, &report);
             evidence.write_diff(&self.repo_root, self.start_commit.as_deref());
-            // TH.6 has not landed; say so rather than leave the file out.
-            evidence.write_json(
-                evidence::TESTS,
-                &serde_json::json!({
-                    "ran": false,
-                    "reason": "the harness does not run a final test pass yet (TH.6); \
-                               judge from the repository state and the transcript",
-                }),
-            );
+            match &self.test_command {
+                Some(test) => {
+                    let timeout = std::env::var("PEACH_HARNESS_FINAL_TEST_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|secs| secs.parse().ok())
+                        .unwrap_or(FINAL_TEST_TIMEOUT_SECS);
+                    let run = peach_harness::verify::run_final(
+                        &self.repo_root,
+                        test,
+                        std::time::Duration::from_secs(timeout),
+                    );
+                    evidence.write_json(evidence::TESTS, &run);
+                    // A suite can write files of its own (snapshots, fixtures);
+                    // the submitted tree must still hold the original tests.
+                    let after = integrity::verify_and_restore(
+                        &self.repo_root,
+                        &self.protect_globs,
+                        &self.exclude_globs,
+                        &self.manifest,
+                    );
+                    if !after.is_clean() {
+                        for event in integrity::telemetry_events(&after) {
+                            telemetry::emit(event);
+                        }
+                        evidence.note(format!(
+                            "the final test run changed {} protected file(s); restored: {}",
+                            after.violations.len(),
+                            after.violations.iter().map(|v| v.path.as_str()).collect::<Vec<_>>().join(", ")
+                        ));
+                    }
+                }
+                None => evidence.write_json(
+                    evidence::TESTS,
+                    &serde_json::json!({
+                        "ran": false,
+                        "reason": "no test command was given (--test-command) or detected in the repository",
+                    }),
+                ),
+            }
         }
         to_exec_integrity(&report)
     }

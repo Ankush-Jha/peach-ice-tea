@@ -41,12 +41,14 @@ pub struct HarnessRuntime {
     repo_root: PathBuf,
     /// Test files the run must not modify, when the guard is active.
     protected: Option<ProtectedSet>,
+    /// The repository's test command, explicit or detected (R-HACK-7).
+    test_command: Option<crate::verify::TestCommand>,
 }
 
 impl HarnessRuntime {
     /// Builds a runtime for a run.
     pub fn new(repo_root: impl Into<PathBuf>) -> Self {
-        Self { non_interactive: false, repo_root: repo_root.into(), protected: None }
+        Self { non_interactive: false, repo_root: repo_root.into(), protected: None, test_command: None }
     }
 
     /// Marks the run as unattended, so nothing may prompt for input.
@@ -59,6 +61,22 @@ impl HarnessRuntime {
     pub fn protected(mut self, protected: ProtectedSet) -> Self {
         self.protected = Some(protected);
         self
+    }
+
+    /// Sets the repository's test command.
+    pub fn test_command_is(mut self, test: Option<crate::verify::TestCommand>) -> Self {
+        self.test_command = test;
+        self
+    }
+
+    /// The repository's test command, when one is known.
+    pub fn test_command(&self) -> Option<&crate::verify::TestCommand> {
+        self.test_command.as_ref()
+    }
+
+    /// Whether this run can never ask a human a question.
+    pub fn is_non_interactive(&self) -> bool {
+        self.non_interactive
     }
 
     /// Repository root for this run.

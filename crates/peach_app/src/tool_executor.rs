@@ -415,6 +415,7 @@ impl<
             self.require_prior_read(context, &input.file_path, "overwrite it")?;
         }
 
+        let started = std::time::Instant::now();
         let execution_result = self.call_internal(tool_input.clone(), context).await;
 
         if let Err(ref error) = execution_result {
@@ -422,6 +423,8 @@ impl<
         }
 
         let operation = execution_result?;
+        // harness: R-HACK-7 — edits and test runs, with exact exit codes.
+        crate::hooks::observe_for_verification(&operation, started.elapsed());
 
         // Send formatted output message
         if let Some(output) = operation.to_content(&env) {

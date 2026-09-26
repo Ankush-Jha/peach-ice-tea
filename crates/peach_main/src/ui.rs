@@ -703,10 +703,18 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
                 }
                 return Ok(());
             }
-            TopLevelCommand::Exec { task, json, max_duration_secs, telemetry, evidence_dir } => {
+            TopLevelCommand::Exec {
+                task,
+                json,
+                max_duration_secs,
+                telemetry,
+                evidence_dir,
+                test_command,
+            } => {
                 let outputs = crate::harness_exec::ExecOutputs {
                     evidence_dir: evidence_dir.as_deref(),
                     telemetry: telemetry.as_deref(),
+                    test_command: test_command.as_deref(),
                 };
                 self.handle_exec(task.clone(), json, max_duration_secs, outputs).await?;
                 return Ok(());

@@ -120,6 +120,13 @@ pub enum TopLevelCommand {
         /// `<DIR>/telemetry.jsonl` unless `--telemetry` says otherwise.
         #[arg(long, value_name = "DIR")]
         evidence_dir: Option<PathBuf>,
+
+        /// The command that runs this repository's tests. Used to recognise
+        /// the agent's test runs, to ask it to verify before finishing, and
+        /// for the harness's own final run (written to the evidence bundle).
+        /// Detected from the repository when not given.
+        #[arg(long, value_name = "COMMAND")]
+        test_command: Option<String>,
     },
 
     /// Generate the standard run report (`report.json`, `report.md`) from an
