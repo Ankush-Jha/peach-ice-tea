@@ -29,9 +29,35 @@ static SINK: OnceLock<Sink> = OnceLock::new();
 ///
 /// Returns `false` if one was already installed, which is not treated as an
 /// error: the first installation wins, the same convention as
-/// [`crate::runtime::install`].
+/// [`crate::runtime::install`]. That said, calling `install` twice is
+/// almost certainly a caller bug (two sessions racing to install in one
+/// process), so — unlike `crate::runtime::install`, which stays silent —
+/// this one logs it: every other failure path in this module already warns
+/// on something going wrong, and a silently-ignored second sink was the one
+/// path that didn't.
 pub fn install(sink: Sink) -> bool {
-    SINK.set(sink).is_ok()
+    install_into(&SINK, sink)
+}
+
+/// The logic behind [`install`], parameterised over the cell it installs
+/// into.
+///
+/// Exists so tests can exercise "install, then install again" without
+/// touching the process-global [`SINK`]: two tests racing to write to the
+/// same real global from different threads (the default `cargo test`
+/// execution model — nextest isolates each test into its own process, but
+/// that isolation is not guaranteed here) would make either test's outcome
+/// depend on who won the race, which is exactly the kind of flake this
+/// module cannot afford to ship.
+fn install_into(cell: &OnceLock<Sink>, sink: Sink) -> bool {
+    let installed = cell.set(sink).is_ok();
+    if !installed {
+        tracing::warn!(
+            "telemetry: install() called again after a sink was already installed for this \
+             process; ignoring this one and keeping the first"
+        );
+    }
+    installed
 }
 
 /// Whether a sink has been installed for this process.
@@ -77,5 +103,25 @@ mod tests {
             Some("conv-1".to_string()),
             None,
         );
+    }
+
+    #[test]
+    fn test_a_second_install_is_refused() {
+        // Uses a private `OnceLock`, not the process-global `SINK`: this
+        // process shares a single test binary and, under plain `cargo
+        // test`, a single process across every test, so installing into
+        // the real global here would race with
+        // `test_emit_is_a_no_op_when_no_sink_is_installed` above (which
+        // depends on nothing else in the process having installed a sink
+        // yet) and make either test's outcome depend on thread scheduling.
+        // `install_into` carries the exact logic `install` calls with
+        // `&SINK`, so this still exercises the real behaviour.
+        let cell = OnceLock::new();
+
+        let first = install_into(&cell, Sink::noop());
+        let second = install_into(&cell, Sink::noop());
+
+        assert!(first);
+        assert!(!second);
     }
 }
