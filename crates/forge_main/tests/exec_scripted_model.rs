@@ -50,6 +50,8 @@ enum Turn {
 struct ScriptedModel {
     url: String,
     requests: Arc<Mutex<Vec<String>>>,
+    /// Requests that offered no tools (side calls such as title generation).
+    side_requests: Arc<Mutex<usize>>,
     /// Provider id the mock is registered as; `deepseek` engages forge's
     /// DeepSeek-specific request transformers.
     provider_id: &'static str,
@@ -65,6 +67,8 @@ impl ScriptedModel {
         let url = format!("http://{}/v1/chat/completions", server.server_addr());
         let requests = Arc::new(Mutex::new(Vec::new()));
         let recorded = requests.clone();
+        let side_requests = Arc::new(Mutex::new(0usize));
+        let side_recorded = side_requests.clone();
         std::thread::spawn(move || {
             let mut script = script.into_iter();
             for mut request in server.incoming_requests() {
@@ -74,6 +78,7 @@ impl ScriptedModel {
                     recorded.lock().unwrap().push(body);
                     script.next().unwrap_or(Turn::Text("Done."))
                 } else {
+                    *side_recorded.lock().unwrap() += 1;
                     Turn::Text("Scripted title")
                 };
                 let response = match turn {
@@ -88,7 +93,7 @@ impl ScriptedModel {
                 let _ = request.respond(response);
             }
         });
-        Self { url, requests, provider_id }
+        Self { url, requests, side_requests, provider_id }
     }
 
     fn requests(&self) -> Vec<String> {
@@ -1041,5 +1046,41 @@ fn test_misnamed_arguments_are_corrected_only_with_the_flag() {
             "write: `filePath` is not a parameter; used `file_path`"
         ]
     );
+}
+
+#[test]
+fn test_an_edit_made_through_the_shell_also_needs_verifying() {
+    // D-037's gap: only tool edits armed the gate, so `sed -i` then "Done."
+    // ended the run unverified.
+    let project = calc_project();
+    let model = ScriptedModel::start(vec![
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": "sed -i.bak 's/a - b/a + b/' calc.py && rm calc.py.bak", "description": "fix"}),
+        ),
+        Turn::Text("Fixed."),
+        Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run tests"})),
+        Turn::Text("Fixed and verified."),
+    ]);
+
+    let run = run_exec_full(project.path(), &model, None, &[], "fix add", &["--test-command", CALC_TESTS]);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let requests = model.requests();
+    assert_eq!(requests.len(), 4, "sed edit, finish (sent back), test run, finish");
+    assert!(requests[2].contains("before finishing (1 of 2)"));
+    assert_eq!(std::fs::read_to_string(project.path().join("calc.py")).unwrap(), "def add(a, b):\n    return a + b\n");
+}
+
+#[test]
+fn test_an_unattended_run_makes_no_title_request() {
+    let project = project_with_a_test();
+    let model = ScriptedModel::start(vec![Turn::Text("Done.")]);
+
+    let run = run_exec(project.path(), &model, None);
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert_eq!(model.requests().len(), 1);
+    assert_eq!(*model.side_requests.lock().unwrap(), 0, "no side request (title generation) in exec");
 }
 

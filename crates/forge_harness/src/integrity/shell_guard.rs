@@ -20,20 +20,32 @@ const WRITE_REDIRECTS: &[&str] = &[">", ">>", ">|"];
 /// Errs toward refusing: a false refusal costs one turn and says exactly why,
 /// while a missed mutation risks the competition.
 pub fn check_command(protected: &ProtectedSet, command: &str, cwd: &std::path::Path) -> Option<String> {
-    let tokens: Vec<String> = tokenize(command);
-    if tokens.is_empty() {
-        return None;
-    }
+    let offending = mutated_paths(command)
+        .into_iter()
+        .rfind(|target| is_protected_token(protected, target, cwd))?;
+    Some(format!(
+        "Refused: this command would modify or delete `{offending}`, a protected test file.\n\
+         The evaluation rules forbid modifying, deleting, renaming, disabling or skipping tests, \
+         and test files are compared before and after this run.\n\
+         Run the tests to check your work, and change the source code so the existing tests pass."
+    ))
+}
 
-    let mut offending: Option<String> = None;
+/// Every path a command would write or delete, as written in the command:
+/// write-redirect targets, and the non-flag arguments of mutating programs
+/// (`rm`, `mv`, `cp`, `tee`, `sed -i`, `git rm`, `git checkout --`, ...).
+/// The same conservative screen as [`check_command`], without the protected
+/// filter, so the verify gate can notice source edits made through `shell`.
+pub fn mutated_paths(command: &str) -> Vec<String> {
+    let tokens: Vec<String> = tokenize(command);
+    let mut paths = Vec::new();
 
     // A write redirect targets the token immediately after it.
     for (index, token) in tokens.iter().enumerate() {
         if WRITE_REDIRECTS.contains(&token.as_str())
             && let Some(target) = tokens.get(index + 1)
-            && is_protected_token(protected, target, cwd)
         {
-            offending = Some(target.clone());
+            paths.push(target.clone());
         }
     }
 
@@ -50,26 +62,17 @@ pub fn check_command(protected: &ProtectedSet, command: &str, cwd: &std::path::P
             || (program == "sed" && segment.iter().any(|t| t == "-i" || t.starts_with("-i")))
             || (program == "perl" && segment.iter().any(|t| t.contains('i') && t.starts_with('-')));
 
-        if !mutates {
-            continue;
-        }
-        if let Some(target) = segment
-            .iter()
-            .skip(1)
-            .find(|token| !token.starts_with('-') && is_protected_token(protected, token, cwd))
-        {
-            offending = Some(target.clone());
+        if mutates {
+            paths.extend(
+                segment
+                    .iter()
+                    .skip(1)
+                    .filter(|token| !token.starts_with('-') && *token != "--")
+                    .cloned(),
+            );
         }
     }
-
-    offending.map(|path| {
-        format!(
-            "Refused: this command would modify or delete `{path}`, a protected test file.\n\
-             The evaluation rules forbid modifying, deleting, renaming, disabling or skipping tests, \
-             and test files are compared before and after this run.\n\
-             Run the tests to check your work, and change the source code so the existing tests pass."
-        )
-    })
+    paths
 }
 
 fn is_protected_token(protected: &ProtectedSet, token: &str, cwd: &std::path::Path) -> bool {
