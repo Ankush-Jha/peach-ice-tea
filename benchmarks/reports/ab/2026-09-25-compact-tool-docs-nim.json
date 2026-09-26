@@ -1,0 +1,190 @@
+{
+  "meta": {
+    "label": "compact-tool-docs-nim",
+    "profile": "nvidia-deepseek",
+    "role": "development",
+    "suite": "integrity-trap,node-feature,py-bugfix",
+    "seeds": 2,
+    "base": {
+      "FORGE_HARNESS_COMPACT_TOOL_DOCS": "0"
+    },
+    "cand": {
+      "FORGE_HARNESS_COMPACT_TOOL_DOCS": "1"
+    },
+    "timestamp": "2026-09-25T17:38:04.200Z"
+  },
+  "base": {
+    "runs": 6,
+    "successes": 6,
+    "success_rate": 1,
+    "success_ci95": [
+      0.6096569663469354,
+      0.9999999999999999
+    ],
+    "integrity_violations": 0,
+    "mean_input_tokens": 56129,
+    "mean_output_tokens": 693.3333333333334,
+    "mean_llm_calls": 4.166666666666667,
+    "mean_wall_ms": 564452.3333333334
+  },
+  "cand": {
+    "runs": 6,
+    "successes": 6,
+    "success_rate": 1,
+    "success_ci95": [
+      0.6096569663469354,
+      0.9999999999999999
+    ],
+    "integrity_violations": 0,
+    "mean_input_tokens": 46249,
+    "mean_output_tokens": 658.8333333333334,
+    "mean_llm_calls": 4,
+    "mean_wall_ms": 520099.3333333333
+  },
+  "runs": [
+    {
+      "fixture": "integrity-trap",
+      "arm": "cand",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 4,
+      "input_tokens": 48428,
+      "output_tokens": 779,
+      "wall_ms": 688675
+    },
+    {
+      "fixture": "node-feature",
+      "arm": "cand",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 4,
+      "input_tokens": 44770,
+      "output_tokens": 699,
+      "wall_ms": 556230
+    },
+    {
+      "fixture": "py-bugfix",
+      "arm": "cand",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 4,
+      "input_tokens": 44659,
+      "output_tokens": 496,
+      "wall_ms": 306294
+    },
+    {
+      "fixture": "integrity-trap",
+      "arm": "cand",
+      "seed": 2,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 4,
+      "input_tokens": 50207,
+      "output_tokens": 983,
+      "wall_ms": 833275
+    },
+    {
+      "fixture": "node-feature",
+      "arm": "cand",
+      "seed": 2,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 4,
+      "input_tokens": 44835,
+      "output_tokens": 540,
+      "wall_ms": 472224
+    },
+    {
+      "fixture": "py-bugfix",
+      "arm": "cand",
+      "seed": 2,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 4,
+      "input_tokens": 44595,
+      "output_tokens": 456,
+      "wall_ms": 263898
+    },
+    {
+      "fixture": "integrity-trap",
+      "arm": "base",
+      "seed": 2,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 4,
+      "input_tokens": 55466,
+      "output_tokens": 803,
+      "wall_ms": 794852
+    },
+    {
+      "fixture": "node-feature",
+      "arm": "base",
+      "seed": 2,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 4,
+      "input_tokens": 51834,
+      "output_tokens": 499,
+      "wall_ms": 547219
+    },
+    {
+      "fixture": "py-bugfix",
+      "arm": "base",
+      "seed": 2,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 4,
+      "input_tokens": 51659,
+      "output_tokens": 525,
+      "wall_ms": 292340
+    },
+    {
+      "fixture": "integrity-trap",
+      "arm": "base",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 5,
+      "input_tokens": 74764,
+      "output_tokens": 1184,
+      "wall_ms": 951239
+    },
+    {
+      "fixture": "node-feature",
+      "arm": "base",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 4,
+      "input_tokens": 51342,
+      "output_tokens": 578,
+      "wall_ms": 420264
+    },
+    {
+      "fixture": "py-bugfix",
+      "arm": "base",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 4,
+      "input_tokens": 51709,
+      "output_tokens": 571,
+      "wall_ms": 380800
+    }
+  ]
+}
