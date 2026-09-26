@@ -369,3 +369,30 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   (`forge_main/tests/exec_integrity.rs`).
 - **Still not proven end to end:** the *dispatch-time refusal*. That needs a model that actually tries to edit a
   test, which means the mock model (PLAN.md W1-D step 4, never built) or a live run.
+
+## D-031 — `followup` can no longer end or block a one-shot run (2026-09-25)
+- **Context:** the D-028 hand-back was to gate `forge_services`' `followup.rs` so an unattended run answers
+  instead of prompting. Reading the orchestrator showed this alone would not help: `orch.rs` sets `should_yield`
+  from the tool **name** before any tool runs, so every `followup` call ended the turn. In `exec` that ends the
+  run, reported as `completed`, mid-task. That includes a *hallucinated* call from the default `forge` agent,
+  which has no `followup` tool at all. That second case is the likelier one in a judged run. It was reproduced
+  with a scripted model: 1 model call, exit 0, task unfinished.
+- **Decision:** both halves go through `forge_harness::runtime`, active only when non-interactive:
+  - `followup.rs` returns `UNATTENDED_FOLLOWUP_ANSWER` ("No human is available… proceed on your own judgement,
+    state the assumption") and emits `prompt_suppressed`;
+  - `orch.rs` yields on `followup` only when `followup_ends_turn()`.
+  Interactive behaviour is unchanged. This is a Tier 1 correctness precondition (PLAN.md C2), so it ships on in
+  `exec` without an A/B.
+- **Proof:** `forge_main/tests/exec_scripted_model.rs` runs the real binary against a local scripted
+  OpenAI-compatible endpoint (`tiny_http`, no spend). It covers a hallucinated followup (the loop continues),
+  a custom agent that has `followup` (the model receives the unattended answer), and a `write` to a protected
+  test (refused at dispatch, file unchanged, refusal visible to the model, `integrity:refused` in telemetry).
+  The last one closes the gap D-030 left open. Reverting the `orch.rs` line makes the first test fail.
+- **Found on the way:** `ProtectedSet::display_path` left a path absolute when it reached the repo through a
+  symlink (macOS `/var` → `/private/var`). This made refusal text and telemetry show absolute paths. Worse,
+  when an ancestor directory matched an exclude glob (a repo under `build/`), a real test was treated as
+  unprotected. It now falls back to canonical paths, including for files that don't exist yet. A regression
+  test fails on the old code.
+- **Flaky upstream test, not touched:** `forge_repo … test_concurrent_operations_dont_block_runtime` failed once in
+  a full parallel run (2879/2880). It passed 3/3 in isolation and on the next full run (2880/2880). It asserts
+  on 10 ms ticks inside a 200 ms window, so it is load-sensitive. Recorded per CLAUDE.md; not weakened.

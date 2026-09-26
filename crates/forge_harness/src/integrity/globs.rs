@@ -55,6 +55,18 @@ pub const DEFAULT_EXCLUDE_GLOBS: &[&str] = &[
     "**/.tox/**",
 ];
 
+/// Canonical form of `path`, resolving symlinks and `..` through its deepest
+/// existing ancestor, so a file that does not exist yet (a test the agent is
+/// about to create) still resolves.
+fn canonicalize_lenient(path: &Path) -> Option<PathBuf> {
+    if let Ok(canonical) = path.canonicalize() {
+        return Some(canonical);
+    }
+    let parent = path.parent()?;
+    let name = path.file_name()?;
+    Some(canonicalize_lenient(parent)?.join(name))
+}
+
 /// The set of protected paths for one repository.
 #[derive(Debug, Clone)]
 pub struct ProtectedSet {
@@ -108,8 +120,24 @@ impl ProtectedSet {
     }
 
     /// Path relative to the repository root, for display and comparison.
+    ///
+    /// Falls back to comparing canonical forms when the path does not start
+    /// with `root` as written — a symlinked prefix (macOS's `/var` is
+    /// `/private/var`) or `..` components. Without that fallback such a path
+    /// stayed absolute: the recorded-file lookup missed, and an exclude glob
+    /// could match a directory *above* the repository (a repo under `build/`
+    /// matches `**/build/**`), letting a real test through.
     pub fn display_path(&self, path: &Path) -> String {
-        path.strip_prefix(&self.root)
+        let relative = path
+            .strip_prefix(&self.root)
+            .ok()
+            .map(Path::to_path_buf)
+            .or_else(|| {
+                let root = self.root.canonicalize().ok()?;
+                canonicalize_lenient(path)?.strip_prefix(root).ok().map(Path::to_path_buf)
+            });
+        relative
+            .as_deref()
             .unwrap_or(path)
             .to_string_lossy()
             .replace('\\', "/")
@@ -148,6 +176,41 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn test_a_path_spelled_through_a_symlink_is_still_protected_and_relative() {
+        // The repo really lives under `build/`, which an exclude glob matches,
+        // and the harness knows it by a symlinked alias. A tool call naming
+        // the real path used to stay absolute, hit `**/build/**`, and slip
+        // through as unprotected.
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("build/repo");
+        std::fs::create_dir_all(real.join("tests")).unwrap();
+        std::fs::write(real.join("tests/test_x.py"), "").unwrap();
+        let alias = dir.path().join("alias");
+        std::os::unix::fs::symlink(&real, &alias).unwrap();
+        let protect: Vec<String> = DEFAULT_PROTECTED_GLOBS.iter().map(|s| s.to_string()).collect();
+        let exclude: Vec<String> = DEFAULT_EXCLUDE_GLOBS.iter().map(|s| s.to_string()).collect();
+        let fixture = ProtectedSet::new(&alias, &protect, &exclude, vec![alias.join("tests/test_x.py")]);
+
+        let existing = real.join("tests/test_x.py");
+        let not_yet_created = real.join("tests/test_new.py");
+        let actual = (
+            fixture.is_protected(&existing),
+            fixture.display_path(&existing),
+            fixture.is_protected(&not_yet_created),
+            fixture.display_path(&not_yet_created),
+        );
+
+        let expected = (
+            true,
+            "tests/test_x.py".to_string(),
+            true,
+            "tests/test_new.py".to_string(),
+        );
+        assert_eq!(actual, expected);
+    }
 
     fn fixture_set(files: &[&str]) -> ProtectedSet {
         let protect: Vec<String> = DEFAULT_PROTECTED_GLOBS.iter().map(|s| s.to_string()).collect();

@@ -354,11 +354,15 @@ impl<S: AgentService + EnvironmentInfra<Config = forge_config::ForgeConfig>> Orc
                 message.finish_reason == Some(FinishReason::Stop) && message.tool_calls.is_empty();
 
             // Should yield if a tool is asking for a follow-up
+            // harness: R-HACK-1 — not in an unattended run, where the
+            // followup is answered in-band and yielding would end the run
+            // mid-task as "completed".
             should_yield = is_complete
-                || message
+                || (message
                     .tool_calls
                     .iter()
-                    .any(|call| ToolCatalog::should_yield(&call.name));
+                    .any(|call| ToolCatalog::should_yield(&call.name))
+                    && forge_harness::runtime::followup_ends_turn());
 
             // Process tool calls and update context
             let mut tool_call_records = self
