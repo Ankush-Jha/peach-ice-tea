@@ -134,6 +134,7 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       today; golden test proves it).
       → `compaction_pipeline::Pipeline`, hook wired, golden test over 4 shapes with a non-vacuity guard (D-062).
 - [ ] **T3.5** `R-CTX-2` S0 supersede. **[A/B]**
+      → built behind `FORGE_HARNESS_SUPERSEDE` (default off): re-read/edit/re-run; narrower-search rule deferred (D-075). A/B pending.
 - [ ] **T3.6** `R-CTX-2` S1 offload. **[A/B]**
       → built behind `FORGE_HARNESS_OFFLOAD` (default off); spares S3 when enough; e2e proven (D-074). A/B pending.
 - [x] **T3.7** `R-SAFE-3` redaction utility (needed before any scorer sends data).

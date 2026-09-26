@@ -11,6 +11,7 @@
 pub mod handoff;
 pub mod offload;
 pub mod recall;
+pub mod supersede;
 
 use forge_domain::{Compact, Context, ContextMessage, Environment};
 
@@ -18,6 +19,12 @@ use crate::compact::Compactor;
 
 /// One compaction stage.
 pub enum Stage {
+    /// S0: results made stale by later actions become stubs with a handle
+    /// ([`supersede`]; reversible).
+    Supersede {
+        /// Newest messages never touched.
+        retention_window: usize,
+    },
     /// S1: large tool results outside the retention window become stubs with
     /// a handle ([`offload`]; reversible).
     Offload {
@@ -33,6 +40,7 @@ impl Stage {
     /// A short, stable name for logs and metrics.
     pub fn name(&self) -> &'static str {
         match self {
+            Stage::Supersede { .. } => "supersede",
             Stage::Offload { .. } => "offload",
             Stage::Summarize(_) => "summarize",
         }
@@ -40,6 +48,7 @@ impl Stage {
 
     fn apply(&self, context: Context) -> anyhow::Result<(Context, Vec<recall::RecallHandle>)> {
         match self {
+            Stage::Supersede { retention_window } => Ok(supersede::supersede(context, *retention_window)),
             Stage::Offload { retention_window } => Ok(offload::offload(context, *retention_window)),
             Stage::Summarize(compactor) => Ok((compactor.compact(context, false)?, Vec::new())),
         }
@@ -90,6 +99,12 @@ impl Pipeline {
     /// handles are returned with the recall handles.
     pub fn offload(mut self, retention_window: usize) -> Self {
         self.stages.insert(0, Stage::Offload { retention_window });
+        self
+    }
+
+    /// Puts S0 supersede first (T3.5): stale results go before anything else.
+    pub fn supersede(mut self, retention_window: usize) -> Self {
+        self.stages.insert(0, Stage::Supersede { retention_window });
         self
     }
 
