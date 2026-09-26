@@ -13,8 +13,12 @@ Legend: **[A/B]** requires an A/B report before ticking.
       ignored. Replace both with `FORGE_SESSION__PROVIDER_ID` / `FORGE_SESSION__MODEL_ID` (parallel-safe:
       process env only, no shared config-file write). Keep `FORGE_DEBUG_REQUESTS` — it works (D-012).
       Standardize model naming across `task.yml` files so "model family" is usable as an A/B dimension.
-      TypeScript-only; no Rust change. See `RECON.md` §2, `DECISIONS.md` D-011 and D-012.
+      TypeScript-only; no Rust change. See `RECON.md` §2, `DECISIONS.md` D-011, D-012, D-013, D-014.
       **Blocks T0.4, T0.5, T0.6.**
+      → Repair done and verified as far as is possible without credentials: all 14 task.yml parse, every
+      template variable resolves, the harness runs green on `echo` (5/5, 15/15 validations), the registry
+      cross-product substitutes correctly (probe: 4/4), and a repaired invocation now reaches the provider
+      layer rather than clap. **Unticked pending a live run once `OPENROUTER_API_KEY` is set.**
 - [x] **T0.1** Fork hygiene: add `upstream` remote, record the upstream commit we forked from in
       `DECISIONS.md`, confirm `cargo check` and `cargo insta test` pass on a clean clone,
       document the local dev loop in `docs/harness/DEV.md`.

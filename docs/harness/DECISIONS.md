@@ -125,3 +125,40 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   final message.
 - **Process note:** the error was reasoning from the absence of a grep hit to the absence of a feature. For a
   config value, check the config struct and its env-mapping layer before concluding it is unimplemented.
+
+## D-013 — Shared model registry; both A/B arms route through OpenRouter (2026-09-20)
+- **Context:** `R-EVAL-1` requires every A/B to run on ≥2 model families (one Anthropic, one OpenAI). Before
+  this, each `task.yml` named its own models ad hoc — the same family appeared as
+  `claude-sonnet-4-5-20250929`, `anthropic/claude-sonnet-4.5` and `anthropic/claude-sonnet-4.6` across
+  different evals, and `create_skill` named no model at all, running against whatever ambient config existed.
+  "Model family" was not usable as a dimension.
+- **Decision:** `benchmarks/models.csv` (`family,provider,model`) is the single source of truth, referenced by
+  every agent-invoking eval as `csv: ../../models.csv`. Sources cross-product in `benchmarks/cli.ts`, so each
+  eval's task rows multiply by the model rows. Providers in `run:` lines are templated as `{{provider}}`.
+- **Both arms route through `open_router`, deliberately.** The evals' `jq` validations assume the OpenAI wire
+  shape (`.messages[].tool_calls[].function.name`), which OpenRouter emits. Forge's native `anthropic` provider
+  sends Anthropic-shaped `content` blocks with `tool_use`, so those filters would match nothing and the eval
+  would pass or fail **for the wrong reason, silently** — worse than an error, because it looks like it worked.
+  One `OPENROUTER_API_KEY` also covers both arms.
+- **Alternatives:** native `anthropic` + `openai` providers (needs the validations migrated to
+  `FORGE_AUTO_DUMP=json` first, whose `Context` is provider-agnostic and additionally carries tool results and
+  the final assistant message — the better long-term shape, deferred to T0.4); a `cmd:` source generating rows
+  dynamically (**not possible** — `cli.ts:156` logs "cmd source type not yet implemented" and calls
+  `process.exit(1)`).
+- **Consequences:** re-baselining on a new model version is a one-line edit, but per `RECON.md` §5 it
+  invalidates comparability with earlier reports, so it must be recorded here and the baseline re-run. The
+  per-eval model variants upstream used to test model-specific behaviour (`z-ai/glm-4.6:exacto`,
+  `minimax/minimax-m2.1`, `glm-4.7`) are dropped from the default arms; re-add them as extra registry rows if
+  that coverage is wanted. Rationale is restated in `benchmarks/models.README.md` so it is not "optimised" away.
+
+## D-014 — Two further latent breakages in the eval harness, recorded not fixed (2026-09-20)
+- **Context:** found while doing T0.0; neither blocks the baseline, both would mislead later work.
+- **`cmd:` sources are unimplemented.** `benchmarks/cli.ts:156-158` logs an error and hard-exits. The `Source`
+  type in `benchmarks/model.ts` advertises it.
+- **`type: "llm"` validations are declared but never dispatched.** `benchmarks/model.ts` defines the variant;
+  `benchmarks/verification.ts::runValidations` has no branch for it, so such a validation is silently skipped
+  rather than failing. The only working judge is the bespoke Vertex-AI-gated
+  `benchmarks/evals/semantic_search_quality/llm_judge.ts`, invoked out-of-band via a `type: shell` validation.
+- **Decision:** record both here and in `RECON.md`; do not fix under T0.0, whose scope is restoring invocation.
+  `R-EVAL-3`/`R-EVAL-4` must not assume either feature exists. A silently-skipped validation is the more
+  dangerous of the two and should be made a hard error when the harness is next touched (T0.4).

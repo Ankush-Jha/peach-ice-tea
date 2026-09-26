@@ -1,7 +1,7 @@
 run:
   - git clone --depth=1 --branch main https://github.com/tailcallhq/forgecode .
   - mkdir ../test-dir && cd ../test-dir
-  - FORGE_SESSION__PROVIDER_ID=open_router FORGE_SESSION__MODEL_ID={{model}} FORGE_DEBUG_REQUESTS='{{dir}}/context.json' forgee -p '{{task}}'
+  - FORGE_SESSION__PROVIDER_ID={{provider}} FORGE_SESSION__MODEL_ID={{model}} FORGE_DEBUG_REQUESTS='{{dir}}/context.json' forgee -p '{{task}}'
 parallelism: 5
 timeout: 120
 early_exit: false  # We want to see all cases, not just the first success
@@ -34,9 +34,7 @@ validations:
       ' {{dir}}/context.json
 
 sources:
-  - value:
-      - model: "anthropic/claude-sonnet-4.5"
-      - model: "z-ai/glm-4.6:exacto"
+  - csv: ../../models.csv
   - value:
       - task: "clean ~/tailcall"
       - task: "format code in ~/task/crates/forge_domain"
