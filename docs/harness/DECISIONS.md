@@ -1628,3 +1628,33 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
   - with 4 system messages the tool marker never adds to upstream's 5.
 - Gemini's unused `Part.cache_control` gets a comment explaining why it stays unset (Gemini's caching is implicit).
   Bedrock's equivalent was not changed (not on the judged path).
+
+## D-085 — NVIDIA NIM as a second free request pool; compact tool docs shipped on after A/Bs on two families (2026-09-27)
+- **The NIM pool (development only, never the judged run):** the team supplied NVIDIA NIM keys; one tool-call probe
+  each succeeded for `nvidia/nemotron-3-ultra-550b-a55b`, `z-ai/glm-5.3`, `moonshotai/kimi-k3`,
+  `nvidia/nemotron-3.5-lightning-30b-a3b`, `meta/muse-glimmer-30b` and `google/gemma-4-31b-it` (the Llama vision key
+  was skipped, per the team).
+  - Keys are used only through each command's `NVIDIA_API_KEY` and written to no file (CLAUDE.md). They were
+    pasted into the chat, so they must be rotated after the project.
+  - **Shared quota: unknown.** NIM responses carry only `nvcf-reqid`, with no rate-limit or account headers, so
+    runs are spread across keys and a 429 would be the answer.
+  - New profile `configuration/profiles/nvidia-nim` (role `development`) registers all six on the generic `nvidia`
+    provider; `FORGE_SESSION__MODEL_ID` picks one.
+- **Choosing the second family (smoke on `py-bugfix` and `node-feature`):**
+  - Nemotron Ultra on NIM: `py-bugfix` in 5 calls and 21 s.
+  - GLM 5.3: 2/2, but about 7 minutes per fixture.
+  - Kimi K3 **declared done with tests failing** after 2 calls on `py-bugfix`.
+  - Muse Glimmer declared done after **one call and no edit** on `node-feature`.
+
+  The soft gate (D-037) cannot catch a stop with no edit. That is TH.10's case, so the TH.10 A/B runs on Kimi.
+- **Compact tool docs (D-039) A/B on NIM Nemotron Ultra, all 6 fixtures × 2 seeds**
+  (`benchmarks/reports/ab/2026-09-26-compact-tool-docs-nim-ultra.md`): success **12/12 vs 12/12**, input tokens
+  **−6.6%** per run, output −6.4%, LLM calls +4.4% (within noise: one fixture's two seeds took 14 and 25 calls in
+  the same arm), wall time +0.8%. With the DeepSeek A/B (`2026-09-25-compact-tool-docs-nim.md`: 100%/100%, −17.6%
+  input, −4% calls), that is **two model families with no success loss and fewer input tokens: principle 6's bar is
+  met.**
+- **Shipped default-on:** `tool_docs::enabled()` is on unless `FORGE_HARNESS_COMPACT_TOOL_DOCS=0`. A new test pins
+  the default (no `<example` in the tools of a default run); the existing test still compares off/on explicitly.
+  **The graded model is checked next:** the team asked for a Gemini arm because the D-081 run spent its 20
+  requests partly on `todo_write`. That runs when Gemini's daily quota resets, and a regression there reverts this.
+- **Runner fix:** `ab.ts` counted `--suite all` as one fixture in its summary line (cosmetic; every fixture ran).

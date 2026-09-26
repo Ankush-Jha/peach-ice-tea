@@ -8,15 +8,16 @@
 //! section (such as `task`'s agent list). Nothing is paraphrased, so no
 //! instruction the model relies on can be reworded away.
 //!
-//! Off unless [`ENV_VAR`] is `1`: it changes what the model sees, so it
-//! stays behind a flag until an A/B supports it (`CLAUDE.md` principle 6).
+//! **On by default** since D-085: A/Bs on two model families (DeepSeek V4.1
+//! Flash, D-039 report; Nemotron 3 Ultra, 6 fixtures × 2 seeds) kept success at
+//! 100% and cut input tokens (−17.6%, −6.6%). `ENV_VAR=0` turns it off.
 
-/// Environment variable that enables compaction when set to `1`.
+/// Environment variable that disables compaction when set to `0`.
 pub const ENV_VAR: &str = "FORGE_HARNESS_COMPACT_TOOL_DOCS";
 
-/// Whether compaction is enabled for this process.
+/// Whether compaction is enabled for this process: on unless `ENV_VAR=0`.
 pub fn enabled() -> bool {
-    std::env::var(ENV_VAR).is_ok_and(|value| value == "1")
+    std::env::var(ENV_VAR).map_or(true, |value| value != "0")
 }
 
 /// `description` without its `<example…>…</example…>` blocks, and without
