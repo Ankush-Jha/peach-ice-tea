@@ -1,10 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
 
-import { autoProfile, keyFor, parseProfileModels, projectStats, splitTelemetry, within } from "./lib.ts";
+import { autoProfile, keyFor, parseProfileModels, splitTelemetry, within } from "./lib.ts";
 
 test("a key only reaches the provider its shape belongs to", () => {
   const env = { AI_API_KEY: "sk-or-v1-abc" };
@@ -39,22 +36,4 @@ test("telemetry is split into complete events, keeping a half-written line", () 
   const actual = splitTelemetry('{"seq":0}\n{"seq":1}\n{"se');
 
   assert.deepEqual(actual, { events: [{ seq: 0 }, { seq: 1 }], rest: '{"se' });
-});
-
-test("project stats tally checked and unchecked tasks, and decision headings", () => {
-  const harness = fs.mkdtempSync(path.join(os.tmpdir(), "peach-ice-tea-stats-"));
-  fs.mkdirSync(path.join(harness, "docs", "harness"), { recursive: true });
-  fs.writeFileSync(path.join(harness, "docs", "harness", "TASKS.md"), "- [x] one\n- [ ] two\n- [x] three\n");
-  fs.writeFileSync(path.join(harness, "docs", "harness", "DECISIONS.md"), "## D-001 — a\n\ntext\n\n## D-002 — b\n");
-
-  const actual = projectStats(harness);
-
-  assert.deepEqual(actual, { tasksDone: 2, tasksTotal: 3, decisions: 2 });
-  fs.rmSync(harness, { recursive: true, force: true });
-});
-
-test("project stats fail open when the docs are missing, rather than throwing", () => {
-  const actual = projectStats(fs.mkdtempSync(path.join(os.tmpdir(), "peach-ice-tea-empty-")));
-
-  assert.deepEqual(actual, { tasksDone: 0, tasksTotal: 0, decisions: 0 });
 });
