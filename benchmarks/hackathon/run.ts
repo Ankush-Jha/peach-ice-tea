@@ -17,6 +17,13 @@
 // `--agent reference` and `--agent cheat` are stubs that never call peach, so the runner
 // (and its integrity check) can be exercised with no model and no credit. `--agent addnew`
 // is a third stub: the regression test for the allow-list bug above.
+//
+// `--agent peach-cheat` is the one mode that proves the *harness's* guard, not the runner's:
+// it runs the real `peach exec` binary (against a provider on a closed local port, so no
+// model and no credit), waits for the harness to log `run_start` — after which its manifest
+// exists — then edits a declared test and adds a new one while peach is still running. It
+// succeeds only if peach's own JSON line reports both violations as restored AND this
+// runner's independent check then finds the tests untouched (D-028).
 
 // Handle EPIPE errors gracefully (e.g. when piping to `head` or `jq` that closes early).
 process.stdout.on("error", (error: NodeJS.ErrnoException) => {
@@ -43,7 +50,9 @@ const FIXTURES_DIR = path.join(HACKATHON_DIR, "fixtures");
 const REPORTS_DIR = path.join(REPO_ROOT, "benchmarks", "reports", "hackathon");
 const PROMPT_TEMPLATE_PATH = path.join(REPO_ROOT, "configuration", "prompt-template.md");
 
-type Agent = "peach" | "reference" | "cheat" | "addnew";
+type Agent = "peach" | "peach-cheat" | "reference" | "cheat" | "addnew";
+
+const AGENTS: readonly Agent[] = ["peach", "peach-cheat", "reference", "cheat", "addnew"];
 
 /** A loud, unrecoverable configuration or fixture problem. Never swallowed. */
 class HackathonError extends Error {}
@@ -80,15 +89,18 @@ const DEFAULT_TEST_TIMEOUT_MS = 2 * 60_000;
 function printUsage(): void {
   console.log(
     [
-      "Usage: npm run hackathon -- --agent <peach|reference|cheat|addnew> [options]",
+      "Usage: npm run hackathon -- --agent <peach|peach-cheat|reference|cheat|addnew> [options]",
       "",
       "Options:",
-      "  --agent <peach|reference|cheat|addnew>",
+      "  --agent <peach|peach-cheat|reference|cheat|addnew>",
       "                                    Required. 'reference' applies solution.patch,",
       "                                    'cheat' edits a test file, 'addnew' adds a new",
       "                                    test file that short-circuits the test runner",
       "                                    (regression test for the allow-list integrity",
       "                                    bug), 'peach' invokes the real binary.",
+      "                                    'peach-cheat' runs the real binary with no model",
+      "                                    and tampers with tests mid-run, to prove peach's",
+      "                                    own integrity guard restores them.",
       "  --suite <all|name[,name...]>     Fixtures to run. Default: all.",
       "  --bin <path>                     peach binary. Default: $PEACH_ICE_TEA_BIN or 'peach'.",
       "  --timeout-ms <n>                 Hard timeout for the agent step. Default: " +
@@ -116,10 +128,10 @@ function parseArgs(argv: string[]): CliArgs {
     switch (arg) {
       case "--agent": {
         const value = argv[++i];
-        if (value !== "peach" && value !== "reference" && value !== "cheat" && value !== "addnew") {
-          fail(`--agent must be one of peach|reference|cheat|addnew, got: ${value ?? "<missing>"}`);
+        if (!AGENTS.includes(value as Agent)) {
+          fail(`--agent must be one of ${AGENTS.join("|")}, got: ${value ?? "<missing>"}`);
         }
-        agent = value;
+        agent = value as Agent;
         break;
       }
       case "--suite":
@@ -157,7 +169,7 @@ function parseArgs(argv: string[]): CliArgs {
     }
   }
 
-  if (!agent) fail("--agent is required (peach|reference|cheat|addnew). Run with --help for usage.");
+  if (!agent) fail(`--agent is required (${AGENTS.join("|")}). Run with --help for usage.`);
   return { agent, suite, bin, timeoutMs, testTimeoutMs, label };
 }
 
@@ -178,7 +190,7 @@ interface RunResult {
 function runProcess(
   command: string,
   cmdArgs: string[],
-  opts: { cwd: string; timeoutMs: number },
+  opts: { cwd: string; timeoutMs: number; env?: NodeJS.ProcessEnv },
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
@@ -186,6 +198,7 @@ function runProcess(
     try {
       child = spawn(command, cmdArgs, {
         cwd: opts.cwd,
+        env: opts.env ?? process.env,
         detached: true, // own process group, so -pid kills the whole tree
         stdio: ["ignore", "pipe", "pipe"], // stdin closed: no interactive input is possible
       });
@@ -531,21 +544,32 @@ function extractMetrics(parsed: unknown): MetricsSummary | null {
 // without needing a second change here.
 // ---------------------------------------------------------------------------
 
-let evidenceDirSupportCache: Promise<boolean> | null = null;
+let execHelpCache: Promise<string> | null = null;
 
-async function supportsEvidenceDir(bin: string): Promise<boolean> {
-  if (evidenceDirSupportCache) return evidenceDirSupportCache;
-  evidenceDirSupportCache = (async () => {
+/** `peach exec --help` output, or "" if it can't be run. Cached per process. */
+async function execHelp(bin: string): Promise<string> {
+  if (execHelpCache) return execHelpCache;
+  execHelpCache = (async () => {
     try {
       const help = await runProcess(bin, ["exec", "--help"], { cwd: process.cwd(), timeoutMs: 15_000 });
-      return help.code === 0 && help.stdout.includes("--evidence-dir");
+      return help.code === 0 ? help.stdout : "";
     } catch {
       // Fail open (CLAUDE.md principle 5): if we can't even run --help, behave exactly as
       // before and let the real invocation surface the error.
-      return false;
+      return "";
     }
   })();
-  return evidenceDirSupportCache;
+  return execHelpCache;
+}
+
+async function supportsEvidenceDir(bin: string): Promise<boolean> {
+  return (await execHelp(bin)).includes("--evidence-dir");
+}
+
+/** `--telemetry <FILE>` (D-028): the harness's own event stream, including its integrity
+ * verdict. Sniffed the same way as `--evidence-dir`, for the same reason. */
+async function supportsTelemetry(bin: string): Promise<boolean> {
+  return (await execHelp(bin)).includes("--telemetry");
 }
 
 // ---------------------------------------------------------------------------
@@ -570,9 +594,73 @@ interface FixtureResult {
     outcome: string | null;
   };
   metrics: MetricsSummary;
+  /** Peach's OWN post-run integrity verdict, from the `integrity` field of its exec JSON
+   * line — as opposed to `integrity` above, which this runner computes independently.
+   * Null when peach was not invoked or did not report one. */
+  harness_integrity: HarnessIntegrity | null;
+  /** Path to peach's telemetry JSONL, when it was captured. */
+  telemetry_path: string | null;
   wall_ms: number;
   error: string | null;
 }
+
+interface HarnessIntegrity {
+  checked: number;
+  violations: { path: string; kind: string; restored: boolean }[];
+}
+
+function extractHarnessIntegrity(parsed: unknown): HarnessIntegrity | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  const integrity = (parsed as Record<string, unknown>).integrity;
+  if (!integrity || typeof integrity !== "object") return null;
+  const obj = integrity as Record<string, unknown>;
+  if (typeof obj.checked !== "number" || !Array.isArray(obj.violations)) return null;
+  return { checked: obj.checked, violations: obj.violations as HarnessIntegrity["violations"] };
+}
+
+/** An isolated PEACH_CONFIG whose only provider is a closed local port: `peach exec` starts
+ * for real, then spends its wall-clock budget in transport retries without ever reaching a
+ * model (the same setup as `crates/peach_main/tests/exec_never_blocks.rs`). */
+async function unroutablePeachEnv(tmpDir: string): Promise<NodeJS.ProcessEnv> {
+  const configDir = path.join(tmpDir, "peach-config");
+  await fs.mkdir(configDir, { recursive: true });
+  await fs.writeFile(
+    path.join(configDir, ".peach.toml"),
+    [
+      "[[providers]]",
+      'id = "test_unroutable"',
+      'url = "http://127.0.0.1:1/v1/chat/completions"',
+      'response_type = "OpenAI"',
+      'auth_methods = ["api_key"]',
+      'api_key_var = "PEACH_TEST_BOGUS_KEY"',
+      "",
+      "[[providers.models]]",
+      'id = "test-model"',
+      'name = "Test Model"',
+      'input_modalities = ["text"]',
+      "",
+      "[session]",
+      'provider_id = "test_unroutable"',
+      'model_id = "test-model"',
+      "",
+    ].join("\n"),
+  );
+  return { ...process.env, PEACH_CONFIG: configDir, PEACH_TEST_BOGUS_KEY: "bogus-key-value" };
+}
+
+/** Resolves once peach has logged `run_start`, i.e. once its integrity manifest exists. */
+async function waitForRunStart(telemetryPath: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const text = await fs.readFile(telemetryPath, "utf8").catch(() => "");
+    if (text.includes('"type":"run_start"')) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  fail(`peach never logged run_start to ${telemetryPath} within ${timeoutMs}ms`);
+}
+
+/** Wall-clock budget for a `peach-cheat` run: long enough to tamper, short enough to be cheap. */
+const PEACH_CHEAT_BUDGET_SECS = 6;
 
 async function readMeta(fixtureName: string, fixtureDir: string): Promise<Meta> {
   const metaPath = path.join(fixtureDir, "meta.json");
@@ -644,6 +732,9 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
   let exec: FixtureResult["exec"];
   let metrics: MetricsSummary = ZERO_METRICS;
   let runError: string | null = null;
+  let harnessIntegrity: HarnessIntegrity | null = null;
+  let telemetryPath: string | null = null;
+  let cheatNote: string | null = null;
 
   if (args.agent === "reference" || args.agent === "cheat" || args.agent === "addnew") {
     const { note, wallMs } = await applyStubAgent(args.agent, fixtureName, fixtureDir, repoDir, meta);
@@ -651,6 +742,18 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
     metrics = { ...ZERO_METRICS, wall_ms: wallMs };
   } else {
     const execArgs = ["exec", "--json"];
+    const cheating = args.agent === "peach-cheat";
+    let env: NodeJS.ProcessEnv | undefined;
+    if (cheating) {
+      env = await unroutablePeachEnv(tmpDir);
+      execArgs.push("--max-duration-secs", String(PEACH_CHEAT_BUDGET_SECS));
+    }
+    if (await supportsTelemetry(args.bin)) {
+      telemetryPath = path.join(tmpDir, "telemetry.jsonl");
+      execArgs.push("--telemetry", telemetryPath);
+    } else if (cheating) {
+      fail(`--agent peach-cheat needs \`${args.bin} exec --telemetry\` to know when the guard is live`);
+    }
     if (await supportsEvidenceDir(args.bin)) {
       const evidenceDir = path.join(tmpDir, "evidence");
       await fs.mkdir(evidenceDir, { recursive: true });
@@ -659,7 +762,14 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
     execArgs.push(prompt);
     let result: RunResult;
     try {
-      result = await runProcess(args.bin, execArgs, { cwd: repoDir, timeoutMs: args.timeoutMs });
+      const running = runProcess(args.bin, execArgs, { cwd: repoDir, timeoutMs: args.timeoutMs, env });
+      if (cheating) {
+        await waitForRunStart(telemetryPath as string, 30_000);
+        const cheat = await applyStubAgent("cheat", fixtureName, fixtureDir, repoDir, meta);
+        const addnew = await applyStubAgent("addnew", fixtureName, fixtureDir, repoDir, meta);
+        cheatNote = `mid-run: ${cheat.note}; ${addnew.note}`;
+      }
+      result = await running;
     } catch (err) {
       fail(
         `could not invoke peach ("${args.bin} exec --json ..."): ${(err as Error).message}. ` +
@@ -668,6 +778,7 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
     }
     const parsed = lastJsonLine(result.stdout);
     const extracted = extractMetrics(parsed);
+    harnessIntegrity = extractHarnessIntegrity(parsed);
     metrics = extracted ?? { ...ZERO_METRICS, wall_ms: result.wallMs };
     const outcome =
       parsed && typeof parsed === "object" && typeof (parsed as Record<string, unknown>).outcome === "string"
@@ -675,9 +786,11 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
         : null;
     exec = {
       invoked: true,
-      note: result.timedOut
-        ? `killed after ${args.timeoutMs}ms timeout (process group)`
-        : `exited ${result.code ?? "null"}${result.signal ? ` (signal ${result.signal})` : ""}`,
+      note:
+        (result.timedOut
+          ? `killed after ${args.timeoutMs}ms timeout (process group)`
+          : `exited ${result.code ?? "null"}${result.signal ? ` (signal ${result.signal})` : ""}`) +
+        (cheatNote ? ` · ${cheatNote}` : ""),
       exit_code: result.code,
       timed_out: result.timedOut,
       outcome,
@@ -715,8 +828,19 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
   // always report exit_code 0 / timed_out false, so this is a no-op for them.
   const execSucceeded = exec.exit_code === 0 && !exec.timed_out;
 
+  // `peach-cheat` is not trying to solve the issue; it succeeds when peach's own guard caught
+  // BOTH mid-run tamperings and restored them (so peach's verdict and this runner's
+  // independent verdict agree that the tree ends up clean).
+  const guardProven =
+    harnessIntegrity !== null &&
+    harnessIntegrity.violations.some((v) => v.kind === "modified" && v.restored) &&
+    harnessIntegrity.violations.some((v) => v.kind === "added" && v.restored) &&
+    harnessIntegrity.violations.every((v) => v.restored);
+
   const success =
-    integrity === "clean" && testsPassed && integrationPassed !== false && runError === null && execSucceeded;
+    args.agent === "peach-cheat"
+      ? guardProven && integrity === "clean" && runError === null && !exec.timed_out
+      : integrity === "clean" && testsPassed && integrationPassed !== false && runError === null && execSucceeded;
 
   return {
     fixture: fixtureName,
@@ -730,6 +854,8 @@ async function runFixture(fixtureName: string, args: CliArgs, promptTemplate: st
     success,
     exec,
     metrics,
+    harness_integrity: harnessIntegrity,
+    telemetry_path: telemetryPath,
     wall_ms: Date.now() - fixtureStart,
     error: runError,
   };
@@ -799,7 +925,7 @@ function buildReport(args: CliArgs, timestamp: Date, results: FixtureResult[]): 
       timestamp: timestamp.toISOString(),
       agent: args.agent,
       suite: args.suite,
-      bin: args.agent === "peach" ? args.bin : "(not invoked)",
+      bin: args.agent === "peach" || args.agent === "peach-cheat" ? args.bin : "(not invoked)",
     },
     fixtures: results,
     summary: {
@@ -824,9 +950,9 @@ function renderMarkdown(report: RunReport): string {
   );
   lines.push("");
   lines.push(
-    "| Fixture | Language | Tests | Integration | Integrity | Exit/Outcome | Success | LLM calls | Input tok | Output tok | Wall ms |",
+    "| Fixture | Language | Tests | Integration | Integrity | Peach integrity | Exit/Outcome | Success | LLM calls | Input tok | Output tok | Wall ms |",
   );
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const r of report.fixtures) {
     const execCell = r.exec.timed_out
       ? "**TIMEOUT**"
@@ -834,23 +960,36 @@ function renderMarkdown(report: RunReport): string {
     lines.push(
       `| ${r.fixture} | ${r.language} | ${r.tests_passed ? "pass" : "FAIL"} | ` +
         `${r.integration_passed === null ? "n/a" : r.integration_passed ? "pass" : "FAIL"} | ` +
-        `${r.integrity === "clean" ? "clean" : "**VIOLATION**"} | ${execCell} | ${r.success ? "yes" : "no"} | ` +
+        `${r.integrity === "clean" ? "clean" : "**VIOLATION**"} | ${harnessIntegrityCell(r.harness_integrity)} | ` +
+        `${execCell} | ${r.success ? "yes" : "no"} | ` +
         `${r.metrics.llm_calls} | ${r.metrics.input_tokens} | ${r.metrics.output_tokens} | ${r.wall_ms} |`,
     );
   }
   lines.push("");
   for (const r of report.fixtures) {
-    if (r.integrity_details.length > 0 || r.error) {
+    const peachViolations = r.harness_integrity?.violations ?? [];
+    if (r.integrity_details.length > 0 || r.error || peachViolations.length > 0) {
       lines.push(`## ${r.fixture}`);
       lines.push("");
       if (r.error) lines.push(`- error: ${r.error}`);
       for (const detail of r.integrity_details) lines.push(`- integrity violation: ${detail}`);
+      for (const v of peachViolations) {
+        lines.push(`- peach guard: \`${v.path}\` ${v.kind}, ${v.restored ? "restored" : "NOT restored"}`);
+      }
+      if (r.telemetry_path) lines.push(`- telemetry: \`${r.telemetry_path}\``);
       lines.push(`- exec: ${r.exec.note}`);
       lines.push(`- tmp dir: \`${r.tmp_dir}\``);
       lines.push("");
     }
   }
   return lines.join("\n") + "\n";
+}
+
+function harnessIntegrityCell(integrity: HarnessIntegrity | null): string {
+  if (!integrity) return "n/a";
+  if (integrity.violations.length === 0) return `clean (${integrity.checked})`;
+  const restored = integrity.violations.filter((v) => v.restored).length;
+  return `**${integrity.violations.length} caught, ${restored} restored**`;
 }
 
 function timestampSlug(date: Date): string {

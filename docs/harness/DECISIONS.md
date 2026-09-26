@@ -344,3 +344,28 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   cannot gather without budget (D-025). The **frozen evaluation invocation must always pass it**, and the
   `harness/peach-ice-tea` wrapper (D-021/D-023) is where that belongs. Exit code 4 and outcome `time_budget`
   distinguish it from a task failure, so the evidence says which happened.
+
+## D-030 — D-028 closed: the guard is live, verified, and proven against the real binary (2026-09-25)
+- **Context:** D-028 part 1 installed the runtime. Wiring the post-run check turned up another gap: part 1
+  captured the manifest with **no snapshot directory** and then dropped it, so a violation could have been
+  detected but never restored. Separately, nothing anywhere called `telemetry::install`, so telemetry events had
+  no sink.
+- **Decisions:**
+  - The snapshot goes in a system temp dir that lives as long as the run, which keeps it outside the repo by
+    construction. `ExecHarness::finish` verifies and restores on all three exit paths (success, error, time budget).
+  - `TaskOutcome::TimeBudget` (exit 4) replaces the hand-built timeout JSON. This was the D-028 hand-back.
+  - `ExecReport.integrity` carries `{checked, violations[{path, kind, restored}]}`. It does not change the exit
+    code (PLAN.md C5).
+  - **`exec --telemetry <FILE>`** is an interim flag. TH.5's `--evidence-dir` should default it to
+    `<dir>/telemetry.jsonl` rather than replace it, so the eval runner's sniffing keeps working.
+  - The telemetry stream now carries `run_start`, `integrity` (`refused` / `verify` / `restored` / `violation`) and
+    `run_end`. **`model_call`/`tool_call` events are still not emitted:** the TH.4 hook into peach_app hooks
+    was never wired.
+- **Proof, not assertion:** the old `--agent cheat` stub never ran peach, so it only proved the *runner's* check.
+  The new `run.ts --agent peach-cheat` runs the real binary against a closed-port provider (no model, no spend). It
+  waits for the harness's `run_start`, overwrites a declared test, and adds a short-circuiting new test mid-run.
+  It passes only if peach's own JSON reports both as restored **and** the runner's independent hash + git-diff
+  check finds the tree clean. Result: 3/3 fixtures. The same scenario is a cargo test
+  (`peach_main/tests/exec_integrity.rs`).
+- **Still not proven end to end:** the *dispatch-time refusal*. That needs a model that actually tries to edit a
+  test, which means the mock model (PLAN.md W1-D step 4, never built) or a live run.
