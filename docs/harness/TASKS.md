@@ -46,7 +46,9 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
 - [ ] **BR.1** Tier 2 A/Bs, one per flag on the default model, k ≥ 2, ship or revert each:
       compact tool docs (D-039; strongest prior, −17.6% input on DeepSeek), T1.2, T1.4, T1.5, T2.1, T2.6, T3.10, T2.7, TH.10.
       → unblocked by the NIM pool (D-085). Done: compact tool docs and TH.10, both shipped on (2 families each; D-085,
-        D-088). Running: T1.2, T1.4, T1.5, T2.1, T2.6, T2.7 on Nemotron Ultra and GLM 5.3. Left: T3.10.
+        D-088). T1.2 closed, stays off, two families, no benefit either time (D-093). T2.1/T2.6: GLM in, looks like
+        no benefit, Ultra still running (D-093). T3.10/T3.14: first A/Bs landed but confounded by request/duration
+        caps, not usable as a verdict yet (D-093). Still running: T1.4, T1.5, T2.7 on Nemotron Ultra and GLM 5.3.
 - [x] **BR.2** Tier 3.1 failure-attribution tag on `recovery` events (+ emit `offload_read`/`rerun`/`reread` as events).
       → D-086. Telemetry schema 0.2.0; report tallies recoveries by cause. Observability only, no A/B needed.
 - [x] **BR.3** Tier 3.2 `write_note` scratchpad tool kept outside `Context.messages` (`R-CTX-10`).
@@ -126,8 +128,9 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
 ## M1 — Output shaping (cheap, measurable wins)
 - [x] **T1.1** `R-OUT-4` loud-truncation audit across read/shell/fetch/search/MCP + snapshots.
       → one shared recovery sentence; snapshots for read/shell/search/fetch; MCP shaper finally wired (D-059).
-- [ ] **T1.2** `R-OUT-1` line numbers off by default; update fs_read.md / fs_patch.md. **[A/B]**
+- [x] **T1.2** `R-OUT-1` line numbers off by default; update fs_read.md / fs_patch.md. **[A/B]**
       → behind `PEACH_HARNESS_LINE_NUMBERS_OFF=1` (default off; explicit `show_line_numbers` honoured), D-039.
+      A/B on two families (GLM, Ultra): success flat, cost worse both times. Closed, stays off (D-093).
       Related, not a task yet: `PEACH_HARNESS_COMPACT_TOOL_DOCS=1` cuts 15.4% of every request.
 - [x] **T1.3** `R-EVAL-2` recovery events (`offload_read`, `rerun_same_command`, `reread_same_range`)
       and `R-OUT-3` stable handles on every withheld output.
@@ -141,7 +144,9 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
 ## M2 — Orchestration
 - [ ] **T2.1** `R-LOOP-1` concurrency classes + concurrent read-only batches; add behaviour test. **[A/B]**
       → built behind `PEACH_HARNESS_PARALLEL_READONLY=1` (default off) with overlap/order specs and a real-binary
-      test (D-041). Unticked pending A/B.
+      test (D-041). GLM: success flat, cost worse — calls and wall time both *rose*, backwards from the point of
+      running reads concurrently; worth checking the implementation, not just reading it as "no benefit" (D-093).
+      Ultra still running. Unticked pending the second family.
 - [ ] **T2.2** `R-LOOP-2` job registry + `run_in_background` for shell + `job_output` / `job_wait`.
       → deferred: background jobs pay off on long commands; every fixture's tests run in under a second, so there is nothing
         to measure yet. Revisit with T3.12's long tasks.
@@ -155,7 +160,8 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
       → deferred: `[A/B]`; reasoning controls differ across the free models, so it waits for the bake-off's winner (D-069, D-071).
 - [ ] **T2.6** `R-TOOL-3` pre-dispatch correction layer + correction counters. **[A/B]**
       → built behind `PEACH_HARNESS_TOOL_CORRECTION=1` (default off): unambiguous key renames, `recovery` events,
-      real-binary test (D-042). Unticked pending A/B.
+      real-binary test (D-042). GLM: success flat, cost worse (D-093). Ultra still running. Unticked pending the
+      second family.
 - [ ] **T2.7** `R-LOOP-5` enforced doom-loop escalation ladder (warn → skip → pause). **[A/B]**
       → built behind `PEACH_HARNESS_DOOM_LOOP_ESCALATION` (default off): unit, orchestrator and exec tests (D-082). A/B pending.
 
@@ -183,7 +189,10 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
       → S2 stage wired with the heuristic scorer behind `PEACH_HARNESS_SCORE_STAGE` (fail-open gate via `build_plan`);
         `LlmScorer` deferred: a model request per compaction does not fit the free tier (D-069, D-077).
 - [x] **T3.10** `R-CTX-6` handoff note in S3.
-      → deterministic note atop the S3 summary behind `PEACH_HARNESS_HANDOFF_NOTE` (default off, A/B pending; D-063).
+      → deterministic note atop the S3 summary behind `PEACH_HARNESS_HANDOFF_NOTE` (default off; D-063). First A/B
+      (Muse Glimmer) confounded: base hit the request-limit ceiling on every fixture, and two candidate runs ran
+      away past 5M input tokens before hitting the wall-clock cap — not usable as a verdict on the flag itself
+      (D-093). Needs a rerun with caps sized for the model, or a different model, before a real ship/revert call.
 - [ ] **T3.11** `R-CTX-7` soft/hard triggers + `R-CTX-8` cache accounting. **[A/B]**
       → soft trigger (S0+S1 only) behind `PEACH_HARNESS_SOFT_COMPACTION`; cache rate around compactions in the report (D-076). A/B pending.
 - [ ] **T3.12** Long-horizon eval suite (≥ 60-turn tasks) and final context-engine A/B. **[A/B]**
@@ -194,7 +203,9 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
       → deferred: its checks need real runs that use subagents, background jobs (T2.2) and recall (flagged, D-066); T0.7's
         subagent check moved here (D-078).
 - [ ] **T3.14** `R-CTX-10` scratchpad notes (`write_note`) outside the context, re-shown after compaction. **[A/B]**
-      → built behind `PEACH_HARNESS_WRITE_NOTE=1` (D-087). A/B pending: it needs runs long enough to compact, like T3.10.
+      → built behind `PEACH_HARNESS_WRITE_NOTE=1` (D-087). First A/B (Nemotron 3.5) also confounded: four of six
+      fixtures were interrupted by the request/duration cap on *both* arms, too few clean completions to read as
+      the flag's effect (D-093). Still needs runs long enough to actually compact, as this note already said.
 
 ## M4 — Safety
 - [ ] **T4.1** `R-SAFE-1` ask-by-default policy + TUI approval prompt + `--yolo`.
