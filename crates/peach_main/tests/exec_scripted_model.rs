@@ -216,6 +216,19 @@ fn run_exec_full(
     task: &str,
     extra_args: &[&str],
 ) -> Run {
+    run_exec_configured(project, model, agent_md, extra_env, task, extra_args, "")
+}
+
+/// [`run_exec_full`] with `extra_toml` appended to the generated config.
+fn run_exec_configured(
+    project: &Path,
+    model: &ScriptedModel,
+    agent_md: Option<(&str, &str)>,
+    extra_env: &[(&str, &str)],
+    task: &str,
+    extra_args: &[&str],
+    extra_toml: &str,
+) -> Run {
     let config = tempfile::tempdir().unwrap();
     let telemetry = config.path().join("telemetry.jsonl");
     std::fs::write(
@@ -238,6 +251,7 @@ input_modalities = ["text"]
 [session]
 provider_id = "{provider}"
 model_id = "scripted-model"
+{extra_toml}
 "#,
             provider = model.provider_id,
             url = model.url,
@@ -1093,3 +1107,95 @@ fn test_an_unattended_run_makes_no_title_request() {
     assert_eq!(*model.side_requests.lock().unwrap(), 0, "no side request (title generation) in exec");
 }
 
+
+/// Config registering `fast` as a second provider serving `fast-model`, and
+/// routing the `sage` role to it (MM.3, D-049).
+fn sage_routed_to(fast: &ScriptedModel) -> String {
+    format!(
+        r#"
+[[providers]]
+id = "{provider}"
+url = "{url}"
+response_type = "OpenAI"
+auth_methods = ["api_key"]
+api_key_var = "PEACH_TEST_SCRIPTED_KEY"
+
+[[providers.models]]
+id = "fast-model"
+name = "Fast"
+tools_supported = true
+input_modalities = ["text"]
+
+[roles.sage]
+provider_id = "{provider}"
+model_id = "fast-model"
+"#,
+        provider = fast.provider_id,
+        url = fast.url,
+    )
+}
+
+fn delegate_to_sage() -> Turn {
+    Turn::Tool(
+        "task",
+        serde_json::json!({"tasks": ["Where is add defined?"], "agent_id": "sage"}),
+    )
+}
+
+#[test]
+fn test_a_routed_subagent_runs_on_its_role_model_and_the_main_agent_does_not() {
+    let project = project_with_a_test();
+    let fast = ScriptedModel::start_as("scripted_fast", vec![Turn::Text("add is in calc.py")]);
+    let main = ScriptedModel::start(vec![delegate_to_sage(), Turn::Text("Done.")]);
+
+    let run = run_exec_configured(project.path(), &main, None, &[], "fix add", &[], &sage_routed_to(&fast));
+
+    let model_of = |body: &String| {
+        serde_json::from_str::<serde_json::Value>(body).unwrap()["model"].as_str().unwrap_or("").to_string()
+    };
+    let actual = (
+        run.exit_code,
+        fast.requests().iter().map(model_of).collect::<Vec<_>>(),
+        main.requests().iter().map(model_of).collect::<std::collections::BTreeSet<_>>(),
+    );
+    let expected = (
+        Some(0),
+        vec!["fast-model".to_string()],
+        ["scripted-model".to_string()].into_iter().collect(),
+    );
+    assert_eq!(actual, expected, "report: {}", run.report);
+}
+
+#[test]
+fn test_a_failing_role_model_does_not_end_the_run() {
+    let project = project_with_a_test();
+    let fast = ScriptedModel::start_as(
+        "scripted_fast",
+        vec![Turn::Status(400), Turn::Status(400), Turn::Status(400), Turn::Status(400)],
+    );
+    let main = ScriptedModel::start(vec![delegate_to_sage(), Turn::Text("Done.")]);
+
+    let run = run_exec_configured(project.path(), &main, None, &[], "fix add", &[], &sage_routed_to(&fast));
+
+    let second = main.requests().get(1).cloned().unwrap_or_default();
+    let delegated_result = serde_json::from_str::<serde_json::Value>(&second).unwrap()["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "tool")
+        .map(|m| m["content"].to_string())
+        .collect::<String>();
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert!(
+        delegated_result.contains("'sage' subagent's model (")
+            && delegated_result.contains("/fast-model) failed")
+            && delegated_result.contains("Continue the work yourself"),
+        "the main agent was not told the role model failed: {delegated_result}"
+    );
+    assert!(
+        run.telemetry.iter().any(|event| event["type"] == "recovery"
+            && event["action"] == "subagent_model_failed"),
+        "no recovery event: {:?}",
+        run.telemetry
+    );
+}

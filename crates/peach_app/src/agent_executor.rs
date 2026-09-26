@@ -85,17 +85,24 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> AgentEx
 
         // Execute the request through the PeachApp
         let app = crate::PeachApp::new(self.services.clone());
-        let mut response_stream = app
+        let mut response_stream = match app
             .chat(
                 agent_id.clone(),
                 ChatRequest::new(Event::new(task.clone()), conversation.id),
             )
-            .await?;
+            .await
+        {
+            Ok(stream) => stream,
+            Err(error) => return Err(self.subagent_model_failed(&agent_id, error).await),
+        };
 
         // Collect responses from the agent
         let mut output = String::new();
         while let Some(message) = response_stream.next().await {
-            let message = message?;
+            let message = match message {
+                Ok(message) => message,
+                Err(error) => return Err(self.subagent_model_failed(&agent_id, error).await),
+            };
             if matches!(
                 &message,
                 ChatResponse::ToolCallStart { .. } | ChatResponse::ToolCallEnd(_)
@@ -176,6 +183,32 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> AgentEx
         } else {
             Err(Error::EmptyToolResponse.into())
         }
+    }
+
+    /// harness: MM.3 (D-052) — a subagent can run on its own role model
+    /// (`roles.<agent>`). When that model fails, the parent otherwise sees a
+    /// generic tool error that tells it to correct its call, and it retries a
+    /// delegation that cannot succeed. Name the model, say it is a provider
+    /// failure, and tell the parent to carry on itself (fail open, principle 5).
+    async fn subagent_model_failed(&self, agent_id: &AgentId, error: anyhow::Error) -> anyhow::Error {
+        let model = match self.services.get_agent(agent_id).await {
+            Ok(Some(agent)) => format!("{}/{}", agent.provider, agent.model),
+            _ => "its model".to_string(),
+        };
+        peach_harness::telemetry::emit(peach_harness::telemetry::TelemetryEvent::Recovery(
+            peach_harness::telemetry::event::Recovery {
+                action: "subagent_model_failed".to_string(),
+                trigger: format!("{}: {model}: {}", agent_id.as_str(), error.root_cause()),
+                outcome: None,
+                origin_call_id: None,
+            },
+        ));
+        error.context(format!(
+            "The '{}' subagent's model ({model}) failed before it finished. This is a provider \
+             failure, not a mistake in your tool call, and repeating the same delegation is \
+             unlikely to succeed. Continue the work yourself with your own tools.",
+            agent_id.as_str()
+        ))
     }
 
     pub async fn contains_tool(&self, tool_name: &ToolName) -> anyhow::Result<bool> {
