@@ -872,6 +872,10 @@ pub(super) struct MetricsRecord {
     files_changed: std::collections::HashMap<String, FileOperationOrArray>,
     #[serde(default, skip_serializing_if = "std::collections::HashSet::is_empty")]
     files_accessed: std::collections::HashSet<String>,
+    // harness: R-EVAL-2 — per-task token and call costs. Defaults on read, so
+    // conversations persisted before this field existed still load.
+    #[serde(default)]
+    task: peach_domain::TaskMetrics,
 }
 
 impl From<&peach_domain::Metrics> for MetricsRecord {
@@ -889,6 +893,7 @@ impl From<&peach_domain::Metrics> for MetricsRecord {
                 })
                 .collect(),
             files_accessed: metrics.files_accessed.clone(),
+            task: metrics.task.clone(),
         }
     }
 }
@@ -933,6 +938,7 @@ impl From<MetricsRecord> for peach_domain::Metrics {
             file_operations,
             files_accessed,
             todos: Vec::new(),
+            task: record.task,
         }
     }
 }
@@ -1025,5 +1031,46 @@ impl TryFrom<ConversationRecord> for peach_domain::Conversation {
                 peach_domain::MetaData::new(record.created_at.and_utc())
                     .updated_at(record.updated_at.map(|updated_at| updated_at.and_utc())),
             ))
+    }
+}
+
+#[cfg(test)]
+mod harness_task_metrics_tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    /// Task metrics must survive the round trip through the persistence DTO.
+    /// `todos` is dropped on this path upstream, so a field being present on
+    /// `Metrics` is not sufficient for it to be persisted.
+    #[test]
+    fn test_task_metrics_survive_the_record_round_trip() {
+        let mut fixture = peach_domain::Metrics::default();
+        fixture
+            .task
+            .record_llm_call(Some(&peach_domain::Usage::default()));
+        fixture
+            .task
+            .record_tool_call(&peach_domain::ToolName::new("shell"), true);
+        fixture.task.wall_ms = 4200;
+        fixture.task.compactions.record(9000, 1200);
+
+        let record = MetricsRecord::from(&fixture);
+        let json = serde_json::to_string(&record).unwrap();
+        let decoded: MetricsRecord = serde_json::from_str(&json).unwrap();
+        let actual = peach_domain::Metrics::from(decoded).task;
+
+        assert_eq!(actual, fixture.task);
+    }
+
+    /// Conversations persisted before this field existed must still load.
+    #[test]
+    fn test_metrics_record_without_task_field_defaults() {
+        let fixture = r#"{"started_at":null,"files_changed":{}}"#;
+
+        let record: MetricsRecord = serde_json::from_str(fixture).unwrap();
+        let actual = peach_domain::Metrics::from(record).task;
+
+        assert_eq!(actual, peach_domain::TaskMetrics::default());
     }
 }

@@ -41,6 +41,16 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionHandler {
                 let compacted =
                     Compactor::new(self.agent.compact.clone(), self.environment.clone())
                         .compact(context.clone(), false)?;
+                // harness: R-EVAL-2 — record what this compaction reclaimed.
+                // The orchestrator's metrics sync deliberately preserves
+                // `compactions`, because hooks are the only writer.
+                let tokens_before = *token_count as u64;
+                let tokens_after = *compacted.token_count() as u64;
+                conversation
+                    .metrics
+                    .task
+                    .compactions
+                    .record(tokens_before, tokens_after);
                 conversation.context = Some(compacted);
             } else {
                 debug!(agent_id = %self.agent.id, "Compaction not needed");
