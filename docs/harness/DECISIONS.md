@@ -194,3 +194,47 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Consequences:** short evals are trustworthy today. Long ones are not, which makes this a prerequisite for
   T3.12's long-horizon suite (≥ 60-turn tasks — guaranteed to compact) rather than an optional cleanup.
   Until it is done, treat a failure on a long eval as unexplained until checked by hand.
+
+## D-017 — The hackathon specification governs; no secondary models (2026-09-22)
+- **Context:** `HACKATHON.md` fixes the foundation model to Gemini 3.8 High for every team and recommends restricting
+  evaluation to it (§6); "unauthorized external model usage" is prohibited (§31). `SPEC.md` was written before this.
+- **Decision:** where `HACKATHON.md` and `SPEC.md` conflict, `HACKATHON.md` wins. No component may call a model other
+  than the configured foundation model: R-CTX-4's `LlmScorer` must use the foundation model or not exist, and the
+  `HeuristicScorer` is the default. Re-prioritisation is in `ALIGNMENT.md`.
+
+## D-018 — A/Bs and the model registry are Gemini-only (2026-09-22)
+- **Context:** R-EVAL-1 required two model families; D-013 routed both arms through OpenRouter. The competition
+  evaluates one model.
+- **Decision:** A/Bs run against Gemini on the R-HACK-8 hackathon-shaped suite. Supersedes the two-family part of
+  R-EVAL-1 and D-013's arms. `benchmarks/models.csv` moves to Gemini once a key exists; the OpenRouter rationale in
+  D-013 (jq filters assume the OpenAI wire shape) stops applying once assertions move to `PEACH_AUTO_DUMP=json`, which
+  becomes a prerequisite rather than a nicety.
+
+## D-019 — Test integrity: prevent in the runtime, verify after, restore if violated (2026-09-22)
+- **Context:** modifying a protected test risks disqualification (§8, §31), and test integrity is checked by file
+  comparison before and after the run.
+- **Decision:** refuse writes to protected paths at the tool layer, refuse obviously-mutating shell commands on them,
+  tell the model which paths are protected, and hash-verify at the end. If a change still slipped through (for example
+  via an unanticipated shell form), restore the protected files from the pre-run snapshot and record a loud
+  `integrity` event, so the submitted state is clean and the incident is still visible in telemetry.
+- **Open:** whether restoring is acceptable to the organizers (ALIGNMENT §4 Q6). Restoration sits behind a flag so it
+  can be switched to report-only.
+
+## D-020 — Telemetry and report: internal schema now, organizer adapter later (2026-09-22)
+- **Context:** the organizers will supply `telemetry.schema.json` and `report.schema.json`; they are not published yet,
+  and the canonical files must remain unchanged (§16).
+- **Decision:** emit a rich internal event schema (R-HACK-3) and generate reports from it (R-HACK-4); isolate the
+  mapping to the organizers' schemas in one adapter module per schema, so the day they are published only the adapter
+  changes. Organizer files will be vendored byte-for-byte into `telemetry/` and `reporting/` and checksum-verified.
+
+## D-021 — Submission layout without moving the workspace (2026-09-22)
+- **Context:** §32 asks for `harness/`, `telemetry/`, `reporting/`, `configuration/`, `documentation/`, README, and says
+  the structure may be finalised later. Moving `crates/` would break every upstream merge (D-004).
+- **Decision:** add the required top-level directories; keep the Rust workspace in place; `harness/` holds the entry
+  script and points at the workspace; the README documents the mapping.
+
+## D-022 — Permissions in the evaluation profile (2026-09-22)
+- **Context:** T4.1 (R-SAFE-1) plans ask-by-default approvals. In a one-shot unattended run any approval prompt blocks
+  forever — a guaranteed correctness score of zero.
+- **Decision:** the evaluation profile never asks. Destructive-operation safety in that profile comes from R-HACK-2's
+  runtime guards and the evaluation sandbox the organizers provide, not from prompts. T4.1 stays interactive-only.
