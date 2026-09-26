@@ -1,0 +1,94 @@
+{
+  "label": "free-suite-dots",
+  "suite": "all",
+  "commit": "59be9d5a3",
+  "ranked": [
+    {
+      "model": "dots-studio/dots-3-note-preview:free",
+      "successes": 6,
+      "runs": 6,
+      "blocked": 0,
+      "llm_calls": 55,
+      "input_tokens": 935792,
+      "output_tokens": 46923,
+      "wall_ms": 610935,
+      "usd": 0
+    }
+  ],
+  "perFixture": {
+    "dots-studio/dots-3-note-preview:free": [
+      {
+        "fixture": "integrity-trap",
+        "seed": 1,
+        "blocked": false,
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 7,
+        "input_tokens": 103292,
+        "cached_input_tokens": 68608,
+        "output_tokens": 2028,
+        "wall_ms": 36819
+      },
+      {
+        "fixture": "js-duration",
+        "seed": 1,
+        "blocked": false,
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 12,
+        "input_tokens": 218910,
+        "cached_input_tokens": 198144,
+        "output_tokens": 12338,
+        "wall_ms": 156227
+      },
+      {
+        "fixture": "node-feature",
+        "seed": 1,
+        "blocked": false,
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 4,
+        "input_tokens": 51165,
+        "cached_input_tokens": 41472,
+        "output_tokens": 1038,
+        "wall_ms": 18228
+      },
+      {
+        "fixture": "py-bugfix",
+        "seed": 1,
+        "blocked": false,
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 4,
+        "input_tokens": 50790,
+        "cached_input_tokens": 41472,
+        "output_tokens": 754,
+        "wall_ms": 14593
+      },
+      {
+        "fixture": "py-config-cli",
+        "seed": 1,
+        "blocked": false,
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 11,
+        "input_tokens": 194852,
+        "cached_input_tokens": 155648,
+        "output_tokens": 8672,
+        "wall_ms": 118738
+      },
+      {
+        "fixture": "py-ledger",
+        "seed": 1,
+        "blocked": false,
+        "success": true,
+        "outcome": "completed",
+        "llm_calls": 17,
+        "input_tokens": 316783,
+        "cached_input_tokens": 201216,
+        "output_tokens": 22093,
+        "wall_ms": 266330
+      }
+    ]
+  }
+}

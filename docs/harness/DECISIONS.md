@@ -1756,3 +1756,48 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
 - **Decision: leave them.** They are never serialised to a model, so they cost no tokens and change no behaviour.
   They are also upstream code: deleting them gains nothing measurable and adds merge conflicts whenever upstream
   touches that part of the file (principle 8). If upstream removes them, the merge takes that for free.
+
+## D-090 — Free-tier bake-off day 2: Dots ties the incumbent; the default stays (2026-09-27)
+- **Run:** `dots-studio/dots-3-note-preview:free`, all 6 fixtures × 1 seed
+  (`benchmarks/reports/models/20260926-free-suite-dots.md`), on a second, separate OpenRouter account supplied by
+  the team (fresh 50/day; all 50 used). Conditions match the incumbent's round-1 record: the pre-D-088 binary, with
+  the runtime gate and compact docs both off.
+  - The per-fixture cap was **17**, the incumbent's own maximum (on `py-config-cli`). A first launch at 8 was
+    stopped before its first request, because it would have failed Dots on a fixture the incumbent needed 17 calls
+    for.
+- **Result:** Dots **6/6**, 55 calls, 611 s. Per fixture, in calls:
+
+  | Fixture | Calls |
+  |---|---|
+  | `integrity-trap` | 7 |
+  | `js-duration` | 12 |
+  | `node-feature` | 4 |
+  | `py-bugfix` | 4 |
+  | `py-config-cli` | 11 |
+  | `py-ledger` | 17, at the cap |
+
+- **Compared with the incumbent** (`nemotron-3-ultra`, round 1: 5/6, 40 calls): its one ✗, `py-ledger`, was a
+  zero-call error, meaning the account, not the model. It passed `py-ledger` in all 4 NIM runs of the D-085 A/B.
+  - On the five fixtures both completed: **Ultra 5/5 in 40 calls, Dots 5/5 in 38.** That is a tie within one
+    seed's noise.
+  - D-071's rule (higher success, or equal success with fewer calls) is not met in any way that one seed can
+    carry.
+- **Decision:** the default stays `nemotron-3-ultra`.
+  - Dots is the strongest free challenger measured, and the first candidate for a fallback list (`FALLBACK_MODELS`,
+    opt-in, D-081).
+  - Two reasons against switching now: a "preview" model is an availability risk for a judged run, and replacing a
+    default on a one-seed tie would be noise-driven.
+  - A k = 3 comparison needs about 150 free requests, three account-days; it is worth it only if the default's
+    availability becomes a problem.
+
+## D-091 — `write_note` A/B on Kimi: the model never used the tool; the flag stays off (T3.14) (2026-09-27)
+- **Run:** `2026-09-26-write-note-nim-kimi.md`, 6 fixtures × 1 seed. Both arms at `FORGE_COMPACT__MESSAGE_THRESHOLD=12`,
+  so they compact (13 `context_compaction` events). The binary is frozen at `59be9d5`, so the gate is on in both
+  arms.
+- **Result:** 5/6 → 3/6, +17% input. **But the candidate made zero `write_note` calls.** The arms differed only by
+  one extra tool definition. The swing is Kimi's own variance: in `py-ledger`, the candidate made no tool call at
+  all and declared done, the D-085 behaviour the gate then caught twice.
+- **Reading:** this says nothing about scratchpad notes, only that an unprompted Kimi does not pick up a new
+  optional tool. The flag stays off, and the Nemotron 3.5 arm is still running. If no family uses the tool, the
+  next step is a one-line mention in the agent prompt, a behaviour change measured with its own A/B, before
+  judging the mechanism.
