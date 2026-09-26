@@ -1649,3 +1649,31 @@ fn test_offload_moves_old_bulk_out_of_context_and_keeps_it_readable() {
     assert!(requests.last().unwrap().contains("line 0200: the quick brown fox"), "reading the handle did not restore it");
     assert_eq!(run.report["metrics"]["recovery"]["offload_read"], 1, "report: {}", run.report);
 }
+
+#[test]
+fn test_a_read_superseded_by_a_reread_becomes_a_stub_without_a_summary() {
+    let project = project_with_a_test();
+    let big: String = (0..400).map(|i| format!("line {i:04}: the quick brown fox jumps over\n")).collect();
+    std::fs::write(project.path().join("big.txt"), &big).unwrap();
+    let read = || Turn::Tool("read", serde_json::json!({"file_path": "big.txt"}));
+    let echo = || Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "echo"}));
+    let model = ScriptedModel::start(vec![read(), read(), echo(), echo(), Turn::Text("Done.")]);
+    // Two 16 KB reads cross it; once S0 stubs the first, the rest is under 3/4 of it.
+    let threshold = "11500".to_string();
+    let env = [
+        ("PEACH_HARNESS_SUPERSEDE", "1"),
+        ("PEACH_COMPACT__TOKEN_THRESHOLD", threshold.as_str()),
+        ("PEACH_COMPACT__RETENTION_WINDOW", "2"),
+    ];
+
+    let run = run_exec_with_env(project.path(), &model, None, &env);
+
+    let requests = model.requests();
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert!(
+        requests.iter().any(|body| body.contains("big.txt was read again later")),
+        "no supersede stub reached the model"
+    );
+    assert!(!requests.iter().any(|b| b.contains("summary frames")), "the lossy summary ran although S0 sufficed");
+    assert!(requests.last().unwrap().contains("line 0200: the quick brown fox"), "the newest read was lost");
+}

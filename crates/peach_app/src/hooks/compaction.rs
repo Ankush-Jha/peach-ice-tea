@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use peach_domain::{Agent, Conversation, Environment, EventData, EventHandle, ResponsePayload};
 use tracing::{debug, info};
 
-use crate::compaction_pipeline::{Pipeline, handoff, offload, recall};
+use crate::compaction_pipeline::{Pipeline, handoff, offload, recall, supersede};
 
 /// Hook handler that performs context compaction when needed
 ///
@@ -64,6 +64,11 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionHandler {
                 // harness: R-CTX-2 S1 (T3.6) — off unless PEACH_HARNESS_OFFLOAD=1 (D-074).
                 if offload::enabled() {
                     pipeline = pipeline.offload(self.agent.compact.retention_window);
+                }
+                // harness: R-CTX-2 S0 (T3.5) — off unless PEACH_HARNESS_SUPERSEDE=1 (D-075).
+                // Inserted last so it runs first.
+                if supersede::enabled() {
+                    pipeline = pipeline.supersede(self.agent.compact.retention_window);
                 }
                 let outcome = pipeline
                 .handoff_note(note.flatten())
