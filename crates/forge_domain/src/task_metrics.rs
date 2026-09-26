@@ -38,6 +38,12 @@ pub struct TaskMetrics {
     /// transport-level failures rather than reasoning steps.
     pub llm_calls: u64,
 
+    /// Requests that never produced a response: a non-retryable provider error,
+    /// or retries exhausted. Counted separately from `llm_calls` because no
+    /// usage is reported for them, so they cannot contribute tokens — but they
+    /// cost wall time and may still have been billed provider-side.
+    pub failed_llm_calls: u64,
+
     /// Prompt tokens billed across every request, including the cached portion.
     pub input_tokens: u64,
 
@@ -132,6 +138,11 @@ impl TaskMetrics {
         }
     }
 
+    /// Records a request that failed without producing a response.
+    pub fn record_failed_llm_call(&mut self) {
+        self.failed_llm_calls += 1;
+    }
+
     /// Records one completed tool call. `is_error` counts it as a failure in
     /// addition to, not instead of, counting it as a call.
     pub fn record_tool_call(&mut self, name: &ToolName, is_error: bool) {
@@ -159,6 +170,7 @@ impl TaskMetrics {
     /// The parent's own clock already covers the period they ran in.
     pub fn absorb_subagent(&mut self, child: &TaskMetrics) {
         self.llm_calls += child.llm_calls;
+        self.failed_llm_calls += child.failed_llm_calls;
         self.input_tokens += child.input_tokens;
         self.cached_input_tokens += child.cached_input_tokens;
         self.output_tokens += child.output_tokens;
@@ -175,6 +187,58 @@ impl TaskMetrics {
         self.compactions.count += child.compactions.count;
         self.compactions.tokens_before += child.compactions.tokens_before;
         self.compactions.tokens_after += child.compactions.tokens_after;
+    }
+
+    /// Returns what was spent since `baseline`, field by field.
+    ///
+    /// A subagent's conversation metrics are cumulative across every run of
+    /// that conversation. When a conversation is resumed, absorbing the whole
+    /// total would count its earlier runs again, so the caller snapshots the
+    /// metrics before the run and absorbs only this difference.
+    ///
+    /// Subtraction saturates at zero: metrics only ever grow, so a negative
+    /// difference means the baseline did not belong to this conversation, and
+    /// counting zero is safer than wrapping.
+    pub fn since(&self, baseline: &TaskMetrics) -> TaskMetrics {
+        let map_delta = |after: &BTreeMap<String, u64>, before: &BTreeMap<String, u64>| {
+            after
+                .iter()
+                .filter_map(|(tool, count)| {
+                    let delta = count.saturating_sub(before.get(tool).copied().unwrap_or(0));
+                    (delta > 0).then(|| (tool.clone(), delta))
+                })
+                .collect()
+        };
+
+        TaskMetrics {
+            llm_calls: self.llm_calls.saturating_sub(baseline.llm_calls),
+            failed_llm_calls: self.failed_llm_calls.saturating_sub(baseline.failed_llm_calls),
+            input_tokens: self.input_tokens.saturating_sub(baseline.input_tokens),
+            cached_input_tokens: self
+                .cached_input_tokens
+                .saturating_sub(baseline.cached_input_tokens),
+            output_tokens: self.output_tokens.saturating_sub(baseline.output_tokens),
+            reasoning_tokens: self.reasoning_tokens.saturating_sub(baseline.reasoning_tokens),
+            cost: match (self.cost, baseline.cost) {
+                (Some(after), Some(before)) => Some((after - before).max(0.0)),
+                (after, _) => after,
+            },
+            tool_calls: map_delta(&self.tool_calls, &baseline.tool_calls),
+            tool_errors: map_delta(&self.tool_errors, &baseline.tool_errors),
+            // Wall time is not absorbed from subagents, so a delta is meaningless.
+            wall_ms: 0,
+            compactions: CompactionMetrics {
+                count: self.compactions.count.saturating_sub(baseline.compactions.count),
+                tokens_before: self
+                    .compactions
+                    .tokens_before
+                    .saturating_sub(baseline.compactions.tokens_before),
+                tokens_after: self
+                    .compactions
+                    .tokens_after
+                    .saturating_sub(baseline.compactions.tokens_after),
+            },
+        }
     }
 
     /// Prompt tokens that were not served from cache.
@@ -306,6 +370,75 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
+    /// A resumed subagent conversation carries its earlier runs' totals.
+    /// Absorbing the whole total counts them again; absorbing the delta does
+    /// not. Reproduces the case an adversarial review caught.
+    #[test]
+    fn test_absorbing_a_resumed_subagent_counts_only_the_new_run() {
+        // First run of the subagent: 1 call, 500 input tokens.
+        let mut child_after_run_one = TaskMetrics::default();
+        child_after_run_one.record_llm_call(Some(&usage_fixture(500, 0, 0)));
+
+        let mut parent = TaskMetrics::default();
+        parent.absorb_subagent(&child_after_run_one.since(&TaskMetrics::default()));
+
+        // The conversation is resumed; its metrics are now cumulative.
+        let mut child_after_run_two = child_after_run_one.clone();
+        child_after_run_two.record_llm_call(Some(&usage_fixture(300, 0, 0)));
+
+        parent.absorb_subagent(&child_after_run_two.since(&child_after_run_one));
+
+        let expected = TaskMetrics::default()
+            .llm_calls(2u64)
+            .input_tokens(800u64);
+
+        assert_eq!(parent, expected);
+    }
+
+    #[test]
+    fn test_since_saturates_and_drops_unchanged_tools() {
+        let mut baseline = TaskMetrics::default();
+        baseline.record_llm_call(Some(&usage_fixture(100, 10, 0)));
+        baseline.record_tool_call(&ToolName::new("shell"), false);
+
+        let mut after = baseline.clone();
+        after.record_tool_call(&ToolName::new("read"), true);
+
+        let actual = after.since(&baseline);
+
+        let expected = TaskMetrics::default()
+            .tool_calls(BTreeMap::from([("read".to_string(), 1u64)]))
+            .tool_errors(BTreeMap::from([("read".to_string(), 1u64)]));
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_since_a_foreign_baseline_saturates_to_zero() {
+        let fixture = TaskMetrics::default().llm_calls(1u64).input_tokens(10u64);
+        let larger = TaskMetrics::default().llm_calls(9u64).input_tokens(900u64);
+
+        let actual = fixture.since(&larger);
+
+        assert_eq!(actual, TaskMetrics::default());
+    }
+
+    #[test]
+    fn test_failed_calls_are_counted_separately_from_completed_ones() {
+        let mut actual = TaskMetrics::default();
+        actual.record_llm_call(Some(&usage_fixture(10, 5, 0)));
+        actual.record_failed_llm_call();
+        actual.record_failed_llm_call();
+
+        let expected = TaskMetrics::default()
+            .llm_calls(1u64)
+            .failed_llm_calls(2u64)
+            .input_tokens(10u64)
+            .output_tokens(5u64);
+
+        assert_eq!(actual, expected);
+    }
+
     #[test]
     fn test_uncached_input_tokens() {
         let mut fixture = TaskMetrics::default();
@@ -343,7 +476,7 @@ mod tests {
     fn test_default_serializes_to_the_minimal_object() {
         let fixture = TaskMetrics::default();
         let actual = serde_json::to_string(&fixture).unwrap();
-        let expected = r#"{"llm_calls":0,"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_tokens":0,"wall_ms":0,"compactions":{"count":0,"tokens_before":0,"tokens_after":0}}"#;
+        let expected = r#"{"llm_calls":0,"failed_llm_calls":0,"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_tokens":0,"wall_ms":0,"compactions":{"count":0,"tokens_before":0,"tokens_after":0}}"#;
 
         assert_eq!(actual, expected);
     }

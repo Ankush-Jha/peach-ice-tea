@@ -149,8 +149,7 @@ mod tests {
 
     #[test]
     fn test_report_is_a_single_line_of_json() {
-        let mut metrics = TaskMetrics::default();
-        metrics.llm_calls = 3;
+        let metrics = TaskMetrics::default().llm_calls(3u64);
         let fixture = ExecReport::new(TaskOutcome::Completed, metrics)
             .model("anthropic/claude-sonnet-4.6")
             .conversation_id("abc");

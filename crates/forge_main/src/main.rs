@@ -93,7 +93,12 @@ async fn run() -> Result<()> {
     // Check if there's piped input, but skip for `forge select` since that
     // command uses stdin for its item list.
     let is_select = matches!(cli.subcommands, Some(TopLevelCommand::Select(_)));
-    if !is_select && !std::io::stdin().is_terminal() {
+    // harness: R-HACK-1 — `exec` takes its task as an argument and never from
+    // stdin. Reading to EOF here blocks forever when stdin is an open pipe that
+    // the parent never closes, which is exactly how an automated runner spawns
+    // a subprocess. In a one-shot evaluation that is an unrecoverable hang.
+    let reads_stdin = !is_select && !matches!(cli.subcommands, Some(TopLevelCommand::Exec { .. }));
+    if reads_stdin && !std::io::stdin().is_terminal() {
         let mut stdin_content = String::new();
         std::io::stdin().read_to_string(&mut stdin_content)?;
         let trimmed_content = stdin_content.trim();
