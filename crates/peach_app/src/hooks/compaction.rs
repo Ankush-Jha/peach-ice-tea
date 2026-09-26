@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use peach_domain::{Agent, Conversation, Environment, EventData, EventHandle, ResponsePayload};
 use tracing::{debug, info};
 
-use crate::compaction_pipeline::{Pipeline, handoff, offload, recall, soft_enabled, soft_threshold, supersede};
+use crate::compaction_pipeline::{Pipeline, handoff, offload, recall, score, soft_enabled, soft_threshold, supersede};
 
 /// Hook handler that performs context compaction when needed
 ///
@@ -61,6 +61,12 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionHandler {
                 };
                 let mut pipeline =
                     Pipeline::new(self.agent.compact.clone(), self.environment.clone(), target);
+                // harness: R-CTX-2 S2 (T3.9, heuristic scorer) — off unless
+                // PEACH_HARNESS_SCORE_STAGE=1 (D-077). Inserted before S1 is
+                // added, and always just ahead of the summary.
+                if score::enabled() {
+                    pipeline = pipeline.score(self.agent.compact.retention_window);
+                }
                 // harness: R-CTX-2 S1 (T3.6) — off unless PEACH_HARNESS_OFFLOAD=1 (D-074).
                 if offload::enabled() {
                     pipeline = pipeline.offload(self.agent.compact.retention_window);

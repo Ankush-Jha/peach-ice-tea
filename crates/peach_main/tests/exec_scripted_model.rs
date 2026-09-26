@@ -1716,3 +1716,32 @@ fn soft_trigger_run(soft: bool) -> (Run, Vec<String>) {
     let run = run_exec_with_env(project.path(), &model, None, &env);
     (run, model.requests())
 }
+
+#[test]
+fn test_the_score_stage_cuts_an_unreferenced_old_read_without_a_summary() {
+    let project = project_with_a_test();
+    let big: String = (0..400).map(|i| format!("line {i:04}: the quick brown fox jumps over\n")).collect();
+    std::fs::write(project.path().join("unused.txt"), &big).unwrap();
+    let echo = || Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "echo"}));
+    let model = ScriptedModel::start(vec![
+        Turn::Tool("read", serde_json::json!({"file_path": "unused.txt"})),
+        echo(),
+        echo(),
+        echo(),
+        Turn::Text("Done."),
+    ]);
+    // A 16 KB read crosses it; once S2 cuts that read, the rest is under 3/4 of it.
+    let threshold = "6500".to_string();
+    let env = [
+        ("PEACH_HARNESS_SCORE_STAGE", "1"),
+        ("PEACH_COMPACT__TOKEN_THRESHOLD", threshold.as_str()),
+        ("PEACH_COMPACT__RETENTION_WINDOW", "2"),
+    ];
+
+    let run = run_exec_with_env(project.path(), &model, None, &env);
+
+    let requests = model.requests();
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert!(requests.iter().any(|b| b.contains("relevance scoring") || b.contains("scored as no longer relevant")), "S2 cut nothing");
+    assert!(!requests.iter().any(|b| b.contains("summary frames")), "the lossy summary ran although S2 sufficed");
+}

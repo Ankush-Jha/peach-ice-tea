@@ -11,6 +11,7 @@
 pub mod handoff;
 pub mod offload;
 pub mod recall;
+pub mod score;
 pub mod supersede;
 
 use peach_domain::{Compact, Context, ContextMessage, Environment};
@@ -45,6 +46,12 @@ pub enum Stage {
         /// Newest messages never touched.
         retention_window: usize,
     },
+    /// S2: relevance-scored cuts to a head or a stub, with a handle
+    /// ([`score`]; reversible).
+    Score {
+        /// Newest messages never touched.
+        retention_window: usize,
+    },
     /// S3: peach's summary frame over the eligible sequence (lossy, last
     /// resort). Always the final stage.
     Summarize(Box<Compactor>),
@@ -56,6 +63,7 @@ impl Stage {
         match self {
             Stage::Supersede { .. } => "supersede",
             Stage::Offload { .. } => "offload",
+            Stage::Score { .. } => "score",
             Stage::Summarize(_) => "summarize",
         }
     }
@@ -64,6 +72,7 @@ impl Stage {
         match self {
             Stage::Supersede { retention_window } => Ok(supersede::supersede(context, *retention_window)),
             Stage::Offload { retention_window } => Ok(offload::offload(context, *retention_window)),
+            Stage::Score { retention_window } => Ok(score::score(context, *retention_window)),
             Stage::Summarize(compactor) => Ok((compactor.compact(context, false)?, Vec::new())),
         }
     }
@@ -128,6 +137,13 @@ impl Pipeline {
     /// handles are returned with the recall handles.
     pub fn offload(mut self, retention_window: usize) -> Self {
         self.stages.insert(0, Stage::Offload { retention_window });
+        self
+    }
+
+    /// Puts S2 scoring just before the summary (T3.9, heuristic scorer).
+    pub fn score(mut self, retention_window: usize) -> Self {
+        let before_summary = self.stages.len().saturating_sub(1);
+        self.stages.insert(before_summary, Stage::Score { retention_window });
         self
     }
 
