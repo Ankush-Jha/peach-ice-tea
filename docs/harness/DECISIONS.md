@@ -609,3 +609,22 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   manifest has no notes. One fix: the Testing section dumped raw JSON with a 40-line tail; it is now a table
   plus the last 12 lines. **Not checkable until a run reaches the model:** `model_call`/`tool_call`
   correlation on real traffic.
+
+## D-041 — T2.1 parallel read-only batches, behind a flag (2026-09-25)
+- **Scope (PLAN.md W3-D):** only `execute_tool_calls` in `orch.rs`, plus the new `tool_concurrency.rs`.
+  `PEACH_HARNESS_PARALLEL_READONLY=1` turns it on; it is off by default and T2.1 stays unticked until an A/B
+  (principle 6).
+- **Rule:** a maximal run of two or more read-only calls (`read`, `fs_search`, `sem_search`, `fetch`, `skill`,
+  `todo_read`) executes concurrently. Everything else, including shell, which can do anything, and MCP tools,
+  runs alone, in order. Within a batch, the starts (with UI acks) and ToolcallStart hooks happen one by one
+  first; then the calls run together; then the ToolcallEnd hooks and ends run in call order. So the UI
+  handshake, per-call hooks, telemetry, error accounting and result order are unchanged. Every call still
+  passes through `tool_registry`, so the integrity guard sees each one. A test asserts every read-only name is
+  a real catalog tool, so an upstream rename fails loudly.
+- **Proof:** orchestrator specs with 100 ms mock calls. With the flag on, the two read pairs overlap and
+  neither overlaps the write between them. Result order and 5 starts / 5 ends are kept. With the flag off,
+  no two calls overlap. Forcing single-call segments makes the overlap spec fail. End to end against the real
+  binary: two concurrent reads, then an overwrite that is only allowed if the concurrent read was recorded,
+  then a green test run. Results arrive in the model's order.
+- **A/B design for when budget exists:** TH.7 suite, Gemini, k = 3. Ship if success is not lower and wall
+  time or LLM calls drop. The effect is largest on exploration-heavy tasks with several reads per turn.

@@ -214,7 +214,9 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> PeachAp
         .error_tracker(ToolErrorTracker::new(max_tool_failure_per_turn))
         .tool_definitions(tool_definitions)
         .models(models)
-        .hook(Arc::new(hook));
+        .hook(Arc::new(hook))
+        // harness: T2.1 — default off until an A/B supports it.
+        .parallel_readonly(crate::tool_concurrency::enabled());
 
         // Create and return the stream
         let stream = MpscStream::spawn(

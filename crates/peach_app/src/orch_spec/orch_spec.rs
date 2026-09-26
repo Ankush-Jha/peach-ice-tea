@@ -1,6 +1,7 @@
 use peach_domain::{
-    ChatCompletionMessage, ChatResponse, Content, EventValue, FinishReason, ReasoningConfig, Role,
-    ToolCallArguments, ToolCallFull, ToolOutput, ToolResult,
+    ChatCompletionMessage, ChatResponse, Content, ContextMessage, EventValue, FinishReason,
+    ReasoningConfig, Role, ToolCallArguments, ToolCallFull, ToolCallId, ToolDefinition, ToolOutput,
+    ToolResult,
 };
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -714,3 +715,98 @@ async fn test_complete_when_empty_todos() {
         "Should have TaskComplete when no todos exist"
     );
 }
+
+/// harness: T2.1 — `(reads, the write between them)` for the concurrency
+/// specs: two reads, a write, then two more reads, 100ms each.
+fn concurrency_fixture(parallel: bool) -> TestContext {
+    let call = |name: &str, id: &str| {
+        ToolCallFull::new(name)
+            .call_id(ToolCallId::new(id))
+            .arguments(ToolCallArguments::from(json!({"file_path": format!("/{id}")})))
+    };
+    let calls = vec![call("read", "r1"), call("fs_search", "s1"), call("write", "w1"), call("read", "r2"), call("read", "r3")];
+    let results: Vec<(ToolCallFull, ToolResult)> = calls
+        .iter()
+        .map(|call| {
+            let result = ToolResult::new(call.name.clone())
+                .call_id(call.call_id.clone().unwrap())
+                .output(Ok(ToolOutput::text(format!("result of {}", call.call_id.as_ref().unwrap().as_str()))));
+            (call.clone(), result)
+        })
+        .collect();
+    TestContext::default()
+        .tools(vec![
+            ToolDefinition::new("read"),
+            ToolDefinition::new("fs_search"),
+            ToolDefinition::new("write"),
+        ])
+        .mock_tool_call_responses(results)
+        .mock_assistant_responses(vec![
+            ChatCompletionMessage::assistant("Working").tool_calls(calls.into_iter().map(Into::into).collect::<Vec<_>>()),
+            ChatCompletionMessage::assistant("Done").finish_reason(FinishReason::Stop),
+        ])
+        .tool_delay(std::time::Duration::from_millis(100))
+        .parallel_readonly(parallel)
+}
+
+fn overlaps(a: &(String, std::time::Instant, std::time::Instant), b: &(String, std::time::Instant, std::time::Instant)) -> bool {
+    a.1 < b.2 && b.1 < a.2
+}
+
+#[tokio::test]
+async fn test_parallel_readonly_overlaps_reads_but_never_the_write() {
+    let mut fixture = concurrency_fixture(true);
+
+    fixture.run("go").await.unwrap();
+
+    let spans = &fixture.output.tool_spans;
+    let names: Vec<&str> = spans.iter().map(|span| span.0.as_str()).collect();
+    assert_eq!(names.len(), 5, "{names:?}");
+    let write = spans.iter().find(|span| span.0 == "write").unwrap();
+    for read in spans.iter().filter(|span| span.0 != "write") {
+        assert!(!overlaps(read, write), "a read overlapped the write");
+    }
+    let first_batch: Vec<_> = spans.iter().filter(|span| span.1 < write.1).collect();
+    let second_batch: Vec<_> = spans.iter().filter(|span| span.1 > write.1).collect();
+    assert!(overlaps(first_batch[0], first_batch[1]), "the first two reads should overlap");
+    assert!(overlaps(second_batch[0], second_batch[1]), "the last two reads should overlap");
+}
+
+#[tokio::test]
+async fn test_parallel_readonly_keeps_result_order_and_the_start_end_handshake() {
+    let mut fixture = concurrency_fixture(true);
+
+    fixture.run("go").await.unwrap();
+
+    // Tool results reach the context in the order the model asked for them.
+    let context = fixture.output.context_messages();
+    let actual: Vec<String> = context
+        .iter()
+        .filter_map(|message| match &message.message {
+            ContextMessage::Tool(result) => result.call_id.as_ref().map(|id| id.as_str().to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(actual, vec!["r1", "s1", "w1", "r2", "r3"]);
+    // Every call still gets exactly one start and one end.
+    let responses: Vec<&ChatResponse> = fixture.output.chat_responses.iter().filter_map(|r| r.as_ref().ok()).collect();
+    let starts = responses.iter().filter(|r| matches!(r, ChatResponse::ToolCallStart { .. })).count();
+    let ends = responses.iter().filter(|r| matches!(r, ChatResponse::ToolCallEnd(_))).count();
+    assert_eq!((starts, ends), (5, 5));
+}
+
+#[tokio::test]
+async fn test_without_the_flag_every_call_runs_alone() {
+    let mut fixture = concurrency_fixture(false);
+
+    fixture.run("go").await.unwrap();
+
+    let spans = &fixture.output.tool_spans;
+    assert_eq!(spans.len(), 5);
+    for (index, a) in spans.iter().enumerate() {
+        for b in &spans[index + 1..] {
+            assert!(!overlaps(a, b), "{} overlapped {} with the flag off", a.0, b.0);
+        }
+    }
+}
+

@@ -43,6 +43,10 @@ pub struct TestContext {
     /// PeachConfig used to populate TemplateConfig for
     /// system prompt rendering in tests.
     pub config: PeachConfig,
+    /// How long each mock tool call takes, so concurrency is observable.
+    pub tool_delay: std::time::Duration,
+    /// harness: T2.1 — the orchestrator's `parallel_readonly` setting.
+    pub parallel_readonly: bool,
 }
 
 impl Default for TestContext {
@@ -81,6 +85,8 @@ impl Default for TestContext {
                 ToolDefinition::new("fs_read"),
                 ToolDefinition::new("fs_write"),
             ],
+            tool_delay: std::time::Duration::ZERO,
+            parallel_readonly: false,
         }
     }
 }
@@ -100,6 +106,8 @@ impl TestContext {
 pub struct TestOutput {
     pub conversation_history: Vec<Conversation>,
     pub chat_responses: Vec<anyhow::Result<ChatResponse>>,
+    /// `(tool name, started, ended)` for every mock tool call, in call order.
+    pub tool_spans: Vec<(String, std::time::Instant, std::time::Instant)>,
 }
 
 impl TestOutput {

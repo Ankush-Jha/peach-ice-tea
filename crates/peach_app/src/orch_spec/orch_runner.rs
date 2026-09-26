@@ -42,6 +42,8 @@ pub struct Runner {
     attachments: Vec<Attachment>,
     config: peach_config::PeachConfig,
     env: Environment,
+    tool_delay: std::time::Duration,
+    tool_spans: std::sync::Mutex<Vec<(String, std::time::Instant, std::time::Instant)>>,
 }
 
 impl Runner {
@@ -65,6 +67,8 @@ impl Runner {
             test_tool_calls: Mutex::new(VecDeque::from(setup.mock_tool_call_responses.clone())),
             test_completions: Mutex::new(VecDeque::from(setup.mock_assistant_responses.clone())),
             test_shell_outputs: Mutex::new(VecDeque::from(setup.mock_shell_outputs.clone())),
+            tool_delay: setup.tool_delay,
+            tool_spans: Default::default(),
         }
     }
 
@@ -137,7 +141,8 @@ impl Runner {
                     .on_request(DoomLoopDetector::default())
                     .on_end(PendingTodosHandler::new()),
             ))
-            .sender(tx);
+            .sender(tx)
+            .parallel_readonly(setup.parallel_readonly);
 
         let (mut orch, runner) = (orch, services);
 
@@ -151,6 +156,10 @@ impl Runner {
             .output
             .conversation_history
             .extend(runner.get_history().await);
+        setup
+            .output
+            .tool_spans
+            .extend(runner.tool_spans.lock().unwrap().drain(..));
 
         result
     }
@@ -184,16 +193,23 @@ impl AgentService for Runner {
         test_call: peach_domain::ToolCallFull,
     ) -> peach_domain::ToolResult {
         let name = test_call.name.clone();
-        let mut guard = self.test_tool_calls.lock().await;
-        for (id, (call, result)) in guard.iter().enumerate() {
-            if call.call_id == test_call.call_id {
-                let result = result.clone();
-                guard.remove(id);
-                return result;
-            }
+        let started = std::time::Instant::now();
+        let found = {
+            let mut guard = self.test_tool_calls.lock().await;
+            let index = guard.iter().position(|(call, _)| call.call_id == test_call.call_id);
+            index.and_then(|index| guard.remove(index)).map(|(_, result)| result)
+        };
+        let Some(result) = found else {
+            panic!("No mock tool call not found: {name}")
+        };
+        if !self.tool_delay.is_zero() {
+            tokio::time::sleep(self.tool_delay).await;
         }
-
-        panic!("No mock tool call not found: {name}")
+        self.tool_spans
+            .lock()
+            .unwrap()
+            .push((name.to_string(), started, std::time::Instant::now()));
+        result
     }
 
     async fn update(&self, conversation: Conversation) -> anyhow::Result<()> {
