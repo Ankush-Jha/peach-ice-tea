@@ -1,0 +1,25 @@
+# Development profile — NOT for a judged run (HACKATHON.md §6, §31; D-017, D-036, D-043).
+# DeepSeek V4.1 Flash served by NVIDIA NIM through peach's built-in `nvidia` provider
+# (OpenAI wire shape). Probed 2026-09-25: tool calls work, reasoning arrives as
+# `reasoning_content`, usage is OpenAI-shaped with `prompt_tokens_details.cached_tokens`.
+# Free-tier latency was ~125 s for a 352-token call, so give runs generous budgets.
+[[providers]]
+id = "nvidia"
+url = "https://integrate.api.nvidia.com/v1/chat/completions"
+response_type = "OpenAI"
+api_key_var = "NVIDIA_API_KEY"
+auth_methods = ["api_key"]
+
+[[providers.models]]
+id = "deepseek-ai/deepseek-v4.1-flash"
+name = "DeepSeek V4.1 Flash (NVIDIA NIM)"
+# Conservative: NIM's served context may be below the model's native 1M.
+context_length = 131072
+tools_supported = true
+supports_parallel_tool_calls = true
+supports_reasoning = true
+input_modalities = ["text"]
+
+[session]
+provider_id = "nvidia"
+model_id = "deepseek-ai/deepseek-v4.1-flash"
