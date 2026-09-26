@@ -79,6 +79,24 @@ impl Cli {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum TopLevelCommand {
+    // harness: R-PROTO-7 — non-interactive entry point for the A/B runner and
+    // CI. Reuses the same one-shot dispatch as `-p` (see D-010); what it adds
+    // is a machine-readable final line and an outcome-aware exit code.
+    /// Run a single task non-interactively and exit.
+    ///
+    /// Exits 0 when the task completed, 1 on error, 2 when the tool-failure
+    /// limit was hit, and 3 when the per-turn request limit was hit.
+    Exec {
+        /// The task for the agent to perform.
+        #[arg(allow_hyphen_values = true)]
+        task: String,
+
+        /// Print a single line of JSON with the outcome and task metrics as the
+        /// last line of stdout.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage agents.
     Agent(AgentCommandGroup),
 
@@ -2033,5 +2051,37 @@ mod tests {
             _ => panic!("Expected Update command"),
         };
         assert!(!actual);
+    }
+}
+
+#[cfg(test)]
+mod harness_exec_cli_tests {
+    use clap::Parser;
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[test]
+    fn test_exec_parses_task_and_json_flag() {
+        let fixture = Cli::parse_from(["peach", "exec", "--json", "fix the bug"]);
+        let actual = match fixture.subcommands {
+            Some(TopLevelCommand::Exec { task, json }) => Some((task, json)),
+            _ => None,
+        };
+        let expected = Some(("fix the bug".to_string(), true));
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_exec_json_defaults_off() {
+        let fixture = Cli::parse_from(["peach", "exec", "fix the bug"]);
+        let actual = matches!(fixture.subcommands, Some(TopLevelCommand::Exec { json: false, .. }));
+        assert!(actual);
+    }
+
+    #[test]
+    fn test_exec_is_not_interactive() {
+        let fixture = Cli::parse_from(["peach", "exec", "fix the bug"]);
+        assert!(!fixture.is_interactive());
     }
 }

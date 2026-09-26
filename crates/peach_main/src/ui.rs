@@ -18,7 +18,8 @@ use peach_app::{CommitResult, ToolResolver};
 use peach_config::PeachConfig;
 use peach_display::MarkdownFormat;
 use peach_domain::{
-    AuthMethod, ChatResponseContent, ConsoleWriter, ContextMessage, Role, TitleFormat, UserCommand,
+    AuthMethod, ChatResponseContent, ConsoleWriter, ContextMessage, ExecReport, Role, TaskOutcome,
+    TitleFormat, UserCommand,
 };
 use peach_fs::PeachFS;
 use peach_select::{PeachWidget, SelectRow};
@@ -110,6 +111,8 @@ pub struct UI<A: ConsoleWriter, F: Fn(PeachConfig) -> A> {
     console: Console,
     command: Arc<PeachCommandManager>,
     cli: Cli,
+    // harness: R-PROTO-7 — set by `exec`; `main` exits with it.
+    exec_exit_code: Option<i32>,
     spinner: SharedSpinner<A>,
     config: PeachConfig,
     #[allow(dead_code)] // The guard is kept alive by being held in the struct
@@ -287,6 +290,7 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
                 command.clone(),
             ),
             cli,
+            exec_exit_code: None,
             command,
             spinner,
             markdown: MarkdownFormat::new(),
@@ -333,6 +337,12 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
             peach_prompt.reasoning_effort(e);
         }
         self.console.prompt(&mut peach_prompt).await
+    }
+
+    /// Exit code chosen by `exec`, if this invocation was one. `None` for
+    /// every other command, which keeps the binary's existing exit behaviour.
+    pub fn exec_exit_code(&self) -> Option<i32> {
+        self.exec_exit_code
     }
 
     pub async fn run(&mut self) {
@@ -682,6 +692,10 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
                 self.init_state(false).await?;
 
                 self.on_info(porcelain, conversation_id).await?;
+                return Ok(());
+            }
+            TopLevelCommand::Exec { task, json } => {
+                self.handle_exec(task.clone(), json).await?;
                 return Ok(());
             }
             TopLevelCommand::Banner => {
@@ -4228,6 +4242,15 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
                 };
 
                 self.writeln_title(TitleFormat::action(title))?;
+
+                // harness: R-PROTO-7 — remember why we stopped so `exec` can
+                // map it onto an exit code, and never prompt when there is no
+                // human to answer.
+                self.state.interruption = Some(reason.clone());
+                if self.state.non_interactive {
+                    return Ok(());
+                }
+
                 let continued = self.should_continue().await?;
                 if !continued && let Some(conversation_id) = self.state.conversation_id {
                     self.writeln_title(
@@ -4251,6 +4274,81 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
                 }
             }
         }
+        Ok(())
+    }
+
+    // harness: R-PROTO-7 — run one task with no interaction, report what it
+    // cost, and exit with a code that says how it ended.
+    //
+    // Deliberately reuses `on_message`, the same dispatch `-p` uses, so the
+    // measured behaviour is the behaviour users get (D-010). What it adds is
+    // the structured final line and the exit code, neither of which `-p` has:
+    // `-p` returns 0 even when the provider errored or a limit was hit.
+    async fn handle_exec(&mut self, task: String, json: bool) -> anyhow::Result<()> {
+        self.state.non_interactive = true;
+
+        let model = self
+            .api
+            .get_session_config()
+            .await
+            .map(|config| config.model.to_string());
+
+        let started = std::time::Instant::now();
+        let run = self.on_message(Some(task)).await;
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+
+        // A failure to run is an outcome, not a reason to skip the report: the
+        // A/B runner still needs the line, and the metrics gathered up to the
+        // failure are still true.
+        let (outcome, error) = match (&run, &self.state.interruption) {
+            (Err(error), _) => (TaskOutcome::Error, Some(exec_error_summary(error))),
+            (Ok(_), Some(InterruptionReason::MaxToolFailurePerTurnLimitReached { limit, .. })) => (
+                TaskOutcome::ToolFailureLimit,
+                Some(format!("tool failure limit ({limit}) reached")),
+            ),
+            (Ok(_), Some(InterruptionReason::MaxRequestPerTurnLimitReached { limit })) => (
+                TaskOutcome::RequestLimit,
+                Some(format!("request limit ({limit}) reached")),
+            ),
+            (Ok(_), None) => (TaskOutcome::Completed, None),
+        };
+
+        let metrics = match self.state.conversation_id {
+            Some(id) => self
+                .api
+                .conversation(&id)
+                .await
+                .ok()
+                .flatten()
+                .map(|conversation| conversation.metrics.task)
+                .unwrap_or_default(),
+            None => Default::default(),
+        };
+
+        // The orchestrator refreshes wall time only when a loop iteration
+        // completes, so a task that failed inside its first request reports
+        // zero. The caller's view of elapsed time is what `exec` promises.
+        let mut metrics = metrics;
+        metrics.wall_ms = metrics.wall_ms.max(elapsed_ms);
+
+        let mut report = ExecReport::new(outcome, metrics);
+        if let Some(id) = self.state.conversation_id {
+            report = report.conversation_id(id.into_string());
+        }
+        if let Some(model) = model {
+            report = report.model(model);
+        }
+        if let Some(error) = error {
+            report = report.error(error);
+        }
+
+        if json {
+            // Printed directly rather than through the markdown writer so the
+            // last line of stdout is exactly this object.
+            println!("{}", report.to_json_line()?);
+        }
+
+        self.exec_exit_code = Some(report.exit_code);
         Ok(())
     }
 
@@ -5216,4 +5314,60 @@ mod tests {
     // PeachSelect::confirm is not easily mockable in the current
     // architecture. The functionality is tested through integration tests
     // instead.
+}
+
+// harness: R-PROTO-7 — provider errors can run to several kilobytes and embed
+// account identifiers (OpenRouter returns the user id and key id in its 402
+// body). The exec line feeds A/B reports, so keep it to the error chain's first
+// line and a bounded length until R-SAFE-3's redaction utility exists.
+const EXEC_ERROR_MAX_CHARS: usize = 300;
+
+fn exec_error_summary(error: &anyhow::Error) -> String {
+    // Outermost context says what was being done; the root cause says why it
+    // failed. The layers between are where providers put response bodies.
+    let outer = error.to_string().lines().next().unwrap_or_default().to_string();
+    let root = error.root_cause().to_string().lines().next().unwrap_or_default().to_string();
+    let first_line = if error.chain().count() > 1 && root != outer {
+        format!("{outer}: {root}")
+    } else {
+        outer
+    };
+    if first_line.chars().count() <= EXEC_ERROR_MAX_CHARS {
+        return first_line;
+    }
+    let truncated: String = first_line.chars().take(EXEC_ERROR_MAX_CHARS).collect();
+    format!("{truncated}…")
+}
+
+#[cfg(test)]
+mod harness_exec_tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    #[test]
+    fn test_exec_error_summary_keeps_short_errors_intact() {
+        let fixture = anyhow::anyhow!("provider unavailable");
+        let actual = exec_error_summary(&fixture);
+        let expected = "provider unavailable".to_string();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_exec_error_summary_bounds_long_errors() {
+        let fixture = anyhow::anyhow!("x".repeat(5000));
+        let actual = exec_error_summary(&fixture);
+        assert_eq!(actual.chars().count(), EXEC_ERROR_MAX_CHARS + 1);
+        assert!(actual.ends_with('…'));
+    }
+
+    #[test]
+    fn test_exec_error_summary_keeps_outer_context_and_root_cause_only() {
+        let fixture = anyhow::anyhow!("Invalid Status Code: 402")
+            .context("402 Payment Required Reason: {\"user_id\":\"secret-ish\"}")
+            .context("POST https://provider/v1/chat");
+        let actual = exec_error_summary(&fixture);
+        let expected = "POST https://provider/v1/chat: Invalid Status Code: 402".to_string();
+        assert_eq!(actual, expected);
+    }
 }
