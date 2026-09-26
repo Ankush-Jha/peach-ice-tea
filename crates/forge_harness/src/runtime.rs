@@ -43,12 +43,29 @@ pub struct HarnessRuntime {
     protected: Option<ProtectedSet>,
     /// The repository's test command, explicit or detected (R-HACK-7).
     test_command: Option<crate::verify::TestCommand>,
+    /// What the runtime verification gate needs to re-check protected files
+    /// after running the tests mid-run (R-HACK-10).
+    integrity: Option<IntegrityHandle>,
+}
+
+/// What the runtime verification gate needs to re-check protected files
+/// after it runs the test command itself, mid-run (R-HACK-10). Mirrors what
+/// `ExecHarness::finish` already does after the *final* test run, for the
+/// same reason: a test suite can write files of its own.
+#[derive(Debug, Clone)]
+pub struct IntegrityHandle {
+    /// Globs that select protected files.
+    pub protect_globs: Vec<String>,
+    /// Globs excluded from protection.
+    pub exclude_globs: Vec<String>,
+    /// The pre-run manifest to verify against and restore from.
+    pub manifest: crate::integrity::Manifest,
 }
 
 impl HarnessRuntime {
     /// Builds a runtime for a run.
     pub fn new(repo_root: impl Into<PathBuf>) -> Self {
-        Self { non_interactive: false, repo_root: repo_root.into(), protected: None, test_command: None }
+        Self { non_interactive: false, repo_root: repo_root.into(), protected: None, test_command: None, integrity: None }
     }
 
     /// Marks the run as unattended, so nothing may prompt for input.
@@ -58,6 +75,17 @@ impl HarnessRuntime {
     }
 
     /// Activates the test-integrity guard with this protected set.
+    /// Sets the integrity handle the runtime verification gate re-checks with.
+    pub fn integrity_is(mut self, handle: IntegrityHandle) -> Self {
+        self.integrity = Some(handle);
+        self
+    }
+
+    /// The integrity handle, when the guard is installed.
+    pub fn integrity_handle(&self) -> Option<&IntegrityHandle> {
+        self.integrity.as_ref()
+    }
+
     pub fn protected(mut self, protected: ProtectedSet) -> Self {
         self.protected = Some(protected);
         self
@@ -100,6 +128,27 @@ pub fn install(runtime: HarnessRuntime) -> bool {
 }
 
 /// The installed runtime, if any.
+/// Re-verifies protected files against the installed manifest and restores
+/// any that changed, emitting the same telemetry `ExecHarness::finish` does.
+/// `None` when no runtime, or no integrity guard, is installed — fail open,
+/// never a reason to block or weaken anything.
+pub fn restore_integrity_if_installed() -> Option<crate::integrity::IntegrityReport> {
+    let runtime = get()?;
+    let handle = runtime.integrity_handle()?;
+    let report = crate::integrity::verify_and_restore(
+        runtime.repo_root(),
+        &handle.protect_globs,
+        &handle.exclude_globs,
+        &handle.manifest,
+    );
+    if !report.is_clean() {
+        for event in crate::integrity::telemetry_events(&report) {
+            crate::telemetry::emit(event);
+        }
+    }
+    Some(report)
+}
+
 pub fn get() -> Option<&'static HarnessRuntime> {
     RUNTIME.get()
 }

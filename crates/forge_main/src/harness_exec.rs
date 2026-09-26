@@ -114,6 +114,12 @@ impl ExecHarness {
             runtime::HarnessRuntime::new(repo_root.clone())
                 .non_interactive(true)
                 .protected(protected)
+                // harness: R-HACK-10 — lets the runtime gate re-verify mid-run.
+                .integrity_is(runtime::IntegrityHandle {
+                    protect_globs: protect_globs.clone(),
+                    exclude_globs: exclude_globs.clone(),
+                    manifest: manifest.clone(),
+                })
                 .test_command_is(test_command.clone()),
         );
 

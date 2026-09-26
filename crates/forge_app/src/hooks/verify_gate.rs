@@ -55,7 +55,7 @@ impl VerifyGateHandler {
 /// Whether the last message is the assistant stopping of its own accord.
 /// End also fires when a request or tool-failure limit stops the loop; the
 /// gate must never keep a run going past its limits.
-fn stopped_by_choice(conversation: &Conversation) -> bool {
+pub(crate) fn stopped_by_choice(conversation: &Conversation) -> bool {
     conversation
         .context
         .as_ref()
