@@ -890,6 +890,9 @@ pub(super) struct MetricsRecord {
     // conversations persisted before this field existed still load.
     #[serde(default)]
     task: forge_domain::TaskMetrics,
+    // harness: R-CTX-10 (D-087) — scratchpad notes survive a resume.
+    #[serde(default, skip_serializing_if = "forge_domain::Notes::is_empty")]
+    notes: forge_domain::Notes,
 }
 
 impl From<&forge_domain::Metrics> for MetricsRecord {
@@ -908,6 +911,7 @@ impl From<&forge_domain::Metrics> for MetricsRecord {
                 .collect(),
             files_accessed: metrics.files_accessed.clone(),
             task: metrics.task.clone(),
+            notes: metrics.notes.clone(),
         }
     }
 }
@@ -953,6 +957,7 @@ impl From<MetricsRecord> for forge_domain::Metrics {
             files_accessed,
             todos: Vec::new(),
             task: record.task,
+            notes: record.notes,
         }
     }
 }

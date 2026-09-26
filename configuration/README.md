@@ -11,7 +11,7 @@ Each profile is a `forge.toml` (provider, model) plus a `profile.env` (non-secre
 `PROFILE_KEY_VAR`, the key variable it needs). Keys are never stored here. Experimental behaviours are
 environment flags, **off** by default until an A/B supports them. Shipped on after its A/B: `FORGE_HARNESS_COMPACT_TOOL_DOCS`
 (`=0` disables; D-085). Still off: `FORGE_HARNESS_LINE_NUMBERS_OFF`, `FORGE_HARNESS_PARALLEL_READONLY`, `FORGE_HARNESS_TOOL_CORRECTION`,
-`FORGE_HARNESS_HANDOFF_NOTE` (D-063), `FORGE_HARNESS_RECALL_HANDLES` (D-066), `FORGE_HARNESS_SEARCH_REGROUP`, `FORGE_HARNESS_NOISE_COMPRESSION` (D-073), `FORGE_HARNESS_OFFLOAD` (D-074), `FORGE_HARNESS_SUPERSEDE` (D-075), `FORGE_HARNESS_SOFT_COMPACTION` (D-076), `FORGE_HARNESS_SCORE_STAGE` (D-077), `FORGE_HARNESS_DOOM_LOOP_ESCALATION` (D-082); config `runtime_verify_gate` / `FORGE_RUNTIME_VERIFY_GATE=true` (D-083).
+`FORGE_HARNESS_HANDOFF_NOTE` (D-063), `FORGE_HARNESS_RECALL_HANDLES` (D-066), `FORGE_HARNESS_SEARCH_REGROUP`, `FORGE_HARNESS_NOISE_COMPRESSION` (D-073), `FORGE_HARNESS_OFFLOAD` (D-074), `FORGE_HARNESS_SUPERSEDE` (D-075), `FORGE_HARNESS_SOFT_COMPACTION` (D-076), `FORGE_HARNESS_SCORE_STAGE` (D-077), `FORGE_HARNESS_DOOM_LOOP_ESCALATION` (D-082), `FORGE_HARNESS_WRITE_NOTE` (D-087); config `runtime_verify_gate` / `FORGE_RUNTIME_VERIFY_GATE=true` (D-083).
 Tier 1 behaviours that are on in `exec`: the verify gate (`FORGE_HARNESS_VERIFY_GATE=0` disables it) and
 recovery hints (`FORGE_HARNESS_RECOVERY_HINTS=0` disables them). `FORGE_HARNESS_FALLBACK_MODELS` (set in a
 profile's `profile.env`) lists models to fail over to on an exhausted quota or an outage (D-072).
