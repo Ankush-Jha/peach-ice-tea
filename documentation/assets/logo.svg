@@ -1,0 +1,36 @@
+<svg width="220" height="220" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F0975C"/>
+      <stop offset="100%" stop-color="#C85A2E"/>
+    </linearGradient>
+    <linearGradient id="peachGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFB27A"/>
+      <stop offset="100%" stop-color="#E8703A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- glass -->
+  <path d="M62 58 L74 190 Q75 198 84 198 L136 198 Q145 198 146 190 L158 58 Z"
+        fill="#12181A" stroke="#2C8577" stroke-width="3"/>
+
+  <!-- tea fill -->
+  <path d="M67 100 L74 190 Q75 198 84 198 L136 198 Q145 198 146 190 L153 100 Z"
+        fill="url(#tea)"/>
+
+  <!-- ice cubes -->
+  <rect x="94" y="118" width="20" height="20" rx="3" fill="#EDE6DB" opacity="0.55" transform="rotate(8 104 128)"/>
+  <rect x="112" y="146" width="17" height="17" rx="3" fill="#EDE6DB" opacity="0.4" transform="rotate(-6 120 154)"/>
+
+  <!-- glass rim -->
+  <ellipse cx="110" cy="58" rx="48" ry="9" fill="none" stroke="#2C8577" stroke-width="3"/>
+
+  <!-- peach slice garnish on the rim -->
+  <g transform="translate(150 46) rotate(18)">
+    <path d="M0 0 A26 26 0 0 1 26 26 L0 26 Z" fill="url(#peachGrad)" stroke="#C85A2E" stroke-width="2"/>
+    <path d="M2 6 L2 24 M9 2 L9 24 M16 -1 L16 22" stroke="#C85A2E" stroke-width="1.4" opacity="0.6" stroke-linecap="round"/>
+  </g>
+
+  <!-- straw -->
+  <rect x="122" y="18" width="8" height="70" rx="4" fill="#5FC2AF" transform="rotate(6 126 53)"/>
+</svg>
