@@ -1,0 +1,21 @@
+# Evaluation profile — the only profile allowed in a judged run (HACKATHON.md §6, §31; D-017).
+# Registers gemini-3.8-flash, which forge's built-in google_ai_studio list lacks (D-032).
+[[providers]]
+id = "google_ai_studio"
+url = "https://generativelanguage.googleapis.com/v1beta"
+response_type = "Google"
+api_key_var = "GEMINI_API_KEY"
+auth_methods = ["api_key"]
+
+[[providers.models]]
+id = "gemini-3.8-flash"
+name = "Gemini 3.8 Flash"
+context_length = 1048576
+tools_supported = true
+supports_parallel_tool_calls = true
+supports_reasoning = true
+input_modalities = ["text"]
+
+[session]
+provider_id = "google_ai_studio"
+model_id = "gemini-3.8-flash"
