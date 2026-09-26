@@ -581,3 +581,31 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   system prompt, which also contains examples; that is T6.2, an `[A/B]` task. Worth knowing for the A/B:
   in D-032 the model called `todo_write` 4 times on a one-line bug, and the removed examples are the ones
   urging proactive use.
+
+## D-040 — Second live run: the key is free tier, 20 requests/day; quota exhaustion now fails fast (2026-09-25)
+- **What happened:** the run was budgeted (estimate ₹12 expected; ₹42 realistic high; a ₹130 theoretical ceiling,
+  capped at ₹45 by a spend guard that SIGTERMs forge from its own telemetry) and started with `--profile gemini
+  --max-requests 30 --max-duration-secs 900` and compacted tool docs. Gemini answered one 503 and then seven
+  429s. Forge retried 8 times over 328 s and exited `error` with **0 tokens**. One minimal direct probe
+  (`maxOutputTokens: 1`) read the 429 body: `RESOURCE_EXHAUSTED`,
+  `quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier`, `quotaValue: 20`.
+- **Corrections to the record:**
+  - This key is on the **free tier**, so D-032's "≈ ₹11" was list-price equivalent, not money spent.
+    **Actual spend on this key to date: ₹0.**
+  - A completing run cannot happen on this key: D-032 put 31 requests on the wire, and the cap is 20 per
+    day. Step 2 of the plan (a run that finishes) waits for the paid key the team will supply (D-025a).
+- **Harness bug found and fixed:** a per-day or billing quota was retried like a rate limit. That is 5.5
+  minutes of certain failure, which is D-029's stall again, and the evidence said only "Invalid Status Code:
+  429". The body carrying the reason was attached as error context but dropped by `exec_error_summary`
+  (deliberately, since bodies can carry account data) and by the retry telemetry (root cause only).
+  `forge_domain::provider_quota::exhausted_quota` extracts **only** the quota identifier (a Google `quotaId`
+  containing `PerDay`, or OpenAI's `insufficient_quota`). `into_retry` does not retry those, and the exec
+  error now leads with `provider quota exhausted (<id>), not retried`. Per-minute 429s and 5xx still retry.
+  An end-to-end test replays Google's exact body: 1 request, 0 retries, the quota named, seconds instead of
+  minutes.
+- **Report check against real evidence (step 3, partial):** the report built from this run's bundle needed
+  no reconciliation. Retries agree (metrics 8, telemetry 8), the classes read `http_429 ×7, http_503 ×1`,
+  the harness's own test run shows 3 passed / 1 failed on the untouched repo, integrity is clean, and the
+  manifest has no notes. One fix: the Testing section dumped raw JSON with a 40-line tail; it is now a table
+  plus the last 12 lines. **Not checkable until a run reaches the model:** `model_call`/`tool_call`
+  correlation on real traffic.

@@ -528,8 +528,8 @@ pub fn render_md(report: &Report) -> String {
         r.unmetered_empty_completions, r.tool_errors, r.refused_integrity_actions, r.suppressed_prompts
     );
 
-    let _ = writeln!(md, "## Testing\n");
-    let _ = writeln!(md, "```json\n{}\n```\n", serde_json::to_string_pretty(&report.testing).unwrap_or_default());
+    let _ = writeln!(md, "## Testing (the harness's own run after the agent stopped)\n");
+    let _ = writeln!(md, "{}", render_testing(&report.testing));
 
     let _ = writeln!(md, "## Repository changes\n");
     match &report.repository {
@@ -589,6 +589,43 @@ pub fn render_md(report: &Report) -> String {
         for note in &report.notes {
             let _ = writeln!(md, "- {note}");
         }
+    }
+    md
+}
+
+/// The testing section: a table when the harness ran the tests, else why not.
+fn render_testing(testing: &serde_json::Value) -> String {
+    if testing["ran"] != true {
+        return format!(
+            "Not run: {}\n",
+            testing["reason"].as_str().unwrap_or("not available")
+        );
+    }
+    let field = |key: &str| match &testing[key] {
+        serde_json::Value::Null => "n/a".to_string(),
+        serde_json::Value::String(text) => text.clone(),
+        other => other.to_string(),
+    };
+    let mut md = String::new();
+    let _ = writeln!(md, "| Result | Passed | Failed | Skipped | Exit | Duration ms | Command | Why this command |");
+    let _ = writeln!(md, "|---|---|---|---|---|---|---|---|");
+    let _ = writeln!(
+        md,
+        "| {}{} | {} | {} | {} | {} | {} | `{}` | {} |\n",
+        field("class"),
+        if testing["timed_out"] == true { " (timed out)" } else { "" },
+        field("passed"),
+        field("failed"),
+        field("skipped"),
+        field("exit_code"),
+        field("duration_ms"),
+        field("command"),
+        field("source"),
+    );
+    let tail: Vec<&str> = testing["output_tail"].as_str().unwrap_or_default().lines().collect();
+    if !tail.is_empty() {
+        let shown = &tail[tail.len().saturating_sub(12)..];
+        let _ = writeln!(md, "Last {} line(s) of output:\n\n```\n{}\n```\n", shown.len(), shown.join("\n"));
     }
     md
 }
@@ -678,6 +715,21 @@ mod tests {
                  retries of a request still in flight when the run stopped reach telemetry only"
             ]
         );
+    }
+
+    #[test]
+    fn test_a_harness_test_run_renders_as_a_table_with_a_short_tail() {
+        let fixture = serde_json::json!({
+            "ran": true, "command": "python3 -m unittest", "source": "explicit", "exit_code": 1,
+            "timed_out": false, "duration_ms": 110, "class": "test_assertion",
+            "passed": 3, "failed": 1, "skipped": 0,
+            "output_tail": (1..=30).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n"),
+        });
+
+        let actual = render_testing(&fixture);
+
+        assert!(actual.contains("| test_assertion | 3 | 1 | 0 | 1 | 110 | `python3 -m unittest` | explicit |"));
+        assert!(actual.contains("Last 12 line(s)") && actual.contains("line 30") && !actual.contains("line 18\n"));
     }
 
     #[test]

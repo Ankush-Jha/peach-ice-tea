@@ -36,6 +36,7 @@ mod reasoning;
 mod repo;
 mod result_stream_ext;
 mod exec_report;
+pub mod provider_quota;
 mod session_metrics;
 mod task_metrics;
 mod shell;
