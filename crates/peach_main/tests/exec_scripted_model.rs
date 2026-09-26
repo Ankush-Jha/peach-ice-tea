@@ -1906,3 +1906,51 @@ fn test_compact_tool_docs_are_the_default() {
     let body: serde_json::Value = serde_json::from_str(&model.requests()[0]).unwrap();
     assert!(!body["tools"].to_string().contains("<example"), "tool examples are still sent by default");
 }
+
+#[test]
+fn test_a_note_comes_back_verbatim_after_compaction_and_is_logged() {
+    // D-087 (R-CTX-10): the note lives outside the context; once a summary
+    // has replaced its write_note result, the harness shows it again.
+    let project = project_with_a_test();
+    let echo = |text: &'static str| {
+        Turn::Tool("shell", serde_json::json!({"command": format!("echo {text}"), "description": "echo"}))
+    };
+    let model = ScriptedModel::start(vec![
+        Turn::Tool("write_note", serde_json::json!({"note": "NOTE_MARKER: add() must return a + b"})),
+        echo("two"),
+        echo("three"),
+        echo("four"),
+        echo("five"),
+        Turn::Text("Done."),
+    ]);
+    let env = [
+        ("PEACH_COMPACT__MESSAGE_THRESHOLD", "6"),
+        ("PEACH_COMPACT__RETENTION_WINDOW", "2"),
+        ("PEACH_HARNESS_WRITE_NOTE", "1"),
+    ];
+
+    let (run, config) = run_exec_keeping_config(project.path(), &model, None, &env, "fix add", &[], "");
+
+    let requests = model.requests();
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    assert!(requests[0].contains("\"write_note\""), "the tool is not offered with the flag on");
+    let last = requests.last().unwrap();
+    assert!(last.contains("SCRATCHPAD"), "no scratchpad reminder after compaction");
+    assert!(last.contains("[note 1] NOTE_MARKER: add() must return a + b"), "the note is not verbatim");
+    let out = Command::new("sqlite3")
+        .arg(config.path().join(".peach.db"))
+        .arg("SELECT COUNT(*) FROM thread_events WHERE kind = 'note'")
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8(out.stdout).unwrap().trim(), "1", "the note is not in the event log");
+}
+
+#[test]
+fn test_write_note_is_not_offered_by_default() {
+    let project = calc_project();
+    let model = ScriptedModel::start(vec![Turn::Text("Done.")]);
+
+    run_exec(project.path(), &model, None);
+
+    assert!(!model.requests()[0].contains("\"write_note\""));
+}

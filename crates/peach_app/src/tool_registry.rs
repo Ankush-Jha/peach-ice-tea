@@ -388,6 +388,9 @@ impl<S> ToolRegistry<S> {
                 // Filter out sem_search if cwd is not indexed
                 if matches!(tool, ToolCatalog::SemSearch(_)) {
                     sem_search_supported
+                } else if matches!(tool, ToolCatalog::WriteNote(_)) {
+                    // harness: R-CTX-10 (D-087) — off until an A/B.
+                    crate::hooks::notes_enabled()
                 } else {
                     true
                 }

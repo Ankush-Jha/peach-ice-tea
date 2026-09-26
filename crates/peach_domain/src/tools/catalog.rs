@@ -56,6 +56,8 @@ pub enum ToolCatalog {
     Skill(SkillFetch),
     TodoWrite(TodoWrite),
     TodoRead(TodoRead),
+    // harness: R-CTX-10 (D-087) — registered only when the flag is on.
+    WriteNote(WriteNote),
     #[serde(alias = "Task")]
     Task(TaskInput),
 }
@@ -724,6 +726,15 @@ pub struct TodoWrite {
 #[tool_description_file = "crates/peach_domain/src/tools/descriptions/todo_read.md"]
 pub struct TodoRead {}
 
+// harness: R-CTX-10 (D-087) — one flat, required field.
+#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema, ToolDescription, PartialEq)]
+#[tool_description_file = "crates/peach_domain/src/tools/descriptions/write_note.md"]
+pub struct WriteNote {
+    /// The note: one fact worth keeping for the rest of the task, at most
+    /// 500 characters.
+    pub note: String,
+}
+
 fn default_raw() -> Option<bool> {
     Some(false)
 }
@@ -830,6 +841,7 @@ impl ToolDescription for ToolCatalog {
             ToolCatalog::Skill(v) => v.description(),
             ToolCatalog::TodoWrite(v) => v.description(),
             ToolCatalog::TodoRead(v) => v.description(),
+            ToolCatalog::WriteNote(v) => v.description(),
             ToolCatalog::Task(v) => v.description(),
         }
     }
@@ -891,6 +903,7 @@ impl ToolCatalog {
             ToolCatalog::Task(_) => r#gen.into_root_schema_for::<TaskInput>(),
             ToolCatalog::TodoWrite(_) => r#gen.into_root_schema_for::<TodoWrite>(),
             ToolCatalog::TodoRead(_) => r#gen.into_root_schema_for::<TodoRead>(),
+            ToolCatalog::WriteNote(_) => r#gen.into_root_schema_for::<WriteNote>(),
         };
 
         // Apply transform to add nullable property and remove null from type
@@ -1016,6 +1029,7 @@ impl ToolCatalog {
             | ToolCatalog::Skill(_)
             | ToolCatalog::TodoWrite(_)
             | ToolCatalog::TodoRead(_)
+            | ToolCatalog::WriteNote(_)
             | ToolCatalog::Task(_) => None,
         }
     }

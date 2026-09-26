@@ -1683,3 +1683,37 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
 - **Report:** `error_recovery.recoveries_by_attribution` shows the tally, and the markdown gains a
   "Recoveries by cause" line. The scripted-model failover test checks the tally (`{"harness": 1}`).
 - No change to what the model sees, so no A/B is needed.
+
+## D-087 — Brief Tier 3.2: `write_note`, a scratchpad kept outside the context (R-CTX-10, T3.14) (2026-09-27)
+- **What:** a new tool, `write_note` (one flat, required `note`), stores notes on `Metrics.notes`, never in
+  `Context.messages`, so no compaction stage (S0–S3) can see or drop them.
+  - Each note gets a permanent label, `[note N]`.
+  - Notes are redacted (`redact::redact`), cut at 500 characters (with a marker saying so) and capped at 20; the
+    oldest is evicted first.
+  - Every note is appended to the event log as `ThreadEvent::Note` (tracked by highest id, so a resumed process
+    never logs one twice), so an evicted note is still recoverable.
+  - Notes also persist in the conversation's metrics record, so a resumed conversation keeps them. Upstream does
+    not persist todos this way.
+- **Departure from the brief (re-surfacing rule):** the brief re-appends the scratchpad "if the notes changed
+  since the last reminder". That would repeat every note right after the `write_note` result that already shows
+  it, costing tokens every time a note is written (principle 1). Instead, `NotesHandler` re-appends all notes,
+  verbatim, only when some note's label is **no longer in view**, meaning a summary replaced both its tool result
+  and any earlier reminder.
+  - A note therefore costs its tokens once while it is visible, and comes back only when compaction took it away.
+  - The hook runs on the response hook after `CompactionHandler`, so the reminder reaches the very next request.
+    The brief suggested a per-turn hook, but a request-hook injection lands one request late (orch syncs
+    `self.conversation.context` into the local `context` only after the response hook). The upstream doom-loop
+    reminder has the same one-request lag; it is left alone.
+- **Gating:** the tool is filtered out of the system tools, and refused at execution, unless
+  `PEACH_HARNESS_WRITE_NOTE=1` (principle 6). Without the flag the model sees nothing new, and the
+  rendered-tool-descriptions snapshot is unchanged. The catalog-wide snapshots (Gemini declarations, OpenAI
+  Responses, definition JSON) gain the tool, and its schema is flat with `required` (Gemini-compatible).
+- **Tests:**
+  - `scratchpad.rs`: ids, eviction, cut.
+  - `notes.rs`: in-view notes are not repeated; out-of-view notes come back verbatim once; the reminder itself
+    keeps them in view.
+  - `writer.rs`: logged once across a resume.
+  - End to end with the scripted model: a note written before compaction reaches the last request verbatim and is
+    in `thread_events`, and the tool is absent by default.
+- **A/B:** T3.14, pending. Like T3.10, it needs runs long enough to compact, so both arms use a low
+  `PEACH_COMPACT__MESSAGE_THRESHOLD`.

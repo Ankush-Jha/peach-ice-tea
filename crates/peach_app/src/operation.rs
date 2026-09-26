@@ -89,6 +89,12 @@ pub enum ToolOperation {
     TodoRead {
         output: Vec<peach_domain::Todo>,
     },
+    // harness: R-CTX-10 (D-087)
+    WriteNote {
+        note: peach_domain::ScratchNote,
+        evicted: Option<peach_domain::ScratchNote>,
+        kept: usize,
+    },
 }
 
 /// Trait for stream elements that can be converted to XML elements
@@ -863,6 +869,18 @@ impl ToolOperation {
                 }
 
                 peach_domain::ToolOutput::text(elm)
+            }
+            ToolOperation::WriteNote { note, evicted, kept } => {
+                let mut text = format!(
+                    "Saved as {} ({kept} of at most {} notes kept). Your notes are kept outside the \
+                     conversation and shown to you again if a summary replaces this message.",
+                    note.label(),
+                    peach_domain::MAX_NOTES
+                );
+                if let Some(evicted) = evicted {
+                    text.push_str(&format!(" The oldest note, {}, was dropped to make room.", evicted.label()));
+                }
+                peach_domain::ToolOutput::text(text)
             }
         }
     }

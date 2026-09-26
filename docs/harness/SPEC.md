@@ -330,6 +330,16 @@ location in this repo, paths relative to `crates/`), and **acceptance** criteria
   step that ranks likely entry files for the task using `sem_search` + ripgrep of
   identifiers from the task text, injected as a hint. Measure time-to-first-relevant-edit.
 
+### R-CTX-10 — Scratchpad notes kept outside the context
+- **Why:** S3 — a summary paraphrases or drops what the agent learned. The R-CTX-6 handoff note
+  lives in the context, so the next compaction can summarise it too.
+- **What:** a `write_note` tool (one flat, required `note` field) stores short notes on the
+  conversation's metrics, never in `Context.messages`, so no compaction stage can touch them. When a
+  compaction has removed every message showing a note, the harness re-appends all notes verbatim in
+  one reminder. Notes are redacted (R-SAFE-3), capped (20 notes, 500 characters each, oldest evicted
+  first), and appended to the event log (R-CTX-1), so an evicted note is still recoverable. Behind a
+  flag until an A/B.
+
 ---
 
 ## 6. Harness protocol — `R-PROTO`

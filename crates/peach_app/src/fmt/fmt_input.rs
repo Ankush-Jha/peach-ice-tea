@@ -134,6 +134,10 @@ impl FormatContent for ToolCatalog {
                     .into(),
             ),
             ToolCatalog::TodoRead(_) => Some(TitleFormat::debug("Read Todos").into()),
+            ToolCatalog::WriteNote(input) => {
+                let preview: String = input.note.chars().take(60).collect();
+                Some(TitleFormat::debug("Note").sub_title(preview).into())
+            }
             ToolCatalog::Task(input) => {
                 Some(TitleFormat::debug("Task").sub_title(&input.agent_id).into())
             }

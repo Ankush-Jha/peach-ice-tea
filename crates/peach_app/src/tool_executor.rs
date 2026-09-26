@@ -389,6 +389,17 @@ impl<
                 let todos = context.get_todos()?;
                 ToolOperation::TodoRead { output: todos }
             }
+            ToolCatalog::WriteNote(input) => {
+                // harness: R-CTX-10 (D-087) — the tool is only advertised with
+                // the flag on; refuse it otherwise rather than trust that.
+                if !crate::hooks::notes_enabled() {
+                    anyhow::bail!("write_note is not available in this session");
+                }
+                // R-SAFE-3: notes are re-shown and persisted, so no secrets.
+                let text = peach_harness::redact::redact(&input.note);
+                let (note, evicted, kept) = context.append_note(&text)?;
+                ToolOperation::WriteNote { note, evicted, kept }
+            }
             ToolCatalog::Task(_) => {
                 // Task tools are handled in ToolRegistry before reaching here
                 unreachable!("Task tool should be handled in ToolRegistry")
