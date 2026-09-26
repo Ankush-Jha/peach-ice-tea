@@ -83,6 +83,10 @@ pub struct ResponseUsage {
     #[serde(default)]
     pub completion_tokens_details: Option<CompletionTokenDetails>,
     pub cost_details: Option<CostDetails>,
+    // harness: R-HACK-3 — DeepSeek reports cache hits here (and in
+    // `prompt_tokens_details`) instead of OpenAI's `cached_tokens`.
+    #[serde(default)]
+    pub prompt_cache_hit_tokens: Option<usize>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -113,7 +117,13 @@ impl CostDetails {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PromptTokenDetails {
+    // harness: defaulted — a DeepSeek-shaped block may carry only
+    // `prompt_cache_hit_tokens`, and a missing field must not fail the whole
+    // usage object.
+    #[serde(default)]
     pub cached_tokens: usize,
+    #[serde(default)]
+    pub prompt_cache_hit_tokens: Option<usize>,
 }
 
 // harness: R-EVAL-2 — providers report extended-thinking cost here. Without
@@ -258,6 +268,21 @@ pub struct FunctionCall {
     pub arguments: String,
 }
 
+/// Cached prompt tokens, from whichever field the provider uses: OpenAI's
+/// `prompt_tokens_details.cached_tokens`, or DeepSeek's
+/// `prompt_cache_hit_tokens` (top-level or inside the details block).
+fn cached_tokens(usage: &ResponseUsage) -> TokenCount {
+    let details = usage.prompt_tokens_details.as_ref();
+    let openai = details.map(|d| d.cached_tokens).filter(|&tokens| tokens > 0);
+    let deepseek = details
+        .and_then(|d| d.prompt_cache_hit_tokens)
+        .or(usage.prompt_cache_hit_tokens);
+    openai
+        .or(deepseek)
+        .map(TokenCount::Actual)
+        .unwrap_or_default()
+}
+
 impl From<ResponseUsage> for Usage {
     fn from(usage: ResponseUsage) -> Self {
         let cost = usage
@@ -275,10 +300,7 @@ impl From<ResponseUsage> for Usage {
             prompt_tokens: TokenCount::Actual(usage.prompt_tokens),
             completion_tokens: TokenCount::Actual(usage.completion_tokens),
             total_tokens: TokenCount::Actual(usage.total_tokens),
-            cached_tokens: usage
-                .prompt_tokens_details
-                .map(|token_details| TokenCount::Actual(token_details.cached_tokens))
-                .unwrap_or_default(),
+            cached_tokens: cached_tokens(&usage),
             reasoning_tokens: usage
                 .completion_tokens_details
                 .map(|token_details| TokenCount::Actual(token_details.reasoning_tokens))
@@ -937,6 +959,7 @@ mod tests {
             total_tokens: 150,
             cost: Some(0.001),
             prompt_tokens_details: None,
+            prompt_cache_hit_tokens: None,
             cost_details: Some(CostDetails {
                 upstream_inference_cost: Some(0.005),
                 upstream_inference_prompt_cost: Some(0.003),
@@ -955,6 +978,7 @@ mod tests {
             total_tokens: 150,
             cost: None,
             prompt_tokens_details: None,
+            prompt_cache_hit_tokens: None,
             cost_details: Some(CostDetails {
                 upstream_inference_cost: Some(0.005),
                 upstream_inference_prompt_cost: Some(0.003),
@@ -974,6 +998,7 @@ mod tests {
             total_tokens: 150,
             cost: None,
             prompt_tokens_details: None,
+            prompt_cache_hit_tokens: None,
             cost_details: Some(CostDetails {
                 upstream_inference_cost: None,
                 upstream_inference_prompt_cost: Some(0.003),
@@ -993,6 +1018,7 @@ mod tests {
             total_tokens: 150,
             cost: None,
             prompt_tokens_details: None,
+            prompt_cache_hit_tokens: None,
             cost_details: Some(CostDetails {
                 upstream_inference_cost: Some(0.0),
                 upstream_inference_prompt_cost: Some(0.003),
@@ -1013,6 +1039,7 @@ mod tests {
             total_tokens: 150,
             cost: Some(0.0),
             prompt_tokens_details: None,
+            prompt_cache_hit_tokens: None,
             cost_details: Some(CostDetails {
                 upstream_inference_cost: Some(0.005),
                 upstream_inference_prompt_cost: None,
@@ -1033,6 +1060,7 @@ mod tests {
             total_tokens: 150,
             cost: Some(1e-10),
             prompt_tokens_details: None,
+            prompt_cache_hit_tokens: None,
             cost_details: Some(CostDetails {
                 upstream_inference_cost: Some(0.005),
                 upstream_inference_prompt_cost: None,
@@ -1189,5 +1217,29 @@ mod harness_reasoning_token_tests {
         let actual = peach_domain::Usage::from(usage);
 
         assert_eq!(actual.reasoning_tokens, peach_domain::TokenCount::Actual(0));
+    }
+
+    /// DeepSeek reports cache hits as `prompt_cache_hit_tokens`, top-level
+    /// or inside `prompt_tokens_details`, which may lack `cached_tokens`.
+    #[test]
+    fn test_deepseek_cache_hits_are_counted_in_every_shape() {
+        let top_level = r#"{"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105,
+            "prompt_cache_hit_tokens": 64, "prompt_cache_miss_tokens": 36}"#;
+        let nested_only = r#"{"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105,
+            "prompt_tokens_details": {"prompt_cache_hit_tokens": 64, "prompt_cache_miss_tokens": 36}}"#;
+        let openai = r#"{"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105,
+            "prompt_tokens_details": {"cached_tokens": 64}}"#;
+        let neither = r#"{"prompt_tokens": 100, "completion_tokens": 5, "total_tokens": 105}"#;
+
+        let actual: Vec<peach_domain::TokenCount> = [top_level, nested_only, openai, neither]
+            .iter()
+            .map(|json| {
+                let usage: ResponseUsage = serde_json::from_str(json).unwrap();
+                peach_domain::Usage::from(usage).cached_tokens
+            })
+            .collect();
+
+        use peach_domain::TokenCount::Actual;
+        assert_eq!(actual, vec![Actual(64), Actual(64), Actual(64), Actual(0)]);
     }
 }
