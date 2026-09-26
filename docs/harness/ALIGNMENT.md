@@ -1,4 +1,7 @@
-# Alignment with the hackathon specification
+# Alignment with the hackathon specification — Peach Ice Tea
+
+**Peach Ice Tea** is our harness (D-023): built on a ForgeCode fork, entered in the LCC × DevClub AI Coding Harness
+Hackathon.
 
 `HACKATHON.md` is the governing document. `SPEC.md`/`TASKS.md` were written for a general "best-in-class harness"
 and assumed an A/B across two model families (Anthropic + OpenAI). The hackathon fixes the model (**Gemini 3.8
