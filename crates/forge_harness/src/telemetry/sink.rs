@@ -174,7 +174,7 @@ impl JsonlSink {
         // rather than leaving it in the buffer for a flush that may never
         // come (SHOULD-FIX 6).
         let force_flush = matches!(event, TelemetryEvent::RunEnd(_));
-        let event = enforce_limits(event, self.limits);
+        let event = enforce_limits(redact_event(event), self.limits);
 
         if let Err(error) = self.write_line(event, conversation_id, agent_id, force_flush) {
             self.dropped.fetch_add(1, Ordering::Relaxed);
@@ -275,6 +275,51 @@ impl Drop for JsonlSink {
     /// lose the events buffered since the last flush.
     fn drop(&mut self) {
         self.flush();
+    }
+}
+
+/// Redacts secrets from every free-text field of an event before it can reach
+/// disk (`R-SAFE-3`). Runs before capping, so a secret straddling the cap
+/// boundary cannot survive as a prefix.
+///
+/// Free text only: `redact::redact_json` over the whole envelope would match
+/// key names like `input_tokens` (`token` is a sensitive substring) and wipe
+/// every token count in the log.
+fn redact_event(event: TelemetryEvent) -> TelemetryEvent {
+    fn text(value: String) -> String {
+        crate::redact::redact(&value).into_owned()
+    }
+    fn truncated(mut value: Truncated) -> Truncated {
+        value.text = text(value.text);
+        value
+    }
+    match event {
+        TelemetryEvent::ToolCall(mut tool_call) => {
+            tool_call.arguments = truncated(tool_call.arguments);
+            tool_call.result_summary = truncated(tool_call.result_summary);
+            TelemetryEvent::ToolCall(tool_call)
+        }
+        TelemetryEvent::Error(mut error) => {
+            error.message = text(error.message);
+            TelemetryEvent::Error(error)
+        }
+        TelemetryEvent::Retry(mut retry) => {
+            retry.reason = text(retry.reason);
+            TelemetryEvent::Retry(retry)
+        }
+        TelemetryEvent::Integrity(mut integrity) => {
+            integrity.detail = text(integrity.detail);
+            TelemetryEvent::Integrity(integrity)
+        }
+        TelemetryEvent::PromptSuppressed(mut suppressed) => {
+            suppressed.detail = text(suppressed.detail);
+            TelemetryEvent::PromptSuppressed(suppressed)
+        }
+        TelemetryEvent::AgentState(mut state) => {
+            state.reason = state.reason.map(text);
+            TelemetryEvent::AgentState(state)
+        }
+        other => other,
     }
 }
 
@@ -393,6 +438,47 @@ mod tests {
             flush_interval: Duration::from_secs(3600),
             ..SinkLimits::default()
         }
+    }
+
+    #[test]
+    fn test_secrets_are_redacted_before_disk_and_token_counts_survive() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("telemetry.jsonl");
+        let sink = Sink::jsonl(path.clone(), "run-1", never_auto_flush());
+        let key = format!("AIza{}", "x".repeat(35));
+
+        sink.emit(
+            fixture_tool_call(&format!("curl -H 'x-goog-api-key: {key}'"), &format!("echo {key}")),
+            None,
+            None,
+        );
+        sink.emit(
+            TelemetryEvent::ModelCall(crate::telemetry::event::ModelCall {
+                call_id: "c#1".to_string(),
+                started_at: "t0".to_string(),
+                ended_at: "t1".to_string(),
+                duration_ms: 1,
+                model: "m".to_string(),
+                input_tokens: Some(100),
+                output_tokens: Some(5),
+                total_tokens: Some(105),
+                cached_tokens: Some(40),
+                reasoning_tokens: Some(3),
+                context_tokens_estimated: Some(90),
+                context_messages: 2,
+                finish_reason: None,
+                tool_call_ids: vec![],
+            }),
+            None,
+            None,
+        );
+        sink.flush();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(!written.contains(&key), "secret reached disk:\n{written}");
+        assert!(written.contains("[REDACTED]"));
+        assert!(written.contains(r#""input_tokens":100"#));
+        assert!(written.contains(r#""cached_tokens":40"#));
     }
 
     #[test]
