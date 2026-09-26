@@ -824,3 +824,27 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
   agent id, and a per-request override would touch upstream's hot path (principle 8). The parent is the strongest
   model and has the same read tools, so handing the work back is the cheaper fail-open.
 - **Not yet shown:** whether routing helps. That is the `[A/B]` (routed vs single-model), which needs credit (D-050).
+
+## D-053 — A `confirm` permission stalled unattended runs under a terminal; now refused, and TH.1 is complete (2026-09-26)
+- **Where I stopped on the brief:** steps 1–3 (bake-off round 2, D-046 reproduction on the new default, k = 3 A/Bs)
+  are blocked. The OpenRouter account still has $0 credit (checked 15:34 UTC), and the free allowance is spent
+  (52/50; it resets daily). A background watcher polls for credit. Step 4 needs no model calls, so it continued.
+- **Found by reproduction:** with `restricted = true` and a `confirm` rule in `permissions.yaml`, `policy.rs` calls
+  `select_one_enum` mid-run. Under a pseudo-terminal (`script`) an `exec` run sat on it until its 20 s budget
+  (`time_budget`, task not done); without a budget it waits forever. The wrapper's fresh config dir hides this,
+  but plain `forge exec` on a machine with such a file does not.
+- **Decision (D-022 applied):** in an unattended run, a `confirm` is **refused** without asking
+  (`runtime::refuse_permission_prompt`, `prompt_suppressed{prompt_kind: permission, default_action: refused}`).
+  It is refused rather than allowed because the rule's author wanted a person to decide, and none is present.
+  The model was also told "User has denied the permission"; there is no user, and "denied" invites asking again.
+  Unattended runs now get a plain statement of what happened and what to do (principle 4). Interactive
+  behaviour is unchanged.
+- **Proof:** `test_a_confirm_permission_is_refused_not_asked_in_an_unattended_run` (under `script`): `completed`
+  in ~2.5 s, event recorded, and the model receives the new text. Before the fix the same test ended at
+  `time_budget` after 22 s.
+- **TH.1 audit (a test per path, R-HACK-1):** continue-anyway (new TTY test: `request_limit`, no prompt),
+  `followup` (D-031), permission (this), MCP trust (D-048), pickers/login (missing config and unknown provider
+  fail fast), provider down (fails fast within budget). The update prompt is unreachable by construction:
+  `init_state_exec` never calls `on_update`. **TH.1 ticked.**
+- **Flaky upstream test, not touched:** `forge_app fmt::fmt_output::tests::test_fs_create_overwrite` failed once
+  in a full parallel run, passed 3/3 alone, and the next full run was 2952/2952.
