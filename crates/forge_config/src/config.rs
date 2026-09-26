@@ -316,8 +316,9 @@ pub struct ForgeConfig {
     ///
     /// Fails open (principle 5): inert outside an installed `exec` runtime, and
     /// inert when no test command is configured or detected, in which case
-    /// completion is accepted exactly as it is today. Off by default until an
-    /// A/B (principle 6).
+    /// completion is accepted exactly as it is today. On by default since the
+    /// A/Bs on two model families (D-088); set it to `false` to fall back to
+    /// the soft, model-reported gate.
     #[serde(default)]
     pub runtime_verify_gate: bool,
 

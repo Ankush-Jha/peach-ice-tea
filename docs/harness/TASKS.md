@@ -35,16 +35,18 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       → wrapper (gemini-only, evidence always, budget, key hygiene), build/check scripts, §32 tree, README, ARCHITECTURE
       answering §25 with code paths + telemetry fields (D-044). ARCHITECTURE now cites a committed real run's telemetry
       (`documentation/evidence/2026-09-27-make-run-py-bugfix/`, D-080). Root `Makefile` (setup/run/test/check/clean, `AI_API_KEY`) verified from a clean clone (D-070).
-- [ ] **TH.10** `R-HACK-10` runtime verification gate: before a voluntary stop is accepted, the harness runs the tests itself
+- [x] **TH.10** `R-HACK-10` runtime verification gate: before a voluntary stop is accepted, the harness runs the tests itself
       and sends the real failure back. **[A/B]**
-      → built behind config `runtime_verify_gate` (default false); replaces the soft gate when on; re-verifies integrity
-        after each gate run; capped at 2 attempts; e2e tests (D-083). A/B pending.
+      → D-083 built it; **shipped on by default (D-088)**. Kimi K3 0/6 → 5/6
+        ([report](../../benchmarks/reports/ab/2026-09-26-runtime-verify-gate-nim-kimi.md)); Muse Glimmer 6/6 → 6/6, −2.1% input,
+        −11.6% wall time ([report](../../benchmarks/reports/ab/2026-09-26-runtime-verify-gate-nim-muse.md)).
 
 ## BR — Handoff brief remainder (`AGENT_HANDOFF_BRIEF.md`, D-081…D-084)
 Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What remains needs model requests or is Tier 3.
 - [ ] **BR.1** Tier 2 A/Bs, one per flag on the default model, k ≥ 2, ship or revert each:
       compact tool docs (D-039; strongest prior, −17.6% input on DeepSeek), T1.2, T1.4, T1.5, T2.1, T2.6, T3.10, T2.7, TH.10.
-      → unblocked by the NIM pool (D-085). Done: compact tool docs — shipped on (2 families). Running: TH.10 on Kimi.
+      → unblocked by the NIM pool (D-085). Done: compact tool docs and TH.10, both shipped on (2 families each; D-085,
+        D-088). Running: T1.2, T1.4, T1.5, T2.1, T2.6, T2.7 on Nemotron Ultra and GLM 5.3. Left: T3.10.
 - [x] **BR.2** Tier 3.1 failure-attribution tag on `recovery` events (+ emit `offload_read`/`rerun`/`reread` as events).
       → D-086. Telemetry schema 0.2.0; report tallies recoveries by cause. Observability only, no A/B needed.
 - [x] **BR.3** Tier 3.2 `write_note` scratchpad tool kept outside `Context.messages` (`R-CTX-10`).

@@ -272,6 +272,9 @@ fn run_exec_configured(
 
 /// [`run_exec_configured`], also returning the run's `FORGE_CONFIG` dir (and
 /// with it forge's database) for inspection after the run.
+/// An `extra_env` value that removes the variable instead of setting it.
+const UNSET: &str = "<unset>";
+
 fn run_exec_keeping_config(
     project: &Path,
     model: &ScriptedModel,
@@ -292,7 +295,18 @@ fn run_exec_keeping_config(
         std::fs::write(config.path().join("agents").join(format!("{id}.md")), markdown).unwrap();
         command.args(["--agent", id]);
     }
-    command.envs(extra_env.iter().copied());
+    // The runtime gate is on by default (D-088). These scripted conversations
+    // model a stop being accepted, so they run with it off unless a test
+    // says otherwise; the gate's own tests set it, and
+    // `test_the_hard_gate_is_on_by_default` passes `UNSET` to see the default.
+    command.env("FORGE_RUNTIME_VERIFY_GATE", "false");
+    for (key, value) in extra_env {
+        if *value == UNSET {
+            command.env_remove(key);
+        } else {
+            command.env(key, value);
+        }
+    }
     let mut child = command
         .args(["exec", task, "--json", "--max-duration-secs", "45", "--telemetry"])
         .arg(&telemetry)
@@ -1882,17 +1896,42 @@ fn test_the_hard_gate_fails_open_with_no_test_command_configured() {
 
 #[test]
 fn test_the_hard_gate_is_inert_when_the_flag_is_off() {
-    // Default off (principle 6): a premature "Done." on unfixed code must be
-    // accepted immediately, unchanged from today's behaviour, when the flag
-    // is not set at all.
+    // With the gate turned off, a premature "Done." on unfixed code is
+    // accepted immediately, as before D-083.
     let project = calc_project();
-    let model = ScriptedModel::start(vec![Turn::Text("Done.")]); // no fix, no test run, no --test-command flag set
+    let model = ScriptedModel::start(vec![Turn::Text("Done.")]); // no fix, no test run
 
-    let run = run_exec_full(project.path(), &model, None, &[], "fix add", &["--test-command", CALC_TESTS]);
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[("FORGE_RUNTIME_VERIFY_GATE", "false")],
+        "fix add",
+        &["--test-command", CALC_TESTS],
+    );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    assert_eq!(model.requests().len(), 1, "default-off: no hard gate interference");
+    assert_eq!(model.requests().len(), 1, "gate off: no hard gate interference");
     assert_eq!(run.report["outcome"], "completed");
+}
+
+#[test]
+fn test_the_hard_gate_is_on_by_default() {
+    // D-088: shipped on after A/Bs on two model families. With nothing set, a
+    // premature "Done." on unfixed code is sent back with the real test output.
+    let project = calc_project();
+    let model = ScriptedModel::start(vec![Turn::Text("Done."), Turn::Text("Done."), Turn::Text("Done.")]);
+
+    run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[("FORGE_RUNTIME_VERIFY_GATE", UNSET)],
+        "fix add",
+        &["--test-command", CALC_TESTS],
+    );
+
+    assert!(model.requests().len() > 1, "the default run accepted an unverified stop");
 }
 
 #[test]
