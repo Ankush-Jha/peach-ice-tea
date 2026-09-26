@@ -131,7 +131,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [x] **T3.7** `R-SAFE-3` redaction utility (needed before any scorer sends data).
       → `forge_harness::redact` (36 tests); applied to evidence files, telemetry free text and scorer previews.
       External hooks (T6.3) must call it when built.
-- [ ] **T3.8** `R-CTX-4` scorer trait + HeuristicScorer + fake-scorer tests.
+- [x] **T3.8** `R-CTX-4` scorer trait + HeuristicScorer + fake-scorer tests.
+      → trait, fail-open plan builder, heuristic incl. the missing "referenced later" signal (D-061); wiring is T3.4.
 - [ ] **T3.9** `R-CTX-4` LlmScorer (port of save-token-jev core) + `R-CTX-5` fail-open gate. **[A/B]**
 - [ ] **T3.10** `R-CTX-6` handoff note in S3.
 - [ ] **T3.11** `R-CTX-7` soft/hard triggers + `R-CTX-8` cache accounting. **[A/B]**
