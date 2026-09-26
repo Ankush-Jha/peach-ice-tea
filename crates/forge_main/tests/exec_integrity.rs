@@ -136,11 +136,18 @@ fn test_a_test_edited_mid_run_is_reported_restored_and_logged() {
             }
         })
         .collect();
-    // The closed port also produces transport retries, now metered (D-032).
-    assert!(kinds.iter().any(|kind| kind == "retry"), "telemetry: {kinds:?}");
+    // The closed port also produces transport retries, now metered (D-032),
+    // the first request records its prompt composition (T6.1), and a run
+    // that did not complete says why (HACKATHON section 15, "errors").
+    for expected in ["retry", "context_composition", "error:time_budget"] {
+        assert!(kinds.iter().any(|kind| kind == expected), "no {expected}: {kinds:?}");
+    }
     let kinds: Vec<&String> = kinds
         .iter()
-        .filter(|kind| kind.as_str() != "retry" && !kind.starts_with("agent_state"))
+        .filter(|kind| {
+            !matches!(kind.as_str(), "retry" | "context_composition" | "error:time_budget")
+                && !kind.starts_with("agent_state")
+        })
         .collect();
     assert_eq!(
         kinds,

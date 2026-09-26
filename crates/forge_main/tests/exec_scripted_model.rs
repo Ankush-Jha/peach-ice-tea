@@ -433,6 +433,7 @@ fn test_retries_are_metered_and_the_telemetry_stream_is_complete() {
         vec![
             "run_start",
             "agent_state:running",
+            "context_composition",
             "retry",
             "retry",
             "retry",
@@ -444,6 +445,14 @@ fn test_retries_are_metered_and_the_telemetry_stream_is_complete() {
             "run_end",
         ]
     );
+
+    // T6.1: the first request's fixed cost, by source. D-039 measured tool
+    // definitions as its largest part.
+    let composition = run.telemetry.iter().find(|event| event["type"] == "context_composition").unwrap();
+    let sources = &composition["tokens_by_source_estimated"];
+    let tools = sources["tool_definitions"].as_u64().unwrap();
+    assert!(tools > sources["system_prompt"].as_u64().unwrap(), "{sources}");
+    assert!(tools > sources["user_prompt"].as_u64().unwrap(), "{sources}");
 
     let retries: Vec<&serde_json::Value> =
         run.telemetry.iter().filter(|event| event["type"] == "retry").collect();

@@ -11,10 +11,10 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [ ] **TH.1** `R-HACK-1` one-shot autonomy: no reachable interactive prompt in `exec`; fail fast on missing config; wall-clock/request budgets.
 - [ ] **TH.2** `R-HACK-2` test-integrity guard: protected-path manifest, tool + shell refusal, loud notice to the model, post-run verify + restore.
 - [ ] **TH.3** `R-HACK-6` Gemini first: capture thoughts/cached tokens, tool-schema compatibility, reasoning-effort mapping, Gemini registry.
-- [ ] **TH.4** `R-HACK-3` telemetry event stream (`TelemetrySink`, internal schema, organizer adapter stub).
+- [x] **TH.4** `R-HACK-3` telemetry event stream (`TelemetrySink`, internal schema, organizer adapter stub).
       → wired (D-033): run, agent_state, model_call, tool_call, retry (with billed usage), context_compaction,
-      integrity, prompt_suppressed, test_run (TH.6); sink redacts. **Open:** `error`/`recovery`,
-      `context_composition`; title-generation call is unmetered.
+      integrity, prompt_suppressed, test_run (TH.6), recovery, error, context_composition (D-047); sink redacts;
+      title call removed in exec (D-045). **Open:** only the organizer adapter (waits on the published schema, D-020).
 - [ ] **TH.5** `R-HACK-5` evidence bundle (`--evidence-dir`), transcript on every exit path, redaction (pulls T3.7 forward).
       → bundle on completed/error/time-budget paths, redacted, checksummed (D-034); `tests.json` is the harness's
       own final run (D-037); SIGINT/SIGTERM → exit 5 `interrupted` with the full bundle (D-038).
@@ -133,7 +133,8 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
 - [ ] **T5.7** `R-PROTO-7` `exec --json` streams protocol notifications.
 
 ## M6 — Prompts, extensibility, memory
-- [ ] **T6.1** `R-PROMPT-1` per-component prompt token report.
+- [x] **T6.1** `R-PROMPT-1` per-component prompt token report.
+      → `context_composition` at each conversation's first request (by role and source) + report line (D-047).
 - [ ] **T6.2** `R-PROMPT-2` compress `task.md` behind behaviour tests. **[A/B]**
 - [ ] **T6.3** `R-EXT-1` external hooks incl. `pre_compact` + save-token-jev-compatible example.
 - [ ] **T6.4** `R-MEM-1` project memory file + `memory_write` tool.
