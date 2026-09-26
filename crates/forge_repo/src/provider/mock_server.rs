@@ -101,6 +101,28 @@ impl MockServer {
             .create_async()
             .await
     }
+
+    /// Like [`Self::mock_google_chat_stream`], but only matches a request
+    /// whose body satisfies `body`, so a test can assert on the wire shape.
+    pub async fn mock_google_chat_stream_matching(
+        &mut self,
+        model: &str,
+        events: Vec<String>,
+        body: mockito::Matcher,
+    ) -> Mock {
+        let mut sse_body = events.join("\n\n");
+        sse_body.push_str("\n\n");
+        let path = format!("/models/{}:streamGenerateContent", model);
+        self.server
+            .mock("POST", path.as_str())
+            .match_query(mockito::Matcher::UrlEncoded("alt".into(), "sse".into()))
+            .match_body(body)
+            .with_status(200)
+            .with_header("content-type", "text/event-stream")
+            .with_body(sse_body)
+            .create_async()
+            .await
+    }
 }
 
 /// Normalize dynamic addresses in messages for testing/logging.
