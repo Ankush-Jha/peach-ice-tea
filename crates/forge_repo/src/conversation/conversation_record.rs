@@ -216,6 +216,13 @@ impl From<TokenCountRecord> for forge_domain::TokenCount {
     }
 }
 
+// harness: rows written before `reasoning_tokens` existed decode as zero
+// rather than failing. `TokenCountRecord` is an upstream enum with no natural
+// default, so this stays a local function instead of a derive on that type.
+fn zero_tokens() -> TokenCountRecord {
+    TokenCountRecord::Actual(0)
+}
+
 /// Repository-specific representation of Usage
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct UsageRecord {
@@ -223,6 +230,11 @@ pub(super) struct UsageRecord {
     completion_tokens: TokenCountRecord,
     total_tokens: TokenCountRecord,
     cached_tokens: TokenCountRecord,
+    // harness: R-EVAL-2 — without this the per-message reasoning count is
+    // silently zeroed on every reload, losing information with no way to
+    // recover it. Defaults for rows written before the field existed.
+    #[serde(default = "zero_tokens")]
+    reasoning_tokens: TokenCountRecord,
     #[serde(skip_serializing_if = "Option::is_none")]
     cost: Option<f64>,
 }
@@ -234,6 +246,7 @@ impl From<&forge_domain::Usage> for UsageRecord {
             completion_tokens: TokenCountRecord::from(&usage.completion_tokens),
             total_tokens: TokenCountRecord::from(&usage.total_tokens),
             cached_tokens: TokenCountRecord::from(&usage.cached_tokens),
+            reasoning_tokens: TokenCountRecord::from(&usage.reasoning_tokens),
             cost: usage.cost,
         }
     }
@@ -242,7 +255,7 @@ impl From<&forge_domain::Usage> for UsageRecord {
 impl From<UsageRecord> for forge_domain::Usage {
     fn from(record: UsageRecord) -> Self {
         forge_domain::Usage {
-            reasoning_tokens: Default::default(),
+            reasoning_tokens: record.reasoning_tokens.into(),
             prompt_tokens: record.prompt_tokens.into(),
             completion_tokens: record.completion_tokens.into(),
             total_tokens: record.total_tokens.into(),
@@ -1062,6 +1075,37 @@ mod harness_task_metrics_tests {
         let actual = forge_domain::Metrics::from(decoded).task;
 
         assert_eq!(actual, fixture.task);
+    }
+
+    /// Per-message reasoning tokens must survive a reload; they were zeroed
+    /// before `UsageRecord` carried the field.
+    #[test]
+    fn test_per_message_reasoning_tokens_survive_persistence() {
+        let fixture = forge_domain::Usage {
+            prompt_tokens: forge_domain::TokenCount::Actual(1000),
+            completion_tokens: forge_domain::TokenCount::Actual(517),
+            total_tokens: forge_domain::TokenCount::Actual(1517),
+            cached_tokens: forge_domain::TokenCount::Actual(800),
+            reasoning_tokens: forge_domain::TokenCount::Actual(317),
+            cost: Some(0.25),
+        };
+
+        let json = serde_json::to_string(&UsageRecord::from(&fixture)).unwrap();
+        let decoded: UsageRecord = serde_json::from_str(&json).unwrap();
+        let actual = forge_domain::Usage::from(decoded);
+
+        assert_eq!(actual, fixture);
+    }
+
+    /// Rows written before the field existed still decode.
+    #[test]
+    fn test_usage_record_without_reasoning_tokens_defaults_to_zero() {
+        let fixture = r#"{"prompt_tokens":{"actual":10},"completion_tokens":{"actual":5},"total_tokens":{"actual":15},"cached_tokens":{"actual":0}}"#;
+
+        let record: UsageRecord = serde_json::from_str(fixture).unwrap();
+        let actual = forge_domain::Usage::from(record);
+
+        assert_eq!(actual.reasoning_tokens, forge_domain::TokenCount::Actual(0));
     }
 
     /// Conversations persisted before this field existed must still load.
