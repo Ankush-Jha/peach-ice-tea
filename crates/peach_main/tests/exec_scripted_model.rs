@@ -15,6 +15,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use bstr::ByteSlice;
 use pretty_assertions::assert_eq;
 
 const BOUND: Duration = Duration::from_secs(60);
@@ -137,6 +138,18 @@ fn run_exec_with_env(
     agent_md: Option<(&str, &str)>,
     extra_env: &[(&str, &str)],
 ) -> Run {
+    run_exec_full(project, model, agent_md, extra_env, "fix add", &[])
+}
+
+/// Runs `peach exec <task>` with extra environment and arguments.
+fn run_exec_full(
+    project: &Path,
+    model: &ScriptedModel,
+    agent_md: Option<(&str, &str)>,
+    extra_env: &[(&str, &str)],
+    task: &str,
+    extra_args: &[&str],
+) -> Run {
     let config = tempfile::tempdir().unwrap();
     let telemetry = config.path().join("telemetry.jsonl");
     std::fs::write(
@@ -173,8 +186,9 @@ model_id = "scripted-model"
     }
     command.envs(extra_env.iter().copied());
     let mut child = command
-        .args(["exec", "fix add", "--json", "--max-duration-secs", "45", "--telemetry"])
+        .args(["exec", task, "--json", "--max-duration-secs", "45", "--telemetry"])
         .arg(&telemetry)
+        .args(extra_args)
         .env("PEACH_CONFIG", config.path())
         .env("PEACH_TEST_SCRIPTED_KEY", "scripted-key")
         // Real retry behaviour, shorter waits, so retry scenarios stay fast.
@@ -422,4 +436,147 @@ fn test_a_compaction_is_reported_in_telemetry() {
     );
     let first = compactions[0];
     assert!(first["messages_after"].as_u64() < first["messages_before"].as_u64(), "{first}");
+}
+
+fn git(repo: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+        .args(args)
+        .current_dir(repo)
+        .stdout(Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?}");
+}
+
+fn git_project_with_a_test() -> tempfile::TempDir {
+    let project = project_with_a_test();
+    git(project.path(), &["init", "-q"]);
+    git(project.path(), &["add", "-A"]);
+    git(project.path(), &["commit", "-qm", "start"]);
+    project
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Every file in `dir`, recursively, as (relative path, bytes).
+fn bundle_files(dir: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut files = vec![];
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            files.push((name, std::fs::read(&path).unwrap()));
+        }
+    }
+    files.sort();
+    files
+}
+
+#[test]
+fn test_a_completed_run_writes_a_complete_redacted_evidence_bundle() {
+    let project = git_project_with_a_test();
+    let evidence = tempfile::tempdir().unwrap();
+    let key = format!("AIza{}", "q".repeat(35));
+    let task = format!("fix add; the staging key {key} is irrelevant");
+    let model = ScriptedModel::start(vec![
+        // Peach refuses to overwrite a file the model has not read.
+        Turn::Tool("read", serde_json::json!({"file_path": project.path().join("math.py")})),
+        Turn::Tool(
+            "write",
+            serde_json::json!({
+                "file_path": project.path().join("math.py"),
+                "content": "def add(a, b):\n    return a + b\n",
+                "overwrite": true,
+            }),
+        ),
+        Turn::Text("Done."),
+    ]);
+    let dir = evidence.path().join("bundle");
+
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[],
+        &task,
+        &["--evidence-dir", dir.to_str().unwrap()],
+    );
+
+    assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
+    let files = bundle_files(&dir);
+    let names: Vec<&str> = files.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(
+        names,
+        vec![
+            "diff.patch",
+            "exec.json",
+            "integrity.json",
+            "manifest.json",
+            "prompt.txt",
+            "tests.json",
+            "transcript.json",
+        ],
+        "telemetry went to --telemetry, which overrides the bundle default"
+    );
+    let read = |name: &str| String::from_utf8(files.iter().find(|(n, _)| n == name).unwrap().1.clone()).unwrap();
+
+    // The frozen prompt is the task as given, not with the harness notice.
+    assert_eq!(read("prompt.txt"), task.replace(&key, "[REDACTED]"));
+    assert!(
+        read("diff.patch").contains("+    return a + b"),
+        "diff: {:?}\nmath.py: {:?}\ntelemetry: {:?}",
+        read("diff.patch"),
+        std::fs::read_to_string(project.path().join("math.py")),
+        run.telemetry.iter().filter(|e| e["type"] == "tool_call").collect::<Vec<_>>()
+    );
+    let exec: serde_json::Value = serde_json::from_str(&read("exec.json")).unwrap();
+    assert_eq!(exec["outcome"], "completed");
+    let tests: serde_json::Value = serde_json::from_str(&read("tests.json")).unwrap();
+    assert_eq!(tests["ran"], false);
+    let transcript: serde_json::Value = serde_json::from_str(&read("transcript.json")).unwrap();
+    assert_eq!(transcript["conversation"]["id"], run.report["conversation_id"]);
+
+    // The manifest checksums exactly the other files, as they are on disk.
+    let manifest: serde_json::Value = serde_json::from_str(&read("manifest.json")).unwrap();
+    let expected: serde_json::Map<String, serde_json::Value> = files
+        .iter()
+        .filter(|(name, _)| name != "manifest.json")
+        .map(|(name, bytes)| (name.clone(), serde_json::Value::String(sha256_hex(bytes))))
+        .collect();
+    assert_eq!(manifest["files"], serde_json::Value::Object(expected));
+
+    // The key reached the model (it was in the task) but not the bundle.
+    for (name, bytes) in &files {
+        assert!(!bytes.to_str_lossy().contains(&key), "{name} leaks the key");
+    }
+}
+
+#[test]
+fn test_an_errored_run_still_writes_its_bundle() {
+    let project = git_project_with_a_test();
+    let evidence = tempfile::tempdir().unwrap();
+    // 400 is not retryable: the run fails on its first request.
+    let model = ScriptedModel::start(vec![Turn::Status(400)]);
+    let dir = evidence.path().join("bundle");
+
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[],
+        "fix add",
+        &["--evidence-dir", dir.to_str().unwrap()],
+    );
+
+    assert_eq!(run.exit_code, Some(1), "report: {}", run.report);
+    let exec: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("exec.json")).unwrap()).unwrap();
+    assert_eq!(exec["outcome"], "error");
+    for name in ["prompt.txt", "integrity.json", "diff.patch", "tests.json", "transcript.json", "manifest.json"] {
+        assert!(dir.join(name).exists(), "{name} missing on the error path");
+    }
 }
