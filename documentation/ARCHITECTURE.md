@@ -1,109 +1,139 @@
 # Peach Ice Tea — architecture
 
 Peach Ice Tea is a coding-agent harness built on a fork of ForgeCode (`tailcallhq/forgecode`, Rust; D-001,
-D-024). This document answers the HACKATHON.md §25 interview questions. Each answer names the code that
-implements it, the telemetry field that shows it happening, and the decision record behind it (D-*, in
-`docs/harness/DECISIONS.md`).
+D-024). This document answers the HACKATHON.md §25 interview questions. Each answer names the code that does it,
+the decision behind it (D-*, in `docs/harness/DECISIONS.md`), and **what a real run's telemetry shows**.
 
-**Evidence status (honest):** most behaviour is proven by end-to-end tests that drive the real binary with a
-scripted model (`crates/forge_main/tests/exec_scripted_model.rs`, `exec_integrity.rs`, `exec_never_blocks.rs`).
-Live Gemini runs so far: D-032 (a correct fix, stopped by a cost cap we set) and D-040 (the free-tier quota
-was exhausted before the first call). Live DeepSeek-on-NVIDIA runs are D-043.
+**The real run cited throughout:** [`documentation/evidence/2026-09-27-make-run-py-bugfix/`](evidence/2026-09-27-make-run-py-bugfix/).
+It is the evaluator path (`make run`, D-070) from a clean clone, on the default model
+`nvidia/nemotron-3-ultra-550b-a55b:free`, fixing the `py-bugfix` fixture. Outcome `completed`, 5 model calls,
+62 s, integrity clean, the harness's own final test run 4 passed / 0 failed. Where a mechanism has not yet
+happened in a real run (compaction, failover), the answer says so and names the end-to-end test that drives the
+real binary with a scripted model instead.
 
 ```mermaid
 flowchart LR
-  P[frozen prompt] --> E["exec (forge_main/ui.rs handle_exec)"]
-  E --> H["ExecHarness::start<br/>manifest + runtime + telemetry"]
+  P["make run / peach-ice-tea<br/>AI_API_KEY → profile key"] --> E["exec (forge_main/ui.rs)"]
+  E --> H["ExecHarness::start<br/>manifest, baseline, runtime, telemetry"]
   H --> L["Orchestrator loop (forge_app/orch.rs)"]
   L -->|request| M[(model)]
-  M -->|tool calls| R["tool_registry: correction, integrity guard"]
-  R --> X["tool_executor: run, observe edits/tests, recovery hint"]
+  M -.->|quota / outage| F2["failover: next model (D-072)"]
+  F2 --> L
+  M -->|tool calls| R["tool_registry: correction, integrity guard, permissions"]
+  R --> X["tool_executor: run, shape output, observe edits/tests, recovery hint"]
   X --> L
+  L -->|response hook| C["compaction pipeline<br/>S0 supersede → S1 offload → S2 score → S3 summary"]
+  C --> L
   L -->|stop| G{"End hooks:<br/>todos, verify gate"}
   G -->|reminder| L
   G -->|done| F["finish: verify+restore, diff, final tests"]
   F --> S["seal: transcript, exec.json, run_end, report, manifest"]
+  L -. every save .-> EV[("event log: thread_events + artifacts (D-064)")]
 ```
 
 ## Orchestration
 
 - **How is the next step decided?** The model decides; the harness bounds and corrects. Each iteration of
-  `Orchestrator::run` sends the context, runs the requested tools (read-only runs may be concurrent behind
-  `FORGE_HARNESS_PARALLEL_READONLY`, D-041), appends the results and loops. Telemetry: `model_call` with
-  `tool_call_ids`, and `tool_call` with `origin_call_id` pointing back to the model call that asked for it.
-- **How is completion decided?** When the model stops with no tool calls, the End hooks run. Pending todos
-  (upstream) and the **verification gate** (`hooks/verify_gate.rs`, D-037) can send it back: an edit with no
-  passing test run since gets a reminder, at most twice, and after that `agent_state: verification_unconfirmed`
-  is recorded. The gate acts only on voluntary stops, so limits still end runs. After the agent stops, the
-  harness runs the tests itself (`tests.json`, `test_run` with `origin: harness_final`), so the evidence says
-  whether the tests pass, not whether the agent said they did.
-- **What happens when stuck?** The upstream doom-loop detector, a tool-failure limit (exit 2), a request limit
-  (exit 3), a wall-clock budget (exit 4, D-029) and signal handling (exit 5, D-038) all end the run with a
-  full evidence bundle. The run can never block on a person: `followup` is answered in-band and no longer
-  ends the turn (D-031).
-- **Why this architecture?** Forking kept a mature loop, tools and compaction (D-001). Everything we added is
-  in additive modules (`forge_harness`, `forge_app/src/hooks/{telemetry,verify_gate}.rs`, `tool_concurrency.rs`,
-  `tool_correction.rs`) with `// harness:` seams in upstream files (D-004).
+  `Orchestrator::run` sends the context, runs the requested tools, appends results and loops.
+  *Real run:* 5 `model_call` events; the first returned two `tool_call_ids`, and both `tool_call` events carry
+  `origin_call_id` `…#1` pointing back to it. Every call's `finish_reason` was `tool_calls` until the last
+  (`end_turn`).
+- **How is completion decided?** When the model stops calling tools, the End hooks run. The **verification gate**
+  (`hooks/verify_gate.rs`, D-037) sends an agent that edited without a passing test run back, at most twice. After
+  it stops, the harness runs the tests itself. *Real run:* `test_run` with `origin: agent`, `exit_code: 0`,
+  `passed: 4`, then `test_run` with `origin: harness_final`, `passed: 4, failed: 0`. The report's pass/fail comes
+  from the second, not from the agent's claim.
+- **What happens when stuck?** The doom-loop detector, the tool-failure limit (exit 2), the request limit (exit 3),
+  the wall-clock budget (exit 4) and signals (exit 5) all end the run with a full evidence bundle; SIGKILL leaves a
+  provisional `incomplete` manifest and the restore baseline (D-056). Nothing can wait on a person: `followup`, MCP
+  trust, permission confirms and "continue anyway?" are answered or refused without asking (D-031, D-048, D-053).
+  If the model's provider gives out (an exhausted quota, or an outage that outlasts the retries), the run continues
+  on the next model of the profile's fallback list (`recovery: model_failover`, D-072). *No real run has needed
+  failover yet;* `exec_scripted_model.rs` proves it with a real 402 body and with 503s.
+- **Why this architecture?** Forking kept a mature loop, tools and providers (D-001). Everything added lives in
+  additive modules (`forge_harness`, `forge_app/src/{compaction_pipeline,hooks,truncation,model_failover}`,
+  `forge_repo/src/thread_event`) with `// harness:` seams in upstream files (D-004).
 
 ## Context
 
-- **What enters context?** The agent's system prompt, tool definitions (optionally without worked examples,
-  −15.4% per request, D-039), the task with a plain-text protected-test notice prepended (principle 4), and
-  tool results. Withheld output is loud and recoverable: truncated output names the file holding the rest
-  (T1.1).
-- **How is growth prevented?** Upstream compaction (`hooks/compaction.rs`) summarises older turns and keeps the
-  reasoning chain. Each compaction emits `context_compaction` (messages and estimated tokens before and after).
-  Every model call records `context_tokens_estimated` and `context_messages`.
-- **What is compressed or discarded?** Older turns go into a summary. Tool-output bodies above the limits go
-  to temp files with a path in the result. Nothing is dropped silently.
-- **How is state retained?** Todos, the conversation database, and the evidence bundle's `transcript.json`,
-  which is written on every exit path (D-034).
+- **What enters context?** The system prompt, tool definitions, the task with a plain-text protected-files notice
+  prepended (principle 4), `AGENTS.md` and `.forge/memory.md` if present (D-067), and tool results.
+  *Real run:* `context_composition` at the first request: `system_prompt` 2,901 tokens, `tool_definitions` 9,497,
+  `user_prompt` 238. Tool definitions are three quarters of the fixed cost (D-039's byte measurement said the same).
+- **How is growth prevented?** A staged compaction pipeline (`compaction_pipeline`, D-062). The cheap, reversible
+  stages run first, and the lossy summary only if still needed:
+  - S0 supersedes stale results (D-075);
+  - S1 offloads large old results to handles (D-074);
+  - S2 cuts by relevance score (D-077);
+  - S3 is forge's summary.
+
+  A soft trigger at ¾ of the threshold runs only S0–S1 (D-076). All of these are flagged until an A/B; the default
+  is S3 alone, identical to upstream (golden test). *Real run:* 14,086 estimated context tokens at the last call,
+  below the threshold, so **no real run has compacted yet**. The stages are proven end to end with a scripted model
+  (in each case the stub reaches the model and no summary runs).
+- **What is compressed or discarded?** Nothing silently. Every cut leaves a stub saying what was cut and
+  `read <path> (the complete output)`, and reading it counts as `offload_read` (D-060). Summarised-away results
+  can be listed with handles (D-066), and an exact handoff note can top the summary (D-063).
+- **How is state retained?** Todos; `conversations.context` as the working view; and an **append-only event log**
+  that keeps every message a compaction removed (`thread_events` + content-addressed `artifacts`, D-064/D-065). The
+  evidence bundle's `transcript.json` is written on every exit path (D-034).
 
 ## Tools
 
-- **Why these tools?** Forge's catalog (read, search, write, patch, multi_patch, shell, fetch, todo, task):
-  flat schemas with `required` fields, checked for Gemini compatibility (TH.3).
-- **How does the model choose?** From the descriptions. The judged profile keeps upstream's full text; compact
-  descriptions are an A/B candidate (D-039).
-- **How are tool failures handled?** A refused edit to a protected test is returned as a normal result
-  with guidance, so it doesn't count toward the failure limit (D-019, PLAN C7) and emits
-  `integrity: refused`. Misnamed arguments can be renamed before dispatch behind a flag (D-042,
-  `recovery: tool_argument_renamed`). A test run that failed before the code executed (environment,
-  compile or timeout) gets a one-line recovery hint and a `recovery` event (D-037).
-- **Why this interface?** Stability and the upstream merge path. Changes that alter what the model sees
-  ship behind flags until an A/B (principle 6).
+- **Why these tools?** Forge's catalog (read, fs_search, write, patch, multi_patch, shell, fetch, todo, task): flat
+  schemas with `required` fields (T0.8), checked for Gemini compatibility (TH.3). We added no tools: recall reuses
+  `read` on handle files (D-066; HACKATHON §21, "more tools ≠ better").
+- **How does the model choose?** From the descriptions. *Real run:* `read` ×2 (both requested in one model call; run in order, since parallel reads are a flag, D-041),
+  `patch` ×1, `shell` ×2. Every edit came after a read (`behaviour.ts`, D-078).
+- **How are tool failures handled?** A refused edit to a protected test is a normal result with guidance
+  (`integrity: refused`). Misnamed arguments can be renamed before dispatch (flag, D-042). Across every real run
+  so far, the default model made **0 tool errors in 67 calls** (`benchmarks/reports/tools/`, D-079).
+- **Why this interface?** Stability and the upstream merge path. Anything that changes what the model sees ships
+  behind a flag until an A/B (principle 6).
 
 ## Tokens
 
-- **Where do tokens go?** Measured (D-039): a first Gemini request was 50,773 bytes, of which tools were 38,296
-  (`todo_write` alone 11.5 KB, mostly examples) and the system prompt 11,835. Per-call `input_tokens`,
-  `cached_tokens`, `output_tokens` and `reasoning_tokens` come from provider usage. Gemini's thinking tokens
-  are counted as output (D-026), and DeepSeek's cache hits are read from its own fields (D-036).
-- **Avoiding repetition:** provider prompt caching; the report shows `cache_hit_rate`. Also compact tool docs.
-- **What controls context size:** compaction thresholds, output truncation, `FORGE_MAX_TOKENS`.
-- **Token vs reasoning trade-off:** effort maps to Gemini's `thinkingLevel` (fixed in D-032's pre-run check,
-  which found the mapping unwired).
+- **Where do tokens go?** *Real run:* 66,960 input tokens over 5 calls (12,185 → 14,172 per call as the transcript
+  grew), 870 output, of which 218 were reasoning, all from provider usage, never from the model (§16). Most of each
+  request is the fixed prefix above.
+- **Avoiding repetition:** the provider's prompt cache. *Real run:* `cached_tokens` 0, 0, 4,320, 8,640, 8,640, so
+  the fixed prefix was served from cache from the third call on, for a report `cache_hit_rate` of 32%. The report
+  also shows the cache rate just before and after each compaction (D-076), because a compaction invalidates the
+  prefix.
+- **What controls context size:** compaction thresholds and stages, output truncation with handles, and noise
+  compression for build/test output (flag, D-073).
+- **Token vs reasoning trade-off:** reasoning effort is set per profile. Gemini's thinking level is mapped (TH.3),
+  and reasoning tokens are counted as output (D-026).
 
 ## Reliability
 
-- **Failing tests:** each test run is classified (`passed`, `test_assertion`, `compile`, `environment`,
-  `timeout`, `unknown`) with counts parsed from the runner's own summary (`verify/classify.rs`).
-- **Distinguishing failure types:** the same classes drive the recovery hints. Retries record their cause
-  (`retry.reason`); an empty completion records whether the provider billed it (`usage_reported`, D-033). A
-  per-day or billing quota is not retried at all and is named in `exec.json` (D-040).
-- **Recovering from wrong implementations:** tests are the specification. The gate and the final run keep a
-  wrong fix from passing silently, and the integrity guard keeps "fix the test" off the table: refused at
-  dispatch, then verified and restored after the run (D-019, D-028, D-030).
+- **Failing tests:** every test run is classified (`passed`, `test_assertion`, `compile`, `environment`, `timeout`)
+  with counts parsed from the runner's own summary (`verify/classify.rs`).
+- **Distinguishing failure types — a real example:** the agent first ran `python -m pytest`, but pytest was not
+  installed. The harness recorded `test_run {exit_code: 1, failure_class: environment}` and added a one-line hint
+  (`recovery {action: recovery_hint, trigger: environment}`). The agent's next call used
+  `python3 -m unittest discover`, which passed 4/0. An assertion failure gets no hint, because its output speaks
+  for itself (D-037).
+- **Recovering from wrong implementations:** tests are the specification. The gate and the harness's own final
+  run keep a wrong fix from passing silently. The integrity guard keeps "fix the test" off the table: refused at
+  dispatch, verified and restored after the run, including test sections of `package.json`/`pyproject.toml`
+  (D-054). *Real run:* `integrity: verify — 2 protected files checked; all unchanged`.
 
 ## Architecture
 
-- **Major components:** the upstream loop, tools and providers (`crates/forge_*`). Ours: `forge_harness`
-  (integrity, runtime, telemetry + sink with redaction, evidence, report, verify, tool docs); forge_app hooks
-  (telemetry, verify gate); `forge_main/src/harness_exec.rs` (the exec lifecycle); the eval suite
-  (`benchmarks/hackathon/run.ts`, fixtures, `--agent forge-cheat`).
-- **Most important decisions:** enforce in the runtime rather than in prompts (integrity guard, verify gate,
-  never-block); evidence on every exit path; objective numbers only, with discrepancies shown rather than
-  reconciled (D-035); behaviour changes behind flags until measured.
-- **What we would change next cycle:** A/B the four flagged features on the TH.7 suite; make edits made
-  through the shell arm the verify gate; meter the title-generation call; vendor the organizers' schemas
-  into the adapters (D-020).
+- **Major components:**
+  - the upstream loop, tools and providers (`crates/forge_*`);
+  - `forge_harness`: integrity, runtime, telemetry with redaction, evidence, report, verification, the relevance
+    scorer;
+  - `forge_app`: hooks, the compaction pipeline, output shaping, failover;
+  - `forge_repo::thread_event`: the event log;
+  - `forge_main/src/harness_exec.rs`: the exec lifecycle;
+  - the root `Makefile` and `harness/` entry points;
+  - the evaluation tooling: `benchmarks/hackathon` (suite, runner, A/B, bake-off, behaviour and tool-error
+    reports).
+- **Most important decisions:** enforce in the runtime, not in prompts; evidence on every exit path; objective
+  numbers only; any model, chosen by evidence per role (D-049, MM.3), on the free tier (D-069); behaviour changes
+  behind flags until measured.
+- **What we would change next cycle:** run the pending A/Bs on two model families (they wait on the free-tier
+  budget, D-069) and flip the flags that hold; a long-horizon suite so compaction is exercised by real runs;
+  `LlmScorer` when a model request per compaction is affordable (D-077).

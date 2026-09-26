@@ -1,0 +1,14 @@
+diff --git a/stats.py b/stats.py
+index 2b19111..d4a3fb3 100644
+--- a/stats.py
++++ b/stats.py
+@@ -7,8 +7,4 @@ def dedupe_sorted(items):
+     Used by the reporting job to turn a raw event stream into a stable,
+     de-duplicated list before it is displayed to a customer.
+     """
+-    result = []
+-    for item in items:
+-        if item not in result:
+-            result.append(item)
+-    return result
++    return sorted(set(items))
