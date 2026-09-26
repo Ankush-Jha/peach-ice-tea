@@ -39,6 +39,7 @@ stdout line 24
 stdout line 25
 ]]>
 </tail>
+<truncated>5 more lines not shown. Full output: read /tmp/stdout_content.txt (lines 11-15).</truncated>
 </stdout>
 <stderr
   total_lines="30"
@@ -72,5 +73,6 @@ stderr line 29
 stderr line 30
 ]]>
 </tail>
+<truncated>10 more lines not shown. Full output: read /tmp/stderr_content.txt (lines 11-20).</truncated>
 </stderr>
 </shell_output>

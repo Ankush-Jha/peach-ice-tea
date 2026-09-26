@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use derive_setters::Setters;
 use serde::{Deserialize, Serialize};
@@ -85,6 +85,107 @@ pub struct TaskMetrics {
 
     /// What compaction did over the course of the task.
     pub compactions: CompactionMetrics,
+
+    /// Signals that the agent needed a turn to recover from something the
+    /// harness withheld or repeated (R-EVAL-2, R-OUT-3).
+    #[serde(default, skip_serializing_if = "RecoveryEvents::is_default")]
+    pub recovery: RecoveryEvents,
+
+    /// Truncation dump-file paths (`tool_executor.rs::dump_operation`) that
+    /// have already been credited to `recovery.offload_read`. Re-reading the
+    /// same dump file again is not a fresh recovery, so it is not counted
+    /// twice. Process-local bookkeeping only; not persisted, since a resumed
+    /// conversation degrading to under-counting is safer than the complexity
+    /// of restoring it (CLAUDE.md principle 5, fail open).
+    #[setters(skip)]
+    #[serde(skip)]
+    dump_files_read: HashSet<String>,
+
+    /// Every dump-file path created for this task so far, so a later read of
+    /// one of them can be recognised as `offload_read`. Process-local only,
+    /// same reasoning as `dump_files_read`.
+    #[setters(skip)]
+    #[serde(skip)]
+    dump_files: HashSet<String>,
+
+    /// The most recent line range read for each file path, so a second read
+    /// of the same file and range (with no write in between) can be
+    /// recognised as `reread_same_range`. A write to a path clears its entry.
+    /// Process-local only, same reasoning as `dump_files_read`.
+    #[setters(skip)]
+    #[serde(skip)]
+    recent_reads: HashMap<String, (u64, u64)>,
+
+    /// Shell commands run within the last `RERUN_WINDOW_CALLS` LLM calls,
+    /// paired with the `llm_calls` count at the time they ran. Pruned on
+    /// every call so it never grows past the window, regardless of task
+    /// length. Process-local only, same reasoning as `dump_files_read`.
+    #[setters(skip)]
+    #[serde(skip)]
+    recent_shell_commands: VecDeque<(u64, String)>,
+}
+
+/// Recovery signals counted while completing a task (R-EVAL-2).
+///
+/// Each field is a distinct way the agent spent a turn recovering from
+/// something the harness withheld, repeated, or got wrong the first time.
+/// `first_error_recovered` is derived from the exec lifecycle (task completed
+/// with `tool_errors > 0`), not counted here; it stays zero until that piece
+/// wires it in.
+#[derive(Debug, Clone, Default, PartialEq, Setters, Serialize, Deserialize)]
+#[setters(into, strip_option)]
+#[serde(default)]
+pub struct RecoveryEvents {
+    /// The agent read a path that was one of the harness's own truncation
+    /// dump files (`tool_executor.rs::dump_operation`) — a turn spent
+    /// recovering content the harness withheld (R-OUT-3).
+    pub offload_read: u64,
+
+    /// An identical shell command ran again within the last five LLM calls.
+    pub rerun_same_command: u64,
+
+    /// The same file and line range was read twice with no write to that
+    /// file in between.
+    pub reread_same_range: u64,
+
+    /// The task completed after its first tool error. Left at zero here;
+    /// derived in the exec lifecycle (TH.1), which has the outcome and
+    /// `tool_errors` in scope at the same time.
+    pub first_error_recovered: u64,
+}
+
+impl RecoveryEvents {
+    /// Whether every counter is at its default (zero), used to keep a task
+    /// with no recovery events out of the serialized JSON.
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Adds a subagent's recovery counts into this task's totals, matching
+    /// how `TaskMetrics::absorb_subagent` folds in every other counter.
+    fn absorb(&mut self, child: &RecoveryEvents) {
+        self.offload_read += child.offload_read;
+        self.rerun_same_command += child.rerun_same_command;
+        self.reread_same_range += child.reread_same_range;
+        self.first_error_recovered += child.first_error_recovered;
+    }
+
+    /// What was recorded since `baseline`, field by field, saturating at
+    /// zero like the rest of `TaskMetrics::since`.
+    fn since(&self, baseline: &RecoveryEvents) -> RecoveryEvents {
+        RecoveryEvents {
+            offload_read: self.offload_read.saturating_sub(baseline.offload_read),
+            rerun_same_command: self
+                .rerun_same_command
+                .saturating_sub(baseline.rerun_same_command),
+            reread_same_range: self
+                .reread_same_range
+                .saturating_sub(baseline.reread_same_range),
+            first_error_recovered: self
+                .first_error_recovered
+                .saturating_sub(baseline.first_error_recovered),
+        }
+    }
 }
 
 /// Aggregate record of every compaction performed during a task.
@@ -162,6 +263,67 @@ impl TaskMetrics {
         self.tool_errors.values().sum()
     }
 
+    /// How many LLM calls back an identical shell command still counts as a
+    /// rerun (R-EVAL-2).
+    const RERUN_WINDOW_CALLS: u64 = 5;
+
+    /// Records a temp-file path created to hold output a truncation withheld
+    /// (`tool_executor.rs::dump_operation`), so a later read of that same
+    /// path is recognised by `record_read` as `recovery.offload_read`
+    /// (R-OUT-3).
+    pub fn record_dump_file(&mut self, path: impl Into<String>) {
+        self.dump_files.insert(path.into());
+    }
+
+    /// Records a file read and updates the recovery counters it triggers.
+    ///
+    /// `recovery.offload_read` fires the first time a path known to be one
+    /// of this task's own truncation dump files is read; reading the same
+    /// dump file again does not fire it a second time, since the recovery
+    /// already happened on the first read.
+    ///
+    /// `recovery.reread_same_range` fires when `path` was already the most
+    /// recently read range for this exact `(start_line, end_line)`, with no
+    /// `record_write` for `path` in between.
+    pub fn record_read(&mut self, path: &str, start_line: u64, end_line: u64) {
+        if self.dump_files.contains(path) && self.dump_files_read.insert(path.to_string()) {
+            self.recovery.offload_read += 1;
+        }
+
+        let range = (start_line, end_line);
+        if self.recent_reads.get(path) == Some(&range) {
+            self.recovery.reread_same_range += 1;
+        }
+        self.recent_reads.insert(path.to_string(), range);
+    }
+
+    /// Clears the recorded read range for `path`, so a write breaks the
+    /// `reread_same_range` chain for that file. Call for every write, patch,
+    /// undo or remove.
+    pub fn record_write(&mut self, path: &str) {
+        self.recent_reads.remove(path);
+    }
+
+    /// Records a shell command and updates `recovery.rerun_same_command` if
+    /// it repeats one already run within the last `RERUN_WINDOW_CALLS` LLM
+    /// calls. Uses `llm_calls` as the turn index, per R-EVAL-2, and prunes
+    /// the history to that window on every call so it stays bounded for the
+    /// whole task regardless of how many shell calls it makes.
+    pub fn record_shell_command(&mut self, command: &str) {
+        let now = self.llm_calls;
+        self.recent_shell_commands
+            .retain(|(call, _)| now.saturating_sub(*call) < Self::RERUN_WINDOW_CALLS);
+
+        if self
+            .recent_shell_commands
+            .iter()
+            .any(|(_, cmd)| cmd == command)
+        {
+            self.recovery.rerun_same_command += 1;
+        }
+        self.recent_shell_commands.push_back((now, command.to_string()));
+    }
+
     /// Folds a subagent's costs into this task's totals.
     ///
     /// Counts, tokens, cost and compactions add. `wall_ms` deliberately does
@@ -187,6 +349,7 @@ impl TaskMetrics {
         self.compactions.count += child.compactions.count;
         self.compactions.tokens_before += child.compactions.tokens_before;
         self.compactions.tokens_after += child.compactions.tokens_after;
+        self.recovery.absorb(&child.recovery);
     }
 
     /// Returns what was spent since `baseline`, field by field.
@@ -238,6 +401,13 @@ impl TaskMetrics {
                     .tokens_after
                     .saturating_sub(baseline.compactions.tokens_after),
             },
+            recovery: self.recovery.since(&baseline.recovery),
+            // Process-local bookkeeping, not a counter: a delta has nothing
+            // meaningful to subtract, so it starts fresh like `wall_ms`.
+            dump_files_read: HashSet::new(),
+            dump_files: HashSet::new(),
+            recent_reads: HashMap::new(),
+            recent_shell_commands: VecDeque::new(),
         }
     }
 
@@ -487,5 +657,167 @@ mod tests {
         let expected = TaskMetrics::default();
 
         assert_eq!(actual, expected);
+    }
+
+    /// Conversations persisted before `recovery` existed (T1.3) must still
+    /// load, per `#[serde(default)]` on the field.
+    #[test]
+    fn test_task_metrics_without_recovery_field_defaults() {
+        let fixture = r#"{"llm_calls":3,"failed_llm_calls":0,"input_tokens":100,"cached_input_tokens":0,"output_tokens":10,"reasoning_tokens":0,"wall_ms":500,"compactions":{"count":0,"tokens_before":0,"tokens_after":0}}"#;
+
+        let actual: TaskMetrics = serde_json::from_str(fixture).unwrap();
+
+        assert_eq!(actual.recovery, RecoveryEvents::default());
+        assert_eq!(actual.llm_calls, 3);
+    }
+
+    /// A task with no recovery events serializes without the `recovery` key
+    /// at all, so old readers of the JSON metrics line are unaffected.
+    #[test]
+    fn test_recovery_omitted_from_json_when_default() {
+        let fixture = TaskMetrics::default().llm_calls(1u64);
+        let actual = serde_json::to_string(&fixture).unwrap();
+
+        assert!(!actual.contains("recovery"));
+    }
+
+    /// A task with at least one recovery event includes the `recovery` key.
+    #[test]
+    fn test_recovery_present_in_json_when_nonzero() {
+        let mut fixture = TaskMetrics::default();
+        fixture.recovery.offload_read = 1;
+        let actual = serde_json::to_string(&fixture).unwrap();
+
+        assert!(actual.contains(r#""recovery":{"offload_read":1"#));
+    }
+
+    #[test]
+    fn test_offload_read_fires_once_per_dump_file() {
+        let mut actual = TaskMetrics::default();
+        actual.record_dump_file("/tmp/forge_shell_stdout_abc.txt");
+
+        // First read of the dump file recovers the withheld content.
+        actual.record_read("/tmp/forge_shell_stdout_abc.txt", 1, 2000);
+        // A second read of the same dump file already recovered it; it does
+        // not count again.
+        actual.record_read("/tmp/forge_shell_stdout_abc.txt", 1, 2000);
+
+        assert_eq!(actual.recovery.offload_read, 1);
+    }
+
+    #[test]
+    fn test_offload_read_does_not_fire_for_an_unrelated_path() {
+        let mut actual = TaskMetrics::default();
+        actual.record_dump_file("/tmp/forge_shell_stdout_abc.txt");
+
+        actual.record_read("/home/user/src/main.rs", 1, 50);
+
+        assert_eq!(actual.recovery.offload_read, 0);
+    }
+
+    #[test]
+    fn test_reread_same_range_fires_on_the_second_identical_read() {
+        let mut actual = TaskMetrics::default();
+        actual.record_read("/home/user/src/main.rs", 1, 50);
+        actual.record_read("/home/user/src/main.rs", 1, 50);
+
+        assert_eq!(actual.recovery.reread_same_range, 1);
+    }
+
+    #[test]
+    fn test_reread_same_range_does_not_fire_for_a_different_range() {
+        let mut actual = TaskMetrics::default();
+        actual.record_read("/home/user/src/main.rs", 1, 50);
+        actual.record_read("/home/user/src/main.rs", 51, 100);
+
+        assert_eq!(actual.recovery.reread_same_range, 0);
+    }
+
+    #[test]
+    fn test_reread_same_range_does_not_fire_after_a_write() {
+        let mut actual = TaskMetrics::default();
+        actual.record_read("/home/user/src/main.rs", 1, 50);
+        actual.record_write("/home/user/src/main.rs");
+        actual.record_read("/home/user/src/main.rs", 1, 50);
+
+        assert_eq!(actual.recovery.reread_same_range, 0);
+    }
+
+    #[test]
+    fn test_rerun_same_command_fires_within_the_window() {
+        let mut actual = TaskMetrics::default();
+        actual.record_shell_command("cargo test");
+        actual.llm_calls = 3;
+        actual.record_shell_command("cargo test");
+
+        assert_eq!(actual.recovery.rerun_same_command, 1);
+    }
+
+    #[test]
+    fn test_rerun_same_command_does_not_fire_outside_the_window() {
+        let mut actual = TaskMetrics::default();
+        actual.record_shell_command("cargo test");
+        actual.llm_calls = 6;
+        actual.record_shell_command("cargo test");
+
+        assert_eq!(actual.recovery.rerun_same_command, 0);
+    }
+
+    #[test]
+    fn test_rerun_same_command_does_not_fire_for_a_different_command() {
+        let mut actual = TaskMetrics::default();
+        actual.record_shell_command("cargo test");
+        actual.record_shell_command("cargo build");
+
+        assert_eq!(actual.recovery.rerun_same_command, 0);
+    }
+
+    /// The rerun ring buffer is pruned on every call, so it never grows past
+    /// the five-call window no matter how many shell commands the task runs.
+    #[test]
+    fn test_rerun_same_command_history_is_bounded() {
+        let mut actual = TaskMetrics::default();
+        for i in 0..100 {
+            actual.llm_calls = i;
+            actual.record_shell_command(&format!("command {i}"));
+        }
+
+        assert!(actual.recent_shell_commands.len() <= 5);
+    }
+
+    #[test]
+    fn test_recovery_events_since_saturates_and_subtracts() {
+        let mut baseline = TaskMetrics::default();
+        baseline.recovery.offload_read = 2;
+        baseline.recovery.rerun_same_command = 1;
+
+        let mut after = baseline.clone();
+        after.recovery.offload_read = 5;
+        after.recovery.reread_same_range = 3;
+
+        let actual = after.since(&baseline);
+
+        let expected = RecoveryEvents::default()
+            .offload_read(3u64)
+            .reread_same_range(3u64);
+
+        assert_eq!(actual.recovery, expected);
+    }
+
+    #[test]
+    fn test_recovery_events_absorb_subagent_adds_counts() {
+        let mut child = TaskMetrics::default();
+        child.recovery.offload_read = 2;
+        child.recovery.rerun_same_command = 1;
+
+        let mut actual = TaskMetrics::default();
+        actual.recovery.offload_read = 1;
+        actual.absorb_subagent(&child);
+
+        let expected = RecoveryEvents::default()
+            .offload_read(3u64)
+            .rerun_same_command(1u64);
+
+        assert_eq!(actual.recovery, expected);
     }
 }
