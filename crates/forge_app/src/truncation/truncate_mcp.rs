@@ -88,7 +88,7 @@ fn shape_text(text: &str, config: &ForgeConfig, dumps: &mut Vec<PathBuf>) -> Str
     }
     if stdout.truncated_lines_count > 0 {
         let recovery = match &dump_path {
-            Some(path) => format!("Full output: read {}.", path.display()),
+            Some(path) => format!("Full output: read {} (the complete output).", path.display()),
             None => "the full output was not saved".to_string(),
         };
         notices.push(format!(

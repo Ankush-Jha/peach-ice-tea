@@ -11,5 +11,5 @@ expression: to_value(actual)
   content_type="text/markdown"
 >
 <body><![CDATA[AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA]]></body>
-<truncated>17 more chars not shown. Full output: read /tmp/forge_fetch_abc123.txt.</truncated>
+<truncated>17 more chars not shown. Full output: read /tmp/forge_fetch_abc123.txt (the complete output).</truncated>
 </http_response>
