@@ -135,6 +135,7 @@ Tier 1 items come first; `[A/B]` now means an A/B on Gemini on the MH.8 suite.
       → `compaction_pipeline::Pipeline`, hook wired, golden test over 4 shapes with a non-vacuity guard (D-062).
 - [ ] **T3.5** `R-CTX-2` S0 supersede. **[A/B]**
 - [ ] **T3.6** `R-CTX-2` S1 offload. **[A/B]**
+      → built behind `PEACH_HARNESS_OFFLOAD` (default off); spares S3 when enough; e2e proven (D-074). A/B pending.
 - [x] **T3.7** `R-SAFE-3` redaction utility (needed before any scorer sends data).
       → `peach_harness::redact` (36 tests); applied to evidence files, telemetry free text and scorer previews.
       External hooks (T6.3) must call it when built.

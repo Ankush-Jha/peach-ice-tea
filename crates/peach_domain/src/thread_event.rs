@@ -131,6 +131,19 @@ fn same_content(a: &MessageEntry, b: &MessageEntry) -> bool {
     a == b || strip(a) == strip(b)
 }
 
+/// Marks the text of a tool result S1 replaced with a preview and a handle
+/// (`compaction_pipeline::offload`), so the event log recognises the rewrite.
+pub const OFFLOAD_STUB_MARKER: &str = "[offloaded by the harness:";
+
+fn is_offload_stub(entry: &MessageEntry) -> bool {
+    match &entry.message {
+        crate::ContextMessage::Tool(result) => {
+            result.output.values.iter().any(|v| v.as_str().is_some_and(|t| t.starts_with(OFFLOAD_STUB_MARKER)))
+        }
+        _ => false,
+    }
+}
+
 fn same_run(a: &[MessageEntry], b: &[MessageEntry]) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|(x, y)| same_content(x, y))
 }
@@ -162,6 +175,19 @@ pub fn events_between(before: &[MessageEntry], after: &[MessageEntry]) -> Vec<Th
             .filter(|&i| after[i] != before[i])
             .map(|index| ThreadEvent::Revise { index, entry: Box::new(after[index].clone()) });
         return revisions.chain(messages(&after[before.len()..])).collect();
+    }
+    // An in-place rewrite (S1 offload replaces results with stubs, same
+    // positions), possibly followed by new messages: the view is `before`'s
+    // length of `after`, and the rest is new.
+    if after.len() >= before.len()
+        && (0..before.len()).all(|i| same_content(&after[i], &before[i]) || is_offload_stub(&after[i]))
+    {
+        let mut events = vec![ThreadEvent::Compaction {
+            messages_before: before.len(),
+            view: after[..before.len()].to_vec(),
+        }];
+        events.extend(messages(&after[before.len()..]));
+        return events;
     }
     // Peach's compactor splices exactly one summary where the evicted stretch
     // began (`Compactor::compress_single_sequence`): after the common prefix,
@@ -304,6 +330,26 @@ mod tests {
 
         assert_eq!(actual, vec!["compaction", "message", "message"]);
         assert_eq!(replay_history(&events_between(&before, &after)), vec![new_call, new_result]);
+    }
+
+    #[test]
+    fn test_an_in_place_offload_plus_a_new_message_is_a_compaction_then_a_message() {
+        let before = fixture_context().messages;
+        let mut after = before.clone();
+        after[2] = ContextMessage::tool_result(
+            ToolResult::new(ToolName::new("read"))
+                .call_id(ToolCallId::new("c1"))
+                .success(format!("{OFFLOAD_STUB_MARKER} 27 chars of read]")),
+        )
+        .into();
+        let new_turn: MessageEntry = ContextMessage::user("Next.", None).into();
+        after.push(new_turn.clone());
+
+        let events = events_between(&before, &after);
+
+        let kinds: Vec<&str> = events.iter().map(ThreadEvent::kind).collect();
+        assert_eq!(kinds, vec!["compaction", "message"]);
+        assert_eq!(replay_history(&events), vec![new_turn]);
     }
 
     #[test]

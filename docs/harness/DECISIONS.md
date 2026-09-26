@@ -1347,3 +1347,31 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
     Without the flag, the output is untouched.
 - **Ship bar (R-OUT-2):** the A/B must show success within noise **and the noise class's recovery rate under 2%**,
   now measurable because `offload_read` is real (D-060). **T1.4 and T1.5 stay unticked** until then.
+
+## D-074 — T3.6: S1 offload runs before the summary and can make it unnecessary; two things fixed on the way (2026-09-27)
+- **Built (R-CTX-2 S1, `PEACH_HARNESS_OFFLOAD=1`, default off):** `compaction_pipeline::offload`. Outside the
+  retention window, every tool result of at least 2,000 characters becomes a stub. The stub carries a marker,
+  size in characters and lines, the tool, an error flag, the first 300 characters, and "Full result: read <handle>
+  (the complete output)". Calls and results stay paired, and user and assistant text is untouched. The operation
+  is idempotent. Handles are registered as dump files, so reading one counts as `offload_read`.
+- **Fixed: the pipeline always ran its final stage.** T3.4's loop ran the last stage "if reached", so with S1 in
+  front, the lossy S3 would still run every time, defeating S1. The rule is now "stop as soon as the context is at
+  or below target", with the first stage always running, so a one-stage pipeline still behaves exactly as before
+  (the golden test still passes). The hook's target is ¾ of `token_threshold` when tokens triggered compaction
+  (a margin, so the next turn does not re-trigger) and 0 when a message or turn count did, so S3 still runs to
+  reduce the count.
+- **Fixed ahead of time: the event log would have misread S1.** D-065's diff understood peach's single-summary
+  compaction. An in-place rewrite would have logged each stub as a new message. `events_between` now recognises
+  "same positions, each entry unchanged or an offload stub (`OFFLOAD_STUB_MARKER`)", plus new messages after it,
+  as one compaction followed by messages (domain test).
+- **Where S1 matters, learned from the test:** shell output is already clipped to 100 + 100 lines before it
+  reaches the context (about 1.2 KB for `seq 1 3000`), so S1 rarely touches shell results. It pays for itself on
+  `read` and `fetch` results.
+- **Proof:**
+  - Unit: only large results outside the window become stubs with readable handles; the window, small results and
+    user text are untouched; running it twice changes nothing.
+  - Pipeline: when S1 brings the context under target, `stage_reached == "offload"` and no message is summarised
+    away.
+  - End to end: a 16 KB `read`, then compaction on a 7,000-token threshold. The stub reaches the model, the bulk is
+    gone from context, **no summary runs**, reading the handle restores the text, and `offload_read == 1`.
+- **T3.6 stays unticked** (`[A/B]`: long tasks, with success and total input tokens against flag off).

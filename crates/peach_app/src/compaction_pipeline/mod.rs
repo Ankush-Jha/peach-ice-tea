@@ -9,6 +9,7 @@
 //! join as new variants of [`Stage`] ahead of `Summarize`.
 
 pub mod handoff;
+pub mod offload;
 pub mod recall;
 
 use peach_domain::{Compact, Context, ContextMessage, Environment};
@@ -17,22 +18,30 @@ use crate::compact::Compactor;
 
 /// One compaction stage.
 pub enum Stage {
+    /// S1: large tool results outside the retention window become stubs with
+    /// a handle ([`offload`]; reversible).
+    Offload {
+        /// Newest messages never touched.
+        retention_window: usize,
+    },
     /// S3: peach's summary frame over the eligible sequence (lossy, last
     /// resort). Always the final stage.
-    Summarize(Compactor),
+    Summarize(Box<Compactor>),
 }
 
 impl Stage {
     /// A short, stable name for logs and metrics.
     pub fn name(&self) -> &'static str {
         match self {
+            Stage::Offload { .. } => "offload",
             Stage::Summarize(_) => "summarize",
         }
     }
 
-    fn apply(&self, context: Context) -> anyhow::Result<Context> {
+    fn apply(&self, context: Context) -> anyhow::Result<(Context, Vec<recall::RecallHandle>)> {
         match self {
-            Stage::Summarize(compactor) => compactor.compact(context, false),
+            Stage::Offload { retention_window } => Ok(offload::offload(context, *retention_window)),
+            Stage::Summarize(compactor) => Ok((compactor.compact(context, false)?, Vec::new())),
         }
     }
 }
@@ -70,11 +79,18 @@ impl Pipeline {
     /// * `target_tokens` - Stop once the context is at or below this size.
     pub fn new(compact: Compact, environment: Environment, target_tokens: usize) -> Self {
         Self {
-            stages: vec![Stage::Summarize(Compactor::new(compact, environment))],
+            stages: vec![Stage::Summarize(Box::new(Compactor::new(compact, environment)))],
             target_tokens,
             handoff_note: None,
             recall_handles: false,
         }
+    }
+
+    /// Puts S1 offload ahead of the summary (T3.6). The offloaded results'
+    /// handles are returned with the recall handles.
+    pub fn offload(mut self, retention_window: usize) -> Self {
+        self.stages.insert(0, Stage::Offload { retention_window });
+        self
     }
 
     /// Sets whether S3 writes recall handles for the results it replaces.
@@ -89,8 +105,10 @@ impl Pipeline {
         self
     }
 
-    /// Runs the stages in order until the context is at or below the target;
-    /// the final stage always runs if reached.
+    /// Runs the stages in order, stopping as soon as the context is at or
+    /// below the target: a cheap reversible stage that suffices spares the
+    /// lossy summary. The first stage always runs (the caller decided to
+    /// compact), so a one-stage pipeline behaves exactly as before.
     ///
     /// # Errors
     /// Returns the first stage error. The caller keeps the uncompacted
@@ -98,20 +116,22 @@ impl Pipeline {
     pub fn run(&self, mut context: Context) -> anyhow::Result<PipelineOutcome> {
         let mut stage_reached = "none";
         let mut recall_handles = Vec::new();
-        for (index, stage) in self.stages.iter().enumerate() {
-            let is_last = index + 1 == self.stages.len();
-            if !is_last && stage_reached != "none" && *context.token_count() <= self.target_tokens {
+        for stage in &self.stages {
+            if stage_reached != "none" && *context.token_count() <= self.target_tokens {
                 break;
             }
             let before = context.messages.clone();
-            context = stage.apply(context)?;
+            let (after, handles) = stage.apply(context)?;
+            context = after;
+            recall_handles.extend(handles);
             stage_reached = stage.name();
             if matches!(stage, Stage::Summarize(_)) {
                 if self.recall_handles {
-                    recall_handles = recall::write_handles(&before, &context.messages);
-                    if let Some(section) = recall::recall_section(&recall_handles) {
+                    let summarised = recall::write_handles(&before, &context.messages);
+                    if let Some(section) = recall::recall_section(&summarised) {
                         edit_new_summary(&mut context, &before, |text| format!("{text}\n\n{section}"));
                     }
+                    recall_handles.extend(summarised);
                 }
                 if let Some(note) = &self.handoff_note {
                     edit_new_summary(&mut context, &before, |text| format!("{note}\n\n{text}"));
@@ -231,6 +251,30 @@ mod tests {
             assert!(std::fs::read_to_string(&handle.path).unwrap().contains("contents of f"));
             let _ = std::fs::remove_file(&handle.path);
         }
+    }
+
+    #[test]
+    fn test_when_offload_is_enough_the_lossy_summary_never_runs() {
+        let compact = Compact::new().retention_window(2usize).eviction_window(0.5);
+        // Results above S1's 2,000-character threshold.
+        let fixture = (0..6).fold(Context::default().add_message(ContextMessage::user("Fix the bug.", None)), |ctx, n| {
+            let call = ToolCallFull::new(ToolName::new("read")).call_id(ToolCallId::new(format!("call_{n}")));
+            ctx.add_message(ContextMessage::assistant(format!("Reading f{n}.py"), None, None, Some(vec![call])))
+                .add_message(ContextMessage::tool_result(
+                    ToolResult::new(ToolName::new("read"))
+                        .call_id(ToolCallId::new(format!("call_{n}")))
+                        .success(format!("contents of f{n}.py ").repeat(200)),
+                ))
+        });
+        let target = *fixture.token_count() / 2;
+
+        let outcome = Pipeline::new(compact, fixture_environment(), target).offload(2).run(fixture.clone()).unwrap();
+
+        assert_eq!(outcome.stage_reached, "offload");
+        assert_eq!(outcome.context.messages.len(), fixture.messages.len(), "nothing summarised away");
+        assert!(*outcome.context.token_count() <= target);
+        assert!(!outcome.recall_handles.is_empty());
+        outcome.recall_handles.iter().for_each(|h| drop(std::fs::remove_file(&h.path)));
     }
 
     #[test]

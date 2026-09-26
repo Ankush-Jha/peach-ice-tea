@@ -66,7 +66,8 @@ pub fn write_handles(before: &[MessageEntry], after: &[MessageEntry]) -> Vec<Rec
         .collect()
 }
 
-fn write_file(text: &str) -> std::io::Result<PathBuf> {
+/// Writes `text` to a new `peach_recall_*.txt` handle file.
+pub(super) fn write_file(text: &str) -> std::io::Result<PathBuf> {
     let path = tempfile::Builder::new()
         .disable_cleanup(true)
         .prefix("peach_recall_")
