@@ -396,3 +396,32 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Flaky upstream test, not touched:** `forge_repo … test_concurrent_operations_dont_block_runtime` failed once in
   a full parallel run (2879/2880). It passed 3/3 in isolation and on the next full run (2880/2880). It asserts
   on 10 ms ticks inside a 200 ms window, so it is load-sensitive. Recorded per CLAUDE.md; not weakened.
+
+## D-032 — First live end-to-end run on Gemini 3.8 Flash: fixed, but stopped by my cap (2026-09-25)
+- **Setup:** `run.ts --agent forge --suite py-bugfix` against the real Google endpoint, `gemini-3.8-flash`
+  at High. The id is registered through an isolated `FORGE_CONFIG`, since the built-in list lacks it. Caps:
+  `FORGE_MAX_TOKENS=8192`, `FORGE_MAX_REQUESTS_PER_TURN=12`, `--max-duration-secs 480`.
+- **Pre-run estimate (D-025):** ~₹15 expected, ≤₹56 for the main agent. It was based on a free dry run
+  against a closed port, which measured 12.7k input tokens per request. That dry run also found TH.3's
+  thinking-level mapping unwired (fixed in `20500d10f`).
+- **Result:** the source fix was correct. The tests pass, and forge's own integrity check agrees with the
+  runner's independent one (clean, 2 checked). The outcome was still **`request_limit` (exit 3)**: the model
+  spent its 12 requests fixing, verifying, and then answering the todo-enforcement reminder. **The cap was mine,
+  set for cost**, and the evaluation default is 100. This is not evidence of a harness failure, but it is not a
+  success either.
+- **Actual spend (execution layer):** 13 metered calls, 239,570 input tokens (125,924 cached), 9,164 output
+  (8,296 of them thinking), ≈ **USD 0.13 ≈ ₹11** at USD 0.75/3.75 per 1M (in/out) and 0.075 cached.
+  Upper bound **≈ ₹22**: the 3 empty completions below are not metered, and each may have been billed.
+  Budget remaining ≥ ₹77.
+- **Findings, all real and all offline-fixable:**
+  1. **17 silent retries:** 11 × HTTP 429, 3 × 503, 3 × "Empty completion received". The wire saw 31 requests
+     against 13 counted calls. `failed_llm_calls` stayed 0 and no `retry` event exists: R-HACK-3 / §15 require
+     retries in telemetry, and cost accounting misses billed-but-empty responses. Retry backoff was ~40% of the
+     208 s wall time.
+  2. **Tool schemas are 75% of every request** (38 KB of 50.8 KB). That is the largest fixed token cost,
+     and it matters for §19.
+  3. **Telemetry carried only `run_start` / `integrity` / `run_end`.** TH.4's model/tool hooks are not wired,
+     so this run's per-call evidence exists only in `FORGE_DEBUG_REQUESTS` and the forge log.
+  4. Gemini accepted `thinkingLevel: "high"` (lowercase). There were no 400s.
+- **Next live run** should wait until retries are metered and TH.4's model_call/tool_call events are wired,
+  and should use the default request limit (or ≥ 30).
