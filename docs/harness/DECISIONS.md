@@ -1503,3 +1503,22 @@ don't stop to ask unless the choice is destructive, irreversible, or changes sco
 - **Not built: the CI job.** A CI job that runs live micro-evals needs a provider key in CI and would spend the
   50 free requests a day. The report script is the CI-ready half. **T0.9 stays unticked** until the micro-evals
   have run on the free models and the CI question is decided (team: whether to store a free key as a CI secret).
+
+## D-080 — ARCHITECTURE's §25 answers now cite a real run, committed as evidence (2026-09-27)
+- **Gap (D-044):** `documentation/ARCHITECTURE.md` answered HACKATHON §25 with code paths and decision records, but its
+  telemetry references were field names proven by scripted tests. It also predated everything since D-048: any-model,
+  the compaction pipeline, the event log, failover and the Makefile.
+- **Now:** every answer cites what a real run shows. That run's bundle is committed at
+  `documentation/evidence/2026-09-27-make-run-py-bugfix/`: the D-070 clean-clone `make run` on the default free model
+  (132 KB, no key-shaped strings). Checked facts it cites:
+  - the prompt composition (tool definitions 9,497 of 12,636 tokens);
+  - `origin_call_id` links back to the model call that requested each tool;
+  - the agent's green `test_run`, then the harness's own final run (4/0);
+  - `cached_tokens` 0, 0, 4,320, 8,640, 8,640 (a 32% hit rate);
+  - a **real recovery**: `pytest` missing → `test_run {failure_class: environment}` + `recovery_hint` → the next call
+    used `unittest` → green;
+  - the integrity verify of 2 files.
+
+  A script re-derived each cited number from the committed telemetry before commit.
+- **Honest gaps stated in the document:** no real run has compacted or failed over yet. Those answers name the
+  end-to-end tests that prove the mechanisms with a scripted model. TH.9's "grounded in real telemetry" note is closed.

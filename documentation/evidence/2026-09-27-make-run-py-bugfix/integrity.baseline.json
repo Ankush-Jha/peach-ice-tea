@@ -1,0 +1,14 @@
+{
+  "files": {
+    "tests/__init__.py": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "tests/test_stats.py": {
+      "bytes": 544,
+      "sha256": "08de25030a6dc923c8b6b72de034b4d40f20bd1ea6483c9165019a2988e4a500"
+    }
+  },
+  "root": "/private/tmp/claude-502/-Users-ankushjha-College-hackathons-Harness/7bed914a-3414-4196-93f1-3e0319411375/scratchpad/target-repo",
+  "snapshot_dir": "/var/folders/lw/6_666fnd3mqc9_c4yt7209r80000gp/T/peach-ice-tea-integrity-Qq2xrl"
+}

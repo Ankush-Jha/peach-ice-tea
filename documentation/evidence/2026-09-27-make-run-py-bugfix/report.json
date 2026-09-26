@@ -1,0 +1,223 @@
+{
+  "schema_version": "0.1.0",
+  "harness": {
+    "name": "peach-ice-tea",
+    "version": "0.1.0"
+  },
+  "outcome": {
+    "outcome": "completed",
+    "exit_code": 0,
+    "error": null,
+    "model": "nvidia/nemotron-3-ultra-550b-a55b:free"
+  },
+  "execution": {
+    "started_at": "2026-09-26T18:38:40.182Z",
+    "ended_at": "2026-09-26T18:39:42.743Z",
+    "wall_ms": 62455,
+    "agents": [
+      "peach"
+    ],
+    "telemetry_events": 20,
+    "telemetry_lines_lost": 0
+  },
+  "tokens": {
+    "input": 66960,
+    "cached_input": 21600,
+    "output": 870,
+    "reasoning": 218,
+    "cache_hit_rate": 0.3225806451612903
+  },
+  "model_calls": {
+    "calls": 5,
+    "failed": 0,
+    "retried_attempts": 0,
+    "retry_events": 0,
+    "input_tokens_per_call": {
+      "min": 12185,
+      "mean": 13392,
+      "max": 14172
+    },
+    "context_tokens_estimated": {
+      "min": 12636,
+      "mean": 13487,
+      "max": 14086
+    },
+    "duration_ms": {
+      "min": 1700,
+      "mean": 12209,
+      "max": 38275
+    },
+    "finish_reasons": {
+      "end_turn": 1,
+      "tool_calls": 4
+    }
+  },
+  "context": {
+    "compactions": 0,
+    "compaction_messages": [],
+    "tokens_reclaimed_estimated": 0,
+    "prompt_composition": {
+      "system_prompt": 2901,
+      "tool_definitions": 9497,
+      "user_prompt": 238
+    }
+  },
+  "tools": [
+    {
+      "name": "patch",
+      "calls": 1,
+      "errors": 0,
+      "total_duration_ms": 930
+    },
+    {
+      "name": "read",
+      "calls": 2,
+      "errors": 0,
+      "total_duration_ms": 2
+    },
+    {
+      "name": "shell",
+      "calls": 2,
+      "errors": 0,
+      "total_duration_ms": 185
+    }
+  ],
+  "error_recovery": {
+    "retries_by_reason": {},
+    "unmetered_empty_completions": 0,
+    "tool_errors": 0,
+    "refused_integrity_actions": 0,
+    "suppressed_prompts": 0
+  },
+  "testing": {
+    "class": "passed",
+    "command": "python3 -m unittest discover -s tests -t . -v",
+    "duration_ms": 53,
+    "exit_code": 0,
+    "failed": 0,
+    "output_tail": "test_already_sorted_input (tests.test_stats.TestDedupeSorted.test_already_sorted_input) ... ok\ntest_empty_input (tests.test_stats.TestDedupeSorted.test_empty_input) ... ok\ntest_removes_duplicates_and_sorts (tests.test_stats.TestDedupeSorted.test_removes_duplicates_and_sorts) ... ok\ntest_single_value_repeated (tests.test_stats.TestDedupeSorted.test_single_value_repeated) ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK",
+    "passed": 4,
+    "ran": true,
+    "skipped": 0,
+    "source": "explicit",
+    "timed_out": false
+  },
+  "repository": {
+    "files": [
+      {
+        "path": "stats.py",
+        "added": 1,
+        "removed": 5
+      }
+    ],
+    "lines_added": 1,
+    "lines_removed": 5
+  },
+  "integrity": {
+    "checked": 2,
+    "violations": []
+  },
+  "timeline": [
+    {
+      "timestamp": "2026-09-26T18:38:40.182Z",
+      "agent": null,
+      "event": "run started"
+    },
+    {
+      "timestamp": "2026-09-26T18:38:40.453Z",
+      "agent": "peach",
+      "event": "agent running"
+    },
+    {
+      "timestamp": "2026-09-26T18:38:40.453Z",
+      "agent": "peach",
+      "event": "prompt composition recorded"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:18.728Z",
+      "agent": "peach",
+      "event": "model call: 12185 in / 278 out, 2 tool call(s), finish tool_calls"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:18.731Z",
+      "agent": "peach",
+      "event": "tool read: ok"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:18.731Z",
+      "agent": "peach",
+      "event": "tool read: ok"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:23.350Z",
+      "agent": "peach",
+      "event": "model call: 13057 in / 361 out, 1 tool call(s), finish tool_calls"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:24.281Z",
+      "agent": "peach",
+      "event": "tool patch: ok"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:25.984Z",
+      "agent": "peach",
+      "event": "model call: 13644 in / 72 out, 1 tool call(s), finish tool_calls"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:26.045Z",
+      "agent": null,
+      "event": "test run: exit Some(1)"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:26.045Z",
+      "agent": null,
+      "event": "recovery: recovery_hint"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:26.045Z",
+      "agent": "peach",
+      "event": "tool shell: ok"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:38.373Z",
+      "agent": "peach",
+      "event": "model call: 13902 in / 63 out, 1 tool call(s), finish tool_calls"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:38.499Z",
+      "agent": null,
+      "event": "test run: exit Some(0)"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:38.499Z",
+      "agent": "peach",
+      "event": "tool shell: ok"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:42.631Z",
+      "agent": "peach",
+      "event": "model call: 14172 in / 96 out, 0 tool call(s), finish end_turn"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:42.633Z",
+      "agent": "peach",
+      "event": "agent ended"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:42.639Z",
+      "agent": null,
+      "event": "integrity verify: 2 protected files checked; all unchanged"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:42.741Z",
+      "agent": null,
+      "event": "test run: exit Some(0)"
+    },
+    {
+      "timestamp": "2026-09-26T18:39:42.743Z",
+      "agent": null,
+      "event": "run ended: completed"
+    }
+  ],
+  "notes": []
+}
