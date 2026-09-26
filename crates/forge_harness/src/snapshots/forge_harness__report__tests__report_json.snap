@@ -1,0 +1,198 @@
+---
+source: crates/forge_harness/src/report.rs
+expression: json
+---
+{
+  "context": {
+    "compaction_messages": [
+      [
+        40,
+        6
+      ]
+    ],
+    "compactions": 1,
+    "tokens_reclaimed_estimated": 7500
+  },
+  "error_recovery": {
+    "refused_integrity_actions": 1,
+    "retries_by_reason": {
+      "empty_completion": 1,
+      "http_429": 1
+    },
+    "suppressed_prompts": 0,
+    "tool_errors": 1,
+    "unmetered_empty_completions": 1
+  },
+  "execution": {
+    "agents": [
+      "forge"
+    ],
+    "ended_at": "2026-09-25T10:00:10.100Z",
+    "started_at": "2026-09-25T10:00:00.000Z",
+    "telemetry_events": 16,
+    "telemetry_lines_lost": 0,
+    "wall_ms": 10100
+  },
+  "harness": "<identity>",
+  "integrity": {
+    "checked": 2,
+    "violations": [
+      {
+        "kind": "added",
+        "path": "tests/test_extra.py",
+        "restored": true
+      }
+    ]
+  },
+  "model_calls": {
+    "calls": 3,
+    "context_tokens_estimated": {
+      "max": 13400,
+      "mean": 12700,
+      "min": 11800
+    },
+    "duration_ms": {
+      "max": 4980,
+      "mean": 3060,
+      "min": 1600
+    },
+    "failed": 0,
+    "finish_reasons": {
+      "stop": 1,
+      "tool_calls": 2
+    },
+    "input_tokens_per_call": {
+      "max": 13500,
+      "mean": 12833,
+      "min": 12000
+    },
+    "retried_attempts": 2,
+    "retry_events": 2
+  },
+  "notes": [],
+  "outcome": {
+    "error": null,
+    "exit_code": 0,
+    "model": "gemini-3.8-flash",
+    "outcome": "completed"
+  },
+  "repository": {
+    "files": [
+      {
+        "added": 1,
+        "path": "math.py",
+        "removed": 1
+      }
+    ],
+    "lines_added": 1,
+    "lines_removed": 1
+  },
+  "schema_version": "0.1.0",
+  "testing": {
+    "ran": false,
+    "reason": "the harness does not run a final test pass yet (TH.6)"
+  },
+  "timeline": [
+    {
+      "agent": null,
+      "event": "run started",
+      "timestamp": "2026-09-25T10:00:00.000Z"
+    },
+    {
+      "agent": "forge",
+      "event": "agent running",
+      "timestamp": "2026-09-25T10:00:00.010Z"
+    },
+    {
+      "agent": "forge",
+      "event": "retry 1 of model_call: http_429",
+      "timestamp": "2026-09-25T10:00:01.000Z"
+    },
+    {
+      "agent": "forge",
+      "event": "retry 2 of model_call: empty_completion",
+      "timestamp": "2026-09-25T10:00:03.000Z"
+    },
+    {
+      "agent": "forge",
+      "event": "model call: 12000 in / 400 out, 2 tool call(s), finish tool_calls",
+      "timestamp": "2026-09-25T10:00:05.000Z"
+    },
+    {
+      "agent": "forge",
+      "event": "tool shell: error",
+      "timestamp": "2026-09-25T10:00:05.200Z"
+    },
+    {
+      "agent": "forge",
+      "event": "integrity refused `tests/test_math.py`: Refused: cannot modify `tests/test_math.py` because it is a protected test file.",
+      "timestamp": "2026-09-25T10:00:05.300Z"
+    },
+    {
+      "agent": "forge",
+      "event": "tool patch: ok",
+      "timestamp": "2026-09-25T10:00:05.310Z"
+    },
+    {
+      "agent": "forge",
+      "event": "model call: 13000 in / 200 out, 1 tool call(s), finish tool_calls",
+      "timestamp": "2026-09-25T10:00:08.000Z"
+    },
+    {
+      "agent": "forge",
+      "event": "context compacted: 40 -> 6 messages",
+      "timestamp": "2026-09-25T10:00:08.100Z"
+    },
+    {
+      "agent": "forge",
+      "event": "tool patch: ok",
+      "timestamp": "2026-09-25T10:00:08.300Z"
+    },
+    {
+      "agent": "forge",
+      "event": "model call: 13500 in / 50 out, 0 tool call(s), finish stop",
+      "timestamp": "2026-09-25T10:00:10.000Z"
+    },
+    {
+      "agent": "forge",
+      "event": "agent ended",
+      "timestamp": "2026-09-25T10:00:10.010Z"
+    },
+    {
+      "agent": null,
+      "event": "integrity verify: 2 protected files checked; 1 violation(s), 1 restored",
+      "timestamp": "2026-09-25T10:00:10.020Z"
+    },
+    {
+      "agent": null,
+      "event": "integrity restored `tests/test_extra.py`: added during the run; restored to its pre-run state",
+      "timestamp": "2026-09-25T10:00:10.021Z"
+    },
+    {
+      "agent": null,
+      "event": "run ended: completed",
+      "timestamp": "2026-09-25T10:00:10.100Z"
+    }
+  ],
+  "tokens": {
+    "cache_hit_rate": 0.5974025974025974,
+    "cached_input": 23000,
+    "input": 38500,
+    "output": 650,
+    "reasoning": 420
+  },
+  "tools": [
+    {
+      "calls": 2,
+      "errors": 0,
+      "name": "patch",
+      "total_duration_ms": 12
+    },
+    {
+      "calls": 1,
+      "errors": 1,
+      "name": "shell",
+      "total_duration_ms": 180
+    }
+  ]
+}

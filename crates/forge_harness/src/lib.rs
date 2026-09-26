@@ -9,6 +9,7 @@ pub mod identity;
 pub mod evidence;
 pub mod integrity;
 pub mod redact;
+pub mod report;
 pub mod runtime;
 pub mod scorer;
 pub mod telemetry;
