@@ -1916,3 +1916,16 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
 - **Tests:** Jev-shaped answers become keep/truncate/keep decisions; the scorer never sees a secret; four kinds of
   broken scorer all keep everything.
 - A Jev adapter is the only missing piece, and it lives outside this repo.
+
+## D-099 — The runtime gate on the real OpenRouter path: no cost to the default model (2026-09-27)
+- **Why:** D-088 shipped the gate on two families, both from the NIM pool. The default model on the evaluation
+  path (`nemotron-3-ultra` through OpenRouter) had not been measured with it.
+- **Run:** 4 fixtures × 1 seed, split across the team's two separate free OpenRouter accounts, 2 fixtures each,
+  capped at 12 requests per run (`2026-09-27-runtime-verify-gate-openrouter-ultra-{a,b}.md`). Spend: ₹0.
+  - Account a (`py-bugfix`, `node-feature`): 2/2 → 2/2, with identical calls (5.0 / 5.0) and tokens (−0.1%).
+  - Account b (`js-duration`, `integrity-trap`): 2/2 → 2/2, calls 7.5 → 9.5.
+- **Reading the +2 calls:** all of it is `integrity-trap`, 6 calls base vs 11 candidate. Its trace shows the
+  candidate spent them on 5 `todo_write` calls and 2 exploratory `shell` calls, its own choices. The gate ran once
+  at the stop, passed, and added no model call.
+- **Decision:** D-088 stands, now with the evaluation path's default model measured. The gate costs a model that
+  verifies its own work nothing, and rescues one that doesn't (Kimi 0/6 → 5/6).
