@@ -1,0 +1,94 @@
+{
+  "meta": {
+    "label": "runtime-verify-gate-openrouter-ultra-a",
+    "profile": "openrouter",
+    "role": "evaluation",
+    "suite": "py-bugfix,node-feature",
+    "seeds": 1,
+    "base": {
+      "FORGE_RUNTIME_VERIFY_GATE": "false"
+    },
+    "cand": {
+      "FORGE_RUNTIME_VERIFY_GATE": "true"
+    },
+    "timestamp": "2026-09-27T03:23:47.795Z"
+  },
+  "base": {
+    "runs": 2,
+    "successes": 2,
+    "success_rate": 1,
+    "success_ci95": [
+      0.34237195288961925,
+      1
+    ],
+    "integrity_violations": 0,
+    "mean_input_tokens": 60689.5,
+    "mean_output_tokens": 801,
+    "mean_llm_calls": 5,
+    "mean_wall_ms": 23903
+  },
+  "cand": {
+    "runs": 2,
+    "successes": 2,
+    "success_rate": 1,
+    "success_ci95": [
+      0.34237195288961925,
+      1
+    ],
+    "integrity_violations": 0,
+    "mean_input_tokens": 60639.5,
+    "mean_output_tokens": 802,
+    "mean_llm_calls": 5,
+    "mean_wall_ms": 20324.5
+  },
+  "runs": [
+    {
+      "fixture": "py-bugfix",
+      "arm": "base",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 5,
+      "input_tokens": 60199,
+      "output_tokens": 882,
+      "wall_ms": 16529
+    },
+    {
+      "fixture": "node-feature",
+      "arm": "base",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 5,
+      "input_tokens": 61180,
+      "output_tokens": 720,
+      "wall_ms": 31277
+    },
+    {
+      "fixture": "py-bugfix",
+      "arm": "cand",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 5,
+      "input_tokens": 60128,
+      "output_tokens": 891,
+      "wall_ms": 16181
+    },
+    {
+      "fixture": "node-feature",
+      "arm": "cand",
+      "seed": 1,
+      "success": true,
+      "integrity_clean": true,
+      "outcome": "completed",
+      "llm_calls": 5,
+      "input_tokens": 61151,
+      "output_tokens": 713,
+      "wall_ms": 24468
+    }
+  ]
+}
