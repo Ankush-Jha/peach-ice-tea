@@ -1849,3 +1849,70 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
   100%→100%. Cost worse across the board: input +9.4%, output +7.5%, calls +7.1%, wall +21.1%.
 - **Reading:** same pattern as T1.2/T2.1/T2.6's GLM arms — no case for shipping. Second family not yet run;
   leaving unticked rather than closing outright, consistent with T2.1/T2.6's treatment in D-093.
+
+## D-096 — A degenerate reply is retried, not accepted as the agent's answer (2026-09-27)
+- **Found by reading live runs.** The team asked why simple tasks "think so long". Across every recorded run:
+  - **NIM Kimi K3:** 36 of its 121 model calls (30%) returned exactly 32 tokens of reasoning, `!` × 32, with no
+    text, no tool call and a valid `end_turn`.
+  - **The harness accepted each one as a decision to stop.** 18 runs ended "completed" on that garbage, with the
+    agent never verifying its fix. The other 18 cost a verification-reminder round trip of about 40 s each, and 9
+    of those drew another `!!!!` reply. (Live run `evidence/20260926T225617Z`, calls #3 and #4.)
+- **Why it slipped through:** `into_full` counted a reply as empty only when it also had no finish reason, and this
+  one had `end_turn`.
+- **Fix:** no text, no tool call, and reasoning made of a single non-alphanumeric character repeated at least 8
+  times now counts as an empty completion, so the existing retry path handles it (usage still billed, D-033).
+  - Real short reasoning, like "Nothing left to do.", is still accepted.
+  - This is a bug fix, so it is on by default. `PEACH_HARNESS_DEGENERATE_RETRY=0` restores the old behaviour, which
+    keeps an A/B and a rollback possible. The confirming A/B on Kimi is running
+    (`degenerate-retry-nim-kimi`).
+- **The rest of "slow on easy tasks" is the endpoint, not the thinking.** Measured over the same runs:
+  - Output per call is 200–300 tokens for every model.
+  - Wall time tracks provider speed: GLM 3.5 tok/s, DeepSeek-on-NIM 1.9, Muse 56, Dots 74.
+  - Reasoning is 0–40% of output on the models we run, so less thinking helps mainly the slow thinkers (D-097).
+  - Fewer wasted calls helps everywhere.
+
+## D-097 — Reasoning in proportion to observed difficulty (R-LOOP-3, T2.5; flagged off)
+- **What:** `PEACH_HARNESS_REASONING_SCHEDULE=1` starts every run at `low` effort. The run escalates once, for
+  good, to `high` when the task shows it is hard:
+  - an agent test run fails on the code (environment failures don't count);
+  - the runtime gate had to check a stop;
+  - there are 2 tool errors;
+  - it reaches 12 model calls.
+
+  `PEACH_HARNESS_ESCALATE_MODEL=<id>` also switches to a stronger model at that moment, via the same mid-run switch
+  as failover (MM.4). So "a simple model for a simple task" is start on `MODEL=<fast>` and escalate to
+  `<thinking model>`. A `recovery` event `reasoning_escalated` records why.
+- **Departure from the spec's schedule** ("high for the first 10 messages, then low"): on these tasks the early
+  calls are cheap reads, and the calls after a failure are the ones that need thought. The escalation evidence
+  comes from what the runtime observes (principle 3), never from asking the model to rate its own task.
+- **Where effort reaches the model:**
+  - OpenRouter: `reasoning.effort`.
+  - NVIDIA NIM: `reasoning_effort` (the pipeline already sends it; the scripted e2e test registers as `nvidia` to
+    check the real request).
+  - Gemini: the thinking level (TH.3).
+  - A model with no reasoning config is left alone (fail open).
+- **Tests:**
+  - Unit: the escalation triggers; effort is set only where reasoning is on.
+  - End to end: requests carry `low, low`, then `high` after a failing test run, with the event emitted.
+  - Without the flag the profile's `medium` passes through unchanged.
+- **A/B running** on the two slow thinkers, where the team's concern applies: GLM 5.3 (40% reasoning) and Gemma 4
+  (61%). Labels: `reasoning-schedule-nim-glm`, `reasoning-schedule-nim-gemma`.
+
+## D-098 — Jev-compatible external scorer for S2 (R-CTX-4 `ExternalScorer`, R-EXT-1)
+- **Why:** the team wants to plug in Jev (save-token-jev's hosted scorer) later. D-003 still holds: the harness
+  must not depend on it.
+- **What:** `PEACH_HARNESS_EXTERNAL_SCORER="<command>"` replaces the built-in `HeuristicScorer` in S2
+  (`PEACH_HARNESS_SCORE_STAGE=1`).
+  - The command gets one JSON request (`peach-ice-tea.scorer/1`) on stdin and answers in **save-token-jev's own
+    shape**, `{id: {keep_call, keep_result}}`, the two questions of its `questionsFor`.
+  - `plan::decide` applies its threshold rule unchanged.
+  - The full contract, and a minimal example, are in `docs/harness/SCORER_PROTOCOL.md`.
+- **What the harness guarantees on top of Jev:**
+  - Every decision is applied reversibly (offloaded to a readable file, never deleted).
+  - Inputs are redacted and pinned calls are withheld (`build_plan`).
+  - It fails open: a non-zero exit, a timeout (30 s default), non-JSON output or an out-of-range probability all
+    keep everything, matching save-token-jev's "malformed answer aborts the attempt".
+  - Unanswered calls are kept.
+- **Tests:** Jev-shaped answers become keep/truncate/keep decisions; the scorer never sees a secret; four kinds of
+  broken scorer all keep everything.
+- A Jev adapter is the only missing piece, and it lives outside this repo.

@@ -224,7 +224,9 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> PeachAp
         .hook(Arc::new(hook))
         // harness: T2.1 — default off until an A/B supports it.
         .parallel_readonly(crate::tool_concurrency::enabled())
-        .doom_loop_escalation(crate::doom_loop_escalation::enabled());
+        .doom_loop_escalation(crate::doom_loop_escalation::enabled())
+        // harness: R-LOOP-3 (D-097) — default off until an A/B.
+        .reasoning_schedule(crate::reasoning_budget::enabled());
 
         // Create and return the stream
         let stream = MpscStream::spawn(

@@ -19,6 +19,7 @@ mod infra;
 mod init_conversation_metrics;
 mod mcp_executor;
 mod model_failover;
+mod reasoning_budget;
 mod operation;
 mod orch;
 #[cfg(test)]

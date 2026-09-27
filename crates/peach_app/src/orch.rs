@@ -41,6 +41,13 @@ pub struct Orchestrator<S> {
     /// this iteration; consumed in `run()` right after it returns.
     #[setters(skip)]
     pending_escalation_pause: Option<crate::doom_loop_escalation::PendingPause>,
+    /// harness: R-LOOP-3 (D-097) — start cheap, escalate reasoning (and
+    /// optionally the model) once the task proves hard. Set from
+    /// `PEACH_HARNESS_REASONING_SCHEDULE` in `app.rs`.
+    reasoning_schedule: bool,
+    /// Whether this run has escalated; it never de-escalates.
+    #[setters(skip)]
+    reasoning_escalated: bool,
 }
 
 impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orchestrator<S> {
@@ -64,6 +71,8 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
             doom_loop_escalation: false,
             escalation_guard: crate::doom_loop_escalation::EscalationGuard::new(),
             pending_escalation_pause: None,
+            reasoning_schedule: false,
+            reasoning_escalated: false,
         }
     }
 
@@ -389,6 +398,36 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
             self.hook
                 .handle(&request_event, &mut self.conversation)
                 .await?;
+
+            // harness: R-LOOP-3 (D-097) — reasoning in proportion to the
+            // difficulty observed so far.
+            if self.reasoning_schedule {
+                if !self.reasoning_escalated {
+                    let task = tool_context.with_metrics(|metrics| metrics.task.clone())?;
+                    if let Some(reason) = crate::reasoning_budget::Difficulty::observe(&task).escalation_reason() {
+                        self.reasoning_escalated = true;
+                        let next_model = crate::reasoning_budget::escalation_model().filter(|m| *m != model_id);
+                        let target = next_model.as_ref().map_or(String::new(), |m| format!("; switching to {m}"));
+                        peach_harness::telemetry::emit(peach_harness::telemetry::TelemetryEvent::Recovery(
+                            peach_harness::telemetry::event::Recovery {
+                                action: "reasoning_escalated".to_string(),
+                                trigger: format!("{reason}: effort low -> high{target}"),
+                                outcome: None,
+                                origin_call_id: None,
+                                attribution: Some(peach_harness::telemetry::event::FailureAttribution::Ambiguous),
+                            },
+                        ));
+                        if let Some(next) = next_model {
+                            model_id = next.clone();
+                            self.agent.model = next;
+                        }
+                    }
+                }
+                context = crate::reasoning_budget::with_effort(
+                    context,
+                    crate::reasoning_budget::effort(self.reasoning_escalated),
+                );
+            }
 
             let retry_config = self.config.clone().retry.unwrap_or_default();
             let retries = Arc::new(std::sync::atomic::AtomicU64::new(0));

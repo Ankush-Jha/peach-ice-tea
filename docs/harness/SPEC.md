@@ -189,6 +189,8 @@ location in this repo, paths relative to `crates/`), and **acceptance** criteria
   `exec_effort`. No-op for models without effort control.
 - **Acceptance:** A/B on TermBench subset: success ≥ baseline, wall time and reasoning
   tokens ↓. Ship off-by-default if not both true.
+- **As built (D-097):** escalation is driven by observed difficulty (a failing test run, a runtime-gate
+  check, tool errors, a long run), not a fixed message count, and may also switch to a stronger model.
 
 ### R-LOOP-4 — Non-interactive profile
 - **Why:** S1a FM1 (25% baseline was largely from waiting on a human).

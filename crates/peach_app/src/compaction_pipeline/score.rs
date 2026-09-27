@@ -90,7 +90,15 @@ pub fn score(mut context: Context, retention_window: usize) -> (Context, Vec<Rec
         })
         .unwrap_or_default();
     let config = ScorerConfig { preserve_recent_messages: retention_window, ..ScorerConfig::default() };
-    let plan = peach_harness::scorer::build_plan(&HeuristicScorer::new(), &summaries(&context), &goal, &config);
+    // harness: R-CTX-4 (D-098) — an external scorer (e.g. a Jev adapter)
+    // when one is configured, the built-in heuristic otherwise.
+    let external = peach_harness::scorer::external::ExternalScorer::from_env();
+    let heuristic = HeuristicScorer::new();
+    let scorer: &dyn peach_harness::scorer::RelevanceScorer = match &external {
+        Some(external) => external,
+        None => &heuristic,
+    };
+    let plan = peach_harness::scorer::build_plan(scorer, &summaries(&context), &goal, &config);
 
     let mut handles = Vec::new();
     for scored in plan.scored {
