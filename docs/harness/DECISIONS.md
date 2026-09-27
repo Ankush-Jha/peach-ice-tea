@@ -1843,3 +1843,9 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
   cap. BR.3's own note was right: this needs runs long enough to actually compact, which these were not.
 - **Updated `TASKS.md`:** T1.2 ticked closed. T2.1/T2.6 left unticked with the GLM-only reading recorded.
   T3.10/T3.14's notes now carry their A/B results and the confound in each, rather than staying silent pending.
+
+## D-094 — T1.5 noise compression on GLM: no benefit, stays off (2026-09-27)
+- **Run:** `2026-09-27-noise-compression-nim-glm.md`, py-bugfix/node-feature/py-ledger, k=1. Success flat
+  100%→100%. Cost worse across the board: input +9.4%, output +7.5%, calls +7.1%, wall +21.1%.
+- **Reading:** same pattern as T1.2/T2.1/T2.6's GLM arms — no case for shipping. Second family not yet run;
+  leaving unticked rather than closing outright, consistent with T2.1/T2.6's treatment in D-093.

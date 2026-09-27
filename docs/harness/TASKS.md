@@ -139,7 +139,7 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
       → built behind `FORGE_HARNESS_SEARCH_REGROUP` (default off), unit + e2e tests (D-073). A/B pending.
 - [ ] **T1.5** `R-OUT-2` noise compressor with fixture tests for cargo/npm/pytest/jest/tsc/eslint. **[A/B]**
       Ship only if noise-class recovery < 2%.
-      → built behind `FORGE_HARNESS_NOISE_COMPRESSION` (default off), fixture + e2e tests (D-073). A/B pending.
+      → built behind `FORGE_HARNESS_NOISE_COMPRESSION` (default off), fixture + e2e tests (D-073). GLM: success flat, cost worse across the board (D-094). Second family not yet run.
 
 ## M2 — Orchestration
 - [ ] **T2.1** `R-LOOP-1` concurrency classes + concurrent read-only batches; add behaviour test. **[A/B]**
