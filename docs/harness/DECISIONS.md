@@ -1929,3 +1929,30 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
   at the stop, passed, and added no model call.
 - **Decision:** D-088 stands, now with the evaluation path's default model measured. The gate costs a model that
   verifies its own work nothing, and rescues one that doesn't (Kimi 0/6 → 5/6).
+
+## D-100 — Degenerate-reply retry confirmed: Kimi 2/6 → 6/6; stays on (D-096)
+- **A/B** (`2026-09-27-degenerate-retry-nim-kimi.md`, 6 fixtures × 1 seed, frozen binary `d098`, the runtime gate
+  on in both arms):
+
+  | Metric | Base | Candidate |
+  |---|---|---|
+  | Success | 2/6 | **6/6** |
+  | Input tokens | | +53% |
+  | Model calls | | +10% |
+  | Wall time | | +3.4% |
+
+  The token rise is the runs now doing the task (principle 1).
+- **Mechanism, from telemetry:**
+
+  | Arm | Degenerate `!`×32 stops accepted | Empty-completion retries |
+  |---|---|---|
+  | Base | 14 | 0 |
+  | Candidate | 0 | 13 |
+
+  Even with the runtime gate on, accepted garbage stops sank 4 runs: the gate's two attempts were each answered
+  with more `!!!!`.
+- **Why one family is enough here (principle 6):** the fix can only fire on a reply with no text, no tool call and
+  one repeated symbol as reasoning. Across the 2,300+ recorded calls from the 14 other models, that pattern occurs
+  **zero** times (D-096's scan), so for them the fix is a no-op by construction. The runtime gate's measurements on
+  those models (D-088, D-099) still hold.
+- **Decision:** stays on by default; `PEACH_HARNESS_DEGENERATE_RETRY=0` reverts.
