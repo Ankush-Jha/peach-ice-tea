@@ -161,13 +161,13 @@ fn first_number(text: &str) -> Option<u64> {
 /// The number immediately before `word` in `line` (`"3 passed"` → 3).
 fn number_before(line: &str, word: &str) -> Option<u64> {
     let index = line.find(word)?;
-    line[..index].split(|c: char| !c.is_ascii_digit()).rev().find(|p| !p.is_empty())?.parse().ok()
+    line.split_at(index).0.split(|c: char| !c.is_ascii_digit()).rev().find(|p| !p.is_empty())?.parse().ok()
 }
 
 /// The number immediately after `prefix` in `line` (`"failures=2"` → 2).
 fn number_after(line: &str, prefix: &str) -> Option<u64> {
     let index = line.find(prefix)? + prefix.len();
-    first_number(&line[index..])
+    first_number(line.get(index..)?)
 }
 
 #[cfg(test)]

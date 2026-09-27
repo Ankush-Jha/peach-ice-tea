@@ -30,13 +30,15 @@ pub fn exhausted_quota(error: &anyhow::Error) -> Option<String> {
 /// the colon and with escaped quotes (the body may be JSON inside JSON).
 fn quota_ids(text: &str) -> Vec<String> {
     let unescaped = text.replace("\\\"", "\"");
+    // Each piece after the first follows a `"quotaId"` key. Splitting (rather
+    // than slicing at byte offsets) cannot panic on multi-byte text.
     unescaped
-        .match_indices("\"quotaId\"")
-        .filter_map(|(index, key)| {
-            let rest = unescaped[index + key.len()..].trim_start().strip_prefix(':')?.trim_start();
-            let value = rest.strip_prefix('"')?;
-            let end = value.find('"')?;
-            Some(value[..end].to_string())
+        .split("\"quotaId\"")
+        .skip(1)
+        .filter_map(|rest| {
+            let value = rest.trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+            let (id, _) = value.split_once('"')?;
+            Some(id.to_string())
         })
         .collect()
 }

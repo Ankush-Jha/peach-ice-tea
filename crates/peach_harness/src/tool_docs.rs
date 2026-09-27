@@ -29,13 +29,13 @@ pub fn compact(description: &str) -> String {
     let mut kept = String::with_capacity(description.len());
     let mut rest = description;
     while let Some(start) = rest.find("<example") {
-        kept.push_str(&rest[..start]);
-        let after = &rest[start..];
+        let (before, after) = rest.split_at(start);
+        kept.push_str(before);
         // The closing tag's name may differ from the opening one's
         // (`<example_agent_descriptions>` … `</example_agent_description>`
         // is in the upstream text), so close on the first `</example`.
-        match after.find("</example").and_then(|close| after[close..].find('>').map(|end| close + end + 1)) {
-            Some(end) => rest = &after[end..],
+        match after.find("</example").and_then(|close| after.get(close..)?.find('>').map(|end| close + end + 1)) {
+            Some(end) => rest = after.get(end..).unwrap_or_default(),
             None => {
                 // Unclosed: keep the text rather than drop the remainder.
                 kept.push_str(after);
@@ -58,7 +58,7 @@ fn drop_empty_sections(text: &str) -> String {
         let trimmed = line.trim();
         let lead_in = is_heading(line) || (trimmed.ends_with(':') && trimmed.to_ascii_lowercase().contains("example"));
         if lead_in {
-            let next = lines[index + 1..].iter().find(|next| !next.trim().is_empty());
+            let next = lines.get(index + 1..).unwrap_or_default().iter().find(|next| !next.trim().is_empty());
             if next.is_none_or(|next| is_heading(next)) {
                 continue;
             }

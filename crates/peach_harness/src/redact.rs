@@ -76,11 +76,11 @@ pub fn redact(input: &str) -> Cow<'_, str> {
     let mut output = String::with_capacity(input.len());
     let mut cursor = 0usize;
     for (start, end) in spans {
-        output.push_str(&input[cursor..start]);
+        output.push_str(text(input, cursor, start));
         output.push_str(REDACTED);
         cursor = end;
     }
-    output.push_str(&input[cursor..]);
+    output.push_str(input.get(cursor..).unwrap_or_default());
     Cow::Owned(output)
 }
 
@@ -147,6 +147,32 @@ fn is_sensitive_key(key: &str) -> bool {
     SENSITIVE_KEY_SUBSTRINGS.iter().any(|needle| normalized.contains(needle))
 }
 
+// Bounds-checked accessors (CI's `indexing_slicing` / `string_slice` lints).
+// For any in-range index they return exactly what indexing did; past the end
+// they return 0 or an empty slice instead of panicking, so no input can
+// crash redaction. Span boundaries always fall on ASCII bytes, which are
+// always UTF-8 char boundaries, so `text` never sees a split character.
+
+/// `bytes[index]`, or 0 (never an identifier, gap or token byte) past the end.
+fn at(bytes: &[u8], index: usize) -> u8 {
+    bytes.get(index).copied().unwrap_or(0)
+}
+
+/// `bytes[from..to]`, or empty when out of range.
+fn span(bytes: &[u8], from: usize, to: usize) -> &[u8] {
+    bytes.get(from..to).unwrap_or_default()
+}
+
+/// `bytes[from..]`, or empty when out of range.
+fn tail(bytes: &[u8], from: usize) -> &[u8] {
+    bytes.get(from..).unwrap_or_default()
+}
+
+/// `input[from..to]`, or empty when out of range.
+fn text(input: &str, from: usize, to: usize) -> &str {
+    input.get(from..to).unwrap_or_default()
+}
+
 fn is_ident_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-'
 }
@@ -156,7 +182,7 @@ fn is_gap_byte(byte: u8) -> bool {
 }
 
 fn preceded_by_word_char(bytes: &[u8], index: usize) -> bool {
-    index > 0 && bytes[index - 1].is_ascii_alphanumeric()
+    index > 0 && at(bytes, index - 1).is_ascii_alphanumeric()
 }
 
 /// Finds every byte span that should be replaced with `[REDACTED]`, in the
@@ -190,7 +216,7 @@ fn find_key_value_spans(input: &str) -> Vec<(usize, usize)> {
     let mut i = 0usize;
 
     while i < len {
-        let byte = bytes[i];
+        let byte = at(bytes, i);
 
         if is_ident_byte(byte) {
             if word_start.is_none() {
@@ -289,7 +315,7 @@ fn try_redact_after_separator(
     if candidate_is_type_annotation {
         return None;
     }
-    let key = &input[word_from..word_to];
+    let key = text(input, word_from, word_to);
     if !is_sensitive_key(key) {
         return None;
     }
@@ -309,7 +335,7 @@ fn try_redact_after_separator(
     // where a bare capitalised identifier is an ordinary secret, not a type.
     let looks_like_a_type_reference = !was_quoted
         && !crossed_newline
-        && (is_bare_type_like(&bytes[value_start..value_end]) || followed_by_path_separator);
+        && (is_bare_type_like(span(bytes, value_start, value_end)) || followed_by_path_separator);
     if !looks_like_a_type_reference && value_start < value_end {
         spans.push((value_start, value_end));
     }
@@ -321,7 +347,7 @@ fn is_bare_type_like(token: &[u8]) -> bool {
 }
 
 fn skip_inline_whitespace(bytes: &[u8], mut i: usize) -> usize {
-    while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+    while i < bytes.len() && (at(bytes, i) == b' ' || at(bytes, i) == b'\t') {
         i += 1;
     }
     i
@@ -349,9 +375,9 @@ fn parse_value(bytes: &[u8], mut i: usize) -> Option<(usize, usize, usize, bool,
     i = skip_inline_whitespace(bytes, i);
 
     let mut crossed_newline = false;
-    if i < len && (bytes[i] == b'\n' || bytes[i] == b'\r') {
+    if i < len && (at(bytes, i) == b'\n' || at(bytes, i) == b'\r') {
         crossed_newline = true;
-        if bytes[i] == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
+        if at(bytes, i) == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
             i += 2;
         } else {
             i += 1;
@@ -363,16 +389,16 @@ fn parse_value(bytes: &[u8], mut i: usize) -> Option<(usize, usize, usize, bool,
         return Some((i, i, i, false, crossed_newline));
     }
 
-    if bytes[i] == b'"' || bytes[i] == b'\'' {
-        let quote = bytes[i];
+    if at(bytes, i) == b'"' || at(bytes, i) == b'\'' {
+        let quote = at(bytes, i);
         let start = i + 1;
         let mut j = start;
         while j < len {
-            if bytes[j] == b'\\' && j + 1 < len {
+            if at(bytes, j) == b'\\' && j + 1 < len {
                 j += 2;
                 continue;
             }
-            if bytes[j] == quote {
+            if at(bytes, j) == quote {
                 break;
             }
             j += 1;
@@ -384,7 +410,7 @@ fn parse_value(bytes: &[u8], mut i: usize) -> Option<(usize, usize, usize, bool,
 
     let start = i;
     while i < len {
-        let byte = bytes[i];
+        let byte = at(bytes, i);
         if byte.is_ascii_whitespace() || matches!(byte, b'&' | b';' | b',' | b'}' | b')' | b']' | b':' | b'(') {
             break;
         }
@@ -443,7 +469,7 @@ fn find_value_shape_spans(input: &str, spans: &mut Vec<(usize, usize)>) {
         // itself, or `sk-` recurring inside the run just rejected (every 3
         // bytes here) would redo this same full-length scan from each
         // occurrence — exactly the quadratic blowup this exists to avoid.
-        if i >= openai_dead_zone_end && bytes[i..].starts_with(b"sk-") {
+        if i >= openai_dead_zone_end && tail(bytes, i).starts_with(b"sk-") {
             openai_dead_zone_end = ident_run_end(bytes, i);
         }
 
@@ -453,7 +479,7 @@ fn find_value_shape_spans(input: &str, spans: &mut Vec<(usize, usize)>) {
                 i = end;
                 continue;
             }
-            if bytes[i..].starts_with(b"eyJ") {
+            if tail(bytes, i).starts_with(b"eyJ") {
                 jwt_dead_zone_end = base64url_run_end(bytes, i);
             }
         }
@@ -464,7 +490,7 @@ fn find_value_shape_spans(input: &str, spans: &mut Vec<(usize, usize)>) {
 
 fn ident_run_end(bytes: &[u8], start: usize) -> usize {
     let mut j = start;
-    while j < bytes.len() && is_ident_byte(bytes[j]) {
+    while j < bytes.len() && is_ident_byte(at(bytes, j)) {
         j += 1;
     }
     j
@@ -472,7 +498,7 @@ fn ident_run_end(bytes: &[u8], start: usize) -> usize {
 
 fn base64url_run_end(bytes: &[u8], start: usize) -> usize {
     let mut j = start;
-    while j < bytes.len() && is_base64url_byte(bytes[j]) {
+    while j < bytes.len() && is_base64url_byte(at(bytes, j)) {
         j += 1;
     }
     j
@@ -481,7 +507,7 @@ fn base64url_run_end(bytes: &[u8], start: usize) -> usize {
 /// AWS access key: `AKIA` followed by exactly 16 `[0-9A-Z]` characters.
 fn match_aws_key(bytes: &[u8], i: usize) -> Option<usize> {
     const PREFIX: &[u8] = b"AKIA";
-    if preceded_by_word_char(bytes, i) || !bytes[i..].starts_with(PREFIX) {
+    if preceded_by_word_char(bytes, i) || !tail(bytes, i).starts_with(PREFIX) {
         return None;
     }
     let start = i + PREFIX.len();
@@ -489,7 +515,7 @@ fn match_aws_key(bytes: &[u8], i: usize) -> Option<usize> {
     if end > bytes.len() {
         return None;
     }
-    if bytes[start..end].iter().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit()) {
+    if span(bytes, start, end).iter().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit()) {
         Some(end)
     } else {
         None
@@ -499,7 +525,7 @@ fn match_aws_key(bytes: &[u8], i: usize) -> Option<usize> {
 /// Google API key: `AIza` followed by exactly 35 `[0-9A-Za-z_-]` characters.
 fn match_google_key(bytes: &[u8], i: usize) -> Option<usize> {
     const PREFIX: &[u8] = b"AIza";
-    if preceded_by_word_char(bytes, i) || !bytes[i..].starts_with(PREFIX) {
+    if preceded_by_word_char(bytes, i) || !tail(bytes, i).starts_with(PREFIX) {
         return None;
     }
     let start = i + PREFIX.len();
@@ -507,7 +533,7 @@ fn match_google_key(bytes: &[u8], i: usize) -> Option<usize> {
     if end > bytes.len() {
         return None;
     }
-    if bytes[start..end].iter().all(|&b| is_ident_byte(b)) {
+    if span(bytes, start, end).iter().all(|&b| is_ident_byte(b)) {
         Some(end)
     } else {
         None
@@ -517,7 +543,7 @@ fn match_google_key(bytes: &[u8], i: usize) -> Option<usize> {
 /// OpenAI-style key: `sk-` followed by 20 or more `[A-Za-z0-9_-]` characters.
 fn match_openai_key(bytes: &[u8], i: usize) -> Option<usize> {
     const PREFIX: &[u8] = b"sk-";
-    if preceded_by_word_char(bytes, i) || !bytes[i..].starts_with(PREFIX) {
+    if preceded_by_word_char(bytes, i) || !tail(bytes, i).starts_with(PREFIX) {
         return None;
     }
     let start = i + PREFIX.len();
@@ -527,7 +553,7 @@ fn match_openai_key(bytes: &[u8], i: usize) -> Option<usize> {
     }
     // Real keys carry digits; requiring one keeps a run of repeated `sk-`
     // from reading as a key.
-    if !bytes[start..end].iter().any(u8::is_ascii_digit) {
+    if !span(bytes, start, end).iter().any(u8::is_ascii_digit) {
         return None;
     }
     Some(end)
@@ -536,7 +562,7 @@ fn match_openai_key(bytes: &[u8], i: usize) -> Option<usize> {
 /// GitHub token: `gh` + one of `p`/`o`/`u`/`s`/`r` + `_` + 36 or more
 /// alphanumeric characters.
 fn match_github_token(bytes: &[u8], i: usize) -> Option<usize> {
-    if preceded_by_word_char(bytes, i) || !bytes[i..].starts_with(b"gh") {
+    if preceded_by_word_char(bytes, i) || !tail(bytes, i).starts_with(b"gh") {
         return None;
     }
     let type_byte = *bytes.get(i + 2)?;
@@ -548,7 +574,7 @@ fn match_github_token(bytes: &[u8], i: usize) -> Option<usize> {
     }
     let start = i + 4;
     let mut end = start;
-    while end < bytes.len() && bytes[end].is_ascii_alphanumeric() {
+    while end < bytes.len() && at(bytes, end).is_ascii_alphanumeric() {
         end += 1;
     }
     if end - start >= 36 { Some(end) } else { None }
@@ -568,17 +594,17 @@ const MIN_JWT_SEGMENT_LEN: usize = 16;
 /// more `.`-separated base64url segments (payload, signature).
 fn match_jwt(bytes: &[u8], i: usize) -> Option<usize> {
     const PREFIX: &[u8] = b"eyJ";
-    if preceded_by_word_char(bytes, i) || !bytes[i..].starts_with(PREFIX) {
+    if preceded_by_word_char(bytes, i) || !tail(bytes, i).starts_with(PREFIX) {
         return None;
     }
     let len = bytes.len();
     let j = base64url_run_end(bytes, i);
-    if j - i < MIN_JWT_SEGMENT_LEN || j >= len || bytes[j] != b'.' {
+    if j - i < MIN_JWT_SEGMENT_LEN || j >= len || at(bytes, j) != b'.' {
         return None;
     }
     let segment_two_start = j + 1;
     let j = base64url_run_end(bytes, segment_two_start);
-    if j - segment_two_start < MIN_JWT_SEGMENT_LEN || j >= len || bytes[j] != b'.' {
+    if j - segment_two_start < MIN_JWT_SEGMENT_LEN || j >= len || at(bytes, j) != b'.' {
         return None;
     }
     let segment_three_start = j + 1;
@@ -601,34 +627,34 @@ fn is_token_byte(byte: u8) -> bool {
 fn match_bearer_token(bytes: &[u8], i: usize) -> Option<usize> {
     const WORD: &[u8] = b"bearer";
     let len = bytes.len();
-    if bytes[i] != b'B' && bytes[i] != b'b' {
+    if at(bytes, i) != b'B' && at(bytes, i) != b'b' {
         return None;
     }
     if preceded_by_word_char(bytes, i) || i + WORD.len() > len {
         return None;
     }
     for (offset, expected) in WORD.iter().enumerate() {
-        if !bytes[i + offset].eq_ignore_ascii_case(expected) {
+        if !at(bytes, i + offset).eq_ignore_ascii_case(expected) {
             return None;
         }
     }
 
     let mut j = i + WORD.len();
-    if j >= len || !bytes[j].is_ascii_whitespace() {
+    if j >= len || !at(bytes, j).is_ascii_whitespace() {
         return None;
     }
-    while j < len && bytes[j].is_ascii_whitespace() {
+    while j < len && at(bytes, j).is_ascii_whitespace() {
         j += 1;
     }
 
     let token_start = j;
-    while j < len && is_token_byte(bytes[j]) {
+    while j < len && is_token_byte(at(bytes, j)) {
         j += 1;
     }
     if j - token_start < 16 {
         return None;
     }
-    let token = &bytes[token_start..j];
+    let token = span(bytes, token_start, j);
     let looks_like_a_token =
         token.iter().any(|b| b.is_ascii_digit() || matches!(b, b'-' | b'_' | b'.' | b'+' | b'/' | b'='));
     if !looks_like_a_token {
@@ -643,12 +669,12 @@ fn match_bearer_token(bytes: &[u8], i: usize) -> Option<usize> {
 /// credential — anyone with the URL can post as the configured integration.
 fn match_slack_webhook(bytes: &[u8], i: usize) -> Option<(usize, usize)> {
     const MARKER: &[u8] = b"hooks.slack.com/services/";
-    if preceded_by_word_char(bytes, i) || !bytes[i..].starts_with(MARKER) {
+    if preceded_by_word_char(bytes, i) || !tail(bytes, i).starts_with(MARKER) {
         return None;
     }
     let path_start = i + MARKER.len();
     let mut j = path_start;
-    while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'/') {
+    while j < bytes.len() && (at(bytes, j).is_ascii_alphanumeric() || at(bytes, j) == b'/') {
         j += 1;
     }
     if j - path_start < 10 { None } else { Some((path_start, j)) }
@@ -663,7 +689,7 @@ fn find_subsequence_bounded(bytes: &[u8], start: usize, needle: &[u8], max_scan:
         return None;
     }
     let search_end = bytes.len().min(start.saturating_add(max_scan).saturating_add(needle.len()));
-    bytes[start..search_end].windows(needle.len()).position(|window| window == needle).map(|pos| start + pos)
+    span(bytes, start, search_end).windows(needle.len()).position(|window| window == needle).map(|pos| start + pos)
 }
 
 /// Unbounded forward search for `needle` starting at `start`. Safe to call
@@ -716,7 +742,7 @@ fn find_pem_private_key_spans(input: &str, spans: &mut Vec<(usize, usize)>) {
             continue;
         };
         let begin_line_end = label_dashes + DASHES.len();
-        let label = &bytes[label_start..label_dashes];
+        let label = span(bytes, label_start, label_dashes);
 
         if !contains_ascii_ignore_case(label, b"PRIVATE KEY") {
             i = begin_line_end;
@@ -763,7 +789,7 @@ fn find_connection_string_spans(input: &str, spans: &mut Vec<(usize, usize)>) {
         let mut at_pos = None;
         let mut k = userinfo_start;
         while k < cap_end {
-            match bytes[k] {
+            match at(bytes, k) {
                 b'@' => {
                     at_pos = Some(k);
                     break;
@@ -775,7 +801,7 @@ fn find_connection_string_spans(input: &str, spans: &mut Vec<(usize, usize)>) {
 
         match at_pos {
             Some(at) => {
-                let userinfo = &bytes[userinfo_start..at];
+                let userinfo = span(bytes, userinfo_start, at);
                 if let Some(colon_rel) = userinfo.iter().position(|&b| b == b':') {
                     let pass_start = userinfo_start + colon_rel + 1;
                     if pass_start < at {

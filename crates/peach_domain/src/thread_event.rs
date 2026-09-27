@@ -125,7 +125,7 @@ pub fn replay_view_before_compaction(events: &[ThreadEvent], compaction_index: u
         .skip(compaction_index)
         .find(|(_, event)| matches!(event, ThreadEvent::Compaction { .. }))
         .map_or(events.len(), |(at, _)| at);
-    replay_view(&events[..end])
+    replay_view(events.get(..end).unwrap_or(events))
 }
 
 /// Whether two entries say the same thing: equal once the metadata peach adds
@@ -181,40 +181,44 @@ pub fn events_between(before: &[MessageEntry], after: &[MessageEntry]) -> Vec<Th
     let messages = |entries: &[MessageEntry]| -> Vec<ThreadEvent> {
         entries.iter().cloned().map(|entry| ThreadEvent::Message { entry: Box::new(entry) }).collect()
     };
-    if after.len() >= before.len() && same_run(&after[..before.len()], before) {
-        let revisions = (0..before.len())
-            .filter(|&i| after[i] != before[i])
-            .map(|index| ThreadEvent::Revise { index, entry: Box::new(after[index].clone()) });
-        return revisions.chain(messages(&after[before.len()..])).collect();
-    }
-    // An in-place rewrite (S1 offload replaces results with stubs, same
-    // positions), possibly followed by new messages: the view is `before`'s
-    // length of `after`, and the rest is new.
-    if after.len() >= before.len()
-        && (0..before.len()).all(|i| same_content(&after[i], &before[i]) || is_offload_stub(&after[i]))
-    {
-        let mut events = vec![ThreadEvent::Compaction {
-            messages_before: before.len(),
-            view: after[..before.len()].to_vec(),
-        }];
-        events.extend(messages(&after[before.len()..]));
-        return events;
+    // Bounds are checked by construction (`split_at_checked`, `zip`, `get`),
+    // so no input can make this panic (CI's `indexing_slicing` lint).
+    if let Some((head, tail)) = after.split_at_checked(before.len()) {
+        if same_run(head, before) {
+            let revisions = head
+                .iter()
+                .zip(before)
+                .enumerate()
+                .filter(|(_, (now, was))| now != was)
+                .map(|(index, (now, _))| ThreadEvent::Revise { index, entry: Box::new(now.clone()) });
+            return revisions.chain(messages(tail)).collect();
+        }
+        // An in-place rewrite (S1 offload replaces results with stubs, same
+        // positions), possibly followed by new messages: the view is
+        // `before`'s length of `after`, and the rest is new.
+        if head.iter().zip(before).all(|(now, was)| same_content(now, was) || is_offload_stub(now)) {
+            let mut events = vec![ThreadEvent::Compaction { messages_before: before.len(), view: head.to_vec() }];
+            events.extend(messages(tail));
+            return events;
+        }
     }
     // Peach's compactor splices exactly one summary where the evicted stretch
     // began (`Compactor::compress_single_sequence`): after the common prefix,
     // the first entry is that summary, then whatever it kept from `before`,
     // then anything new.
     let prefix = before.iter().zip(after).take_while(|(b, a)| same_content(a, b)).count();
+    let kept = before.get(prefix..).unwrap_or_default();
     let view_end = if prefix >= after.len() {
         after.len()
     } else {
         (prefix + 1..after.len())
             .rev()
-            .find(|&i| before[prefix..].iter().any(|kept| same_content(kept, &after[i])))
+            .find(|&i| after.get(i).is_some_and(|entry| kept.iter().any(|k| same_content(k, entry))))
             .map_or(prefix + 1, |last_kept| last_kept + 1)
     };
-    let mut events = vec![ThreadEvent::Compaction { messages_before: before.len(), view: after[..view_end].to_vec() }];
-    events.extend(messages(&after[view_end..]));
+    let (view, rest) = after.split_at_checked(view_end).unwrap_or((after, &[]));
+    let mut events = vec![ThreadEvent::Compaction { messages_before: before.len(), view: view.to_vec() }];
+    events.extend(messages(rest));
     events
 }
 

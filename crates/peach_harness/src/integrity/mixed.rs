@@ -110,7 +110,7 @@ fn extract_ini_sections(content: &str, sections: &[&str]) -> String {
     for raw in content.lines() {
         let line = raw.trim();
         if line.starts_with('[') && line.ends_with(']') {
-            current = Some(line[1..line.len() - 1].trim().to_string());
+            current = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')).map(|l| l.trim().to_string());
             continue;
         }
         let in_test_section = current

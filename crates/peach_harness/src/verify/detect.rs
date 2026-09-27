@@ -40,7 +40,7 @@ pub fn detect(root: &Path, explicit: Option<&str>) -> Option<TestCommand> {
     }
     if exists("package.json") {
         let package: serde_json::Value = serde_json::from_str(&read("package.json")).unwrap_or_default();
-        let script = package["scripts"]["test"].as_str().unwrap_or_default();
+        let script = package.get("scripts").and_then(|s| s.get("test")).and_then(|t| t.as_str()).unwrap_or_default();
         // `npm init`'s placeholder fails on purpose; it is not a test suite.
         if !script.is_empty() && !script.contains("no test specified") {
             let runner = if exists("pnpm-lock.yaml") {
@@ -178,7 +178,7 @@ fn invoked(segment: &str) -> String {
                 && token.parse::<f64>().is_err()
         })
         .unwrap_or(tokens.len());
-    tokens[start..].join(" ")
+    tokens.get(start..).unwrap_or_default().join(" ")
 }
 
 #[cfg(test)]

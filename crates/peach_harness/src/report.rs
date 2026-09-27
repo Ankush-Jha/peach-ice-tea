@@ -308,7 +308,9 @@ pub fn build(dir: &Path) -> Report {
             TelemetryEvent::ModelCall(call) => {
                 let rate = call_cache_rate(call);
                 for index in awaiting_next_call.drain(..) {
-                    context.cache_around_compactions[index].1 = rate;
+                    if let Some(entry) = context.cache_around_compactions.get_mut(index) {
+                        entry.1 = rate;
+                    }
                 }
                 last_cache_rate = rate;
                 model_inputs.extend(call.input_tokens);
@@ -653,9 +655,9 @@ pub fn render_md(report: &Report) -> String {
                     let _ = writeln!(
                         md,
                         "- `{}` {}, {}",
-                        v["path"].as_str().unwrap_or("?"),
-                        v["kind"].as_str().unwrap_or("?"),
-                        if v["restored"] == true { "restored" } else { "NOT restored" }
+                        v.get("path").and_then(|x| x.as_str()).unwrap_or("?"),
+                        v.get("kind").and_then(|x| x.as_str()).unwrap_or("?"),
+                        if v.get("restored") == Some(&serde_json::Value::Bool(true)) { "restored" } else { "NOT restored" }
                     );
                 }
                 let _ = writeln!(md);
@@ -716,7 +718,7 @@ fn render_testing(testing: &serde_json::Value) -> String {
     );
     let tail: Vec<&str> = testing["output_tail"].as_str().unwrap_or_default().lines().collect();
     if !tail.is_empty() {
-        let shown = &tail[tail.len().saturating_sub(12)..];
+        let shown = tail.get(tail.len().saturating_sub(12)..).unwrap_or_default();
         let _ = writeln!(md, "Last {} line(s) of output:\n\n```\n{}\n```\n", shown.len(), shown.join("\n"));
     }
     md
