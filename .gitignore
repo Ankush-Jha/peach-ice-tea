@@ -50,5 +50,9 @@ node_modules/
 bench/__pycache__
 .ai/
 
+# Peach Ice Tea's React frontend build output — `npm run build` regenerates it (server.ts falls
+# back to a "run this" message when it's missing, so a fresh checkout still boots).
+/harness/ui/app/dist/
+
 # make run evidence bundles (D-070)
 /evidence/

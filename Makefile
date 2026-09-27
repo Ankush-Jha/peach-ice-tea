@@ -104,9 +104,23 @@ check:
 
 # Binds 127.0.0.1 only. Keys come from this shell's environment (export AI_API_KEY or a
 # profile's own variable first); the page only learns which profiles have one.
+# The frontend is a React app (harness/ui/app); (re)built here only the first time, or after its
+# own source changes — server.ts serves whatever's in app/dist and shows a "run this" page if it's
+# missing entirely, so this is a convenience, not the only way to build it.
 ui:
 	@test -x $(BIN) || test -x $(HARNESS)/target/debug/forge || { echo "ui: no harness binary; run make setup first" >&2; exit 1; }
+	@test -d $(HARNESS)/harness/ui/app/node_modules || (cd $(HARNESS)/harness/ui/app && npm install)
+	@test -f $(HARNESS)/harness/ui/app/dist/index.html || (cd $(HARNESS)/harness/ui/app && npm run build)
 	@UI_DEFAULT_REPO="$(if $(filter $(HARNESS),$(abspath $(REPO))),,$(abspath $(REPO)))" node $(HARNESS)/harness/ui/server.ts
+
+# Rebuilds the UI even if app/dist already exists — use this after editing harness/ui/app/src/**.
+ui-build:
+	@cd $(HARNESS)/harness/ui/app && npm install && npm run build
+
+# Vite's dev server with HMR, proxying /api and /api/stream to a `make ui` you already have running
+# on the default port. Edits under harness/ui/app/src/** show up instantly, no rebuild.
+ui-dev:
+	@cd $(HARNESS)/harness/ui/app && npm install && npm run dev
 
 clean:
 	@cd $(HARNESS) && cargo clean

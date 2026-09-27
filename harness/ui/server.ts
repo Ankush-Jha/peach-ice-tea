@@ -292,6 +292,29 @@ function readBody(req: http.IncomingMessage): Promise<any> {
   });
 }
 
+// The UI itself is the React app in ./app, built to ./app/dist (D-099 predates it: a static
+// index.html; the React rewrite (D-1xx) keeps this server as a pure JSON+SSE backend and just
+// serves that build's output instead).
+const APP_DIST = path.join(HARNESS, "harness", "ui", "app", "dist");
+const STATIC_TYPES: Record<string, string> = {
+  ".js": "application/javascript", ".css": "text/css", ".svg": "image/svg+xml",
+  ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json", ".woff2": "font/woff2",
+};
+const NOT_BUILT_HTML = `<!doctype html><meta charset="utf-8"><body style="background:#000;color:#f2f2f2;font:14px/1.6 -apple-system,sans-serif;padding:48px">
+<h1 style="font-size:18px">UI not built yet</h1>
+<p>Run this once, then reload:</p>
+<pre style="background:#131313;border:1px solid #232323;border-radius:8px;padding:12px;font-family:ui-monospace,monospace">cd harness/ui/app && npm install && npm run build</pre>
+</body>`;
+
+function serveAsset(res: http.ServerResponse, filePath: string) {
+  const ext = path.extname(filePath);
+  res.writeHead(200, {
+    "content-type": STATIC_TYPES[ext] || "application/octet-stream",
+    "cache-control": "public, max-age=31536000, immutable",
+  });
+  res.end(fs.readFileSync(filePath));
+}
+
 const LOOPBACK_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`]);
 
 const server = http.createServer(async (req, res) => {
@@ -304,7 +327,15 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (req.method === "GET" && url.pathname === "/") {
-      return send(res, 200, fs.readFileSync(path.join(HARNESS, "harness", "ui", "index.html"), "utf8"), "text/html");
+      const indexPath = path.join(APP_DIST, "index.html");
+      if (!fs.existsSync(indexPath)) return send(res, 200, NOT_BUILT_HTML, "text/html");
+      return send(res, 200, fs.readFileSync(indexPath, "utf8"), "text/html");
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/assets/")) {
+      const rel = url.pathname.slice(1);
+      const filePath = path.join(APP_DIST, rel);
+      if (!within(APP_DIST, rel) || !fs.existsSync(filePath)) return send(res, 404, { error: "not found" });
+      return serveAsset(res, filePath);
     }
     if (req.method === "GET" && url.pathname === "/api/status") {
       return send(res, 200, {
