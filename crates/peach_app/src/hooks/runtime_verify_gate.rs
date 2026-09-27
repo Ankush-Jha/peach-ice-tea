@@ -6,9 +6,9 @@
 //! the real output goes back into the conversation as the next turn's
 //! input and the run continues; on a pass, completion is allowed. Config-
 //! gated (`PeachConfig::runtime_verify_gate`, default on since D-088's A/Bs
-//! on two model families) and fails open with no test command configured or no `exec`
-//! runtime installed (principle 5). Never touches the test-integrity guard's
-//! own refusal/restore path — it only re-verifies through
+//! on two model families) and fails open with no test command configured or no
+//! `exec` runtime installed (principle 5). Never touches the test-integrity
+//! guard's own refusal/restore path — it only re-verifies through
 //! `peach_harness::runtime::restore_integrity_if_installed`, the same
 //! mechanism `ExecHarness::finish` already uses after its final run.
 
@@ -57,12 +57,16 @@ impl EventHandle<EventData<EndPayload>> for RuntimeVerifyGateHandler {
         if !stopped_by_choice(conversation) {
             return Ok(());
         }
-        let Some(runtime) = peach_harness::runtime::get() else { return Ok(()) };
+        let Some(runtime) = peach_harness::runtime::get() else {
+            return Ok(());
+        };
         if !runtime.is_non_interactive() {
             return Ok(());
         }
         // Fail open (principle 5): nothing to run against.
-        let Some(test) = runtime.test_command().cloned() else { return Ok(()) };
+        let Some(test) = runtime.test_command().cloned() else {
+            return Ok(());
+        };
 
         let (attempt, exhausted) = peach_harness::verify::runtime_gate_attempt();
         if exhausted {
@@ -115,7 +119,9 @@ impl EventHandle<EventData<EndPayload>> for RuntimeVerifyGateHandler {
 
         if let Some(context) = conversation.context.as_mut() {
             let content = Element::new("system_reminder").text(message);
-            context.messages.push(ContextMessage::user(content, None).into());
+            context
+                .messages
+                .push(ContextMessage::user(content, None).into());
         }
         Ok(())
     }

@@ -77,7 +77,12 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
     }
 
     /// harness: R-LOOP-5 — the ladder's warning text for `tool_call`.
-    fn render_escalation_warning(&self, template: &str, tool_call: &ToolCallFull, occurrences: usize) -> String {
+    fn render_escalation_warning(
+        &self,
+        template: &str,
+        tool_call: &ToolCallFull,
+        occurrences: usize,
+    ) -> String {
         TemplateEngine::default()
             .render(
                 template,
@@ -148,12 +153,14 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
         let segments = if self.parallel_readonly {
             crate::tool_concurrency::segments(&other_calls, |call| &call.name)
         } else {
-            (0..other_calls.len()).map(|index| (false, index..index + 1)).collect()
+            (0..other_calls.len())
+                .map(|index| (false, index..index + 1))
+                .collect()
         };
         let mut other_results: Vec<(ToolCallFull, ToolResult)> =
             Vec::with_capacity(other_calls.len());
         for (_concurrent, range) in segments {
-            let batch = &other_calls[range];
+            let batch = other_calls.get(range).unwrap_or_default();
             for tool_call in batch {
                 // Send the start notification for system tools and not agent
                 // as a tool
@@ -190,7 +197,8 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
                 .iter()
                 .map(|tool_call| {
                     if self.doom_loop_escalation {
-                        self.escalation_guard.classify(&tool_call.name, &tool_call.arguments)
+                        self.escalation_guard
+                            .classify(&tool_call.name, &tool_call.arguments)
                     } else {
                         crate::doom_loop_escalation::Escalation::Allow
                     }
@@ -207,36 +215,54 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
                 .filter(|(_, escalation)| escalation.executes())
                 .map(|(tool_call, _)| *tool_call)
                 .collect();
-            let mut executed: std::collections::VecDeque<ToolResult> = join_all(
-                to_execute
-                    .iter()
-                    .map(|tool_call| self.services.call(&self.agent, tool_context, (*tool_call).clone())),
-            )
-            .await
-            .into();
+            let mut executed: std::collections::VecDeque<ToolResult> =
+                join_all(to_execute.iter().map(|tool_call| {
+                    self.services
+                        .call(&self.agent, tool_context, (*tool_call).clone())
+                }))
+                .await
+                .into();
 
             let mut tool_results: Vec<ToolResult> = Vec::with_capacity(batch.len());
             for (tool_call, escalation) in batch.iter().zip(escalations.iter()) {
                 use crate::doom_loop_escalation::Escalation;
                 let result = match escalation {
-                    Escalation::Allow => executed.pop_front().expect("one executed result per Allow/WarnAndRun call"),
+                    Escalation::Allow => executed
+                        .pop_front()
+                        .expect("one executed result per Allow/WarnAndRun call"),
                     Escalation::WarnAndRun { occurrences } => {
-                        let mut result =
-                            executed.pop_front().expect("one executed result per Allow/WarnAndRun call");
-                        let warning = self.render_escalation_warning("peach-doom-loop-warn.md", tool_call, *occurrences);
-                        result.output.combine_mut(ToolOutput::text(Element::new("system_warning").cdata(warning)));
+                        let mut result = executed
+                            .pop_front()
+                            .expect("one executed result per Allow/WarnAndRun call");
+                        let warning = self.render_escalation_warning(
+                            "peach-doom-loop-warn.md",
+                            tool_call,
+                            *occurrences,
+                        );
+                        result.output.combine_mut(ToolOutput::text(
+                            Element::new("system_warning").cdata(warning),
+                        ));
                         result
                     }
                     Escalation::WarnAndSkip { occurrences } => {
-                        let warning = self.render_escalation_warning("peach-doom-loop-skip.md", tool_call, *occurrences);
+                        let warning = self.render_escalation_warning(
+                            "peach-doom-loop-skip.md",
+                            tool_call,
+                            *occurrences,
+                        );
                         self.escalation_skip_result(tool_call, warning)
                     }
                     Escalation::PauseForApproval { occurrences } => {
-                        let warning = self.render_escalation_warning("peach-doom-loop-pause.md", tool_call, *occurrences);
-                        self.pending_escalation_pause = Some(crate::doom_loop_escalation::PendingPause {
-                            tool_name: tool_call.name.clone(),
-                            occurrences: *occurrences,
-                        });
+                        let warning = self.render_escalation_warning(
+                            "peach-doom-loop-pause.md",
+                            tool_call,
+                            *occurrences,
+                        );
+                        self.pending_escalation_pause =
+                            Some(crate::doom_loop_escalation::PendingPause {
+                                tool_name: tool_call.name.clone(),
+                                occurrences: *occurrences,
+                            });
                         self.escalation_skip_result(tool_call, warning)
                     }
                 };
@@ -404,10 +430,15 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
             if self.reasoning_schedule {
                 if !self.reasoning_escalated {
                     let task = tool_context.with_metrics(|metrics| metrics.task.clone())?;
-                    if let Some(reason) = crate::reasoning_budget::Difficulty::observe(&task).escalation_reason() {
+                    if let Some(reason) =
+                        crate::reasoning_budget::Difficulty::observe(&task).escalation_reason()
+                    {
                         self.reasoning_escalated = true;
-                        let next_model = crate::reasoning_budget::escalation_model().filter(|m| *m != model_id);
-                        let target = next_model.as_ref().map_or(String::new(), |m| format!("; switching to {m}"));
+                        let next_model =
+                            crate::reasoning_budget::escalation_model().filter(|m| *m != model_id);
+                        let target = next_model
+                            .as_ref()
+                            .map_or(String::new(), |m| format!("; switching to {m}"));
                         peach_harness::telemetry::emit(peach_harness::telemetry::TelemetryEvent::Recovery(
                             peach_harness::telemetry::event::Recovery {
                                 action: "reasoning_escalated".to_string(),
@@ -464,7 +495,8 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
                             model = %model_id,
                             "Retry attempt due to error"
                         );
-                        let attempt = retries.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                        let attempt =
+                            retries.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                         crate::hooks::record_model_retry(
                             &conversation_id,
                             agent_id.as_str(),
@@ -487,8 +519,10 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
             )
             .await;
             let retried = retries.load(std::sync::atomic::Ordering::Relaxed);
-            let retried_usage: Vec<Usage> =
-                retried_usage.lock().map(|usage| usage.clone()).unwrap_or_default();
+            let retried_usage: Vec<Usage> = retried_usage
+                .lock()
+                .map(|usage| usage.clone())
+                .unwrap_or_default();
 
             // harness: R-EVAL-2 — a request that never produced a response is
             // not counted by `record_llm_call` below, because the error
@@ -512,11 +546,14 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
                     if let Some(reason) = crate::model_failover::failover_reason(&error)
                         && let Some(next) = failover.next_model()
                     {
-                        // Counted on the tool context: the end-of-iteration sync
-                        // copies its metrics over the conversation's.
+                        // Counted on the tool context: the end-of-iteration
+                        // sync copies its metrics over
+                        // the conversation's.
                         tool_context.with_metrics(|metrics| {
                             metrics.task.record_retried_llm_calls(retried);
-                            retried_usage.iter().for_each(|usage| metrics.task.record_retried_usage(usage));
+                            retried_usage
+                                .iter()
+                                .for_each(|usage| metrics.task.record_retried_usage(usage));
                             metrics.task.record_failed_llm_call();
                         })?;
                         tracing::warn!(from = %model_id, to = %next, %reason, "Failing over to the next model");
@@ -533,10 +570,13 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
                         self.agent.model = next;
                         continue;
                     }
-                    self.conversation.metrics.task.record_retried_llm_calls(retried);
-                    retried_usage
-                        .iter()
-                        .for_each(|usage| self.conversation.metrics.task.record_retried_usage(usage));
+                    self.conversation
+                        .metrics
+                        .task
+                        .record_retried_llm_calls(retried);
+                    retried_usage.iter().for_each(|usage| {
+                        self.conversation.metrics.task.record_retried_usage(usage)
+                    });
                     self.conversation.metrics.task.record_failed_llm_call();
                     self.services.update(self.conversation.clone()).await.ok();
                     return Err(error);
@@ -588,12 +628,15 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
                 context = updated_context.clone();
             }
 
-            // harness: R-EVAL-2 — cumulative per-tool counts. `ToolErrorTracker`
-            // resets on success (it gates consecutive failures), so it cannot
-            // serve as the task-level error count.
+            // harness: R-EVAL-2 — cumulative per-tool counts.
+            // `ToolErrorTracker` resets on success (it gates
+            // consecutive failures), so it cannot serve as the
+            // task-level error count.
             tool_context.with_metrics(|metrics| {
                 for (_, result) in tool_call_records.iter() {
-                    metrics.task.record_tool_call(&result.name, result.is_error());
+                    metrics
+                        .task
+                        .record_tool_call(&result.name, result.is_error());
                 }
             })?;
 
@@ -694,8 +737,11 @@ impl<S: AgentService + EnvironmentInfra<Config = peach_config::PeachConfig>> Orc
                 // `CompactionHandler` writes `compactions` during the response
                 // hook and would otherwise lose it here.
                 metrics.task.compactions = self.conversation.metrics.task.compactions.clone();
-                // Likewise recall handles the compaction hook registered (D-066).
-                metrics.task.absorb_dump_files(&self.conversation.metrics.task);
+                // Likewise recall handles the compaction hook registered
+                // (D-066).
+                metrics
+                    .task
+                    .absorb_dump_files(&self.conversation.metrics.task);
                 self.conversation.metrics = metrics.clone();
             })?;
 

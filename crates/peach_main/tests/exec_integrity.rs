@@ -53,7 +53,10 @@ fn wait_for_run_start(telemetry: &Path) {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    panic!("peach exec never wrote run_start to {}", telemetry.display());
+    panic!(
+        "peach exec never wrote run_start to {}",
+        telemetry.display()
+    );
 }
 
 #[test]
@@ -64,11 +67,22 @@ fn test_a_test_edited_mid_run_is_reported_restored_and_logged() {
     write_unroutable_provider_config(config.path());
     std::fs::create_dir_all(project.path().join("tests")).unwrap();
     std::fs::write(project.path().join("tests/test_math.py"), ORIGINAL_TEST).unwrap();
-    std::fs::write(project.path().join("math.py"), "def add(a, b):\n    return a - b\n").unwrap();
+    std::fs::write(
+        project.path().join("math.py"),
+        "def add(a, b):\n    return a - b\n",
+    )
+    .unwrap();
     let telemetry = evidence.path().join("telemetry.jsonl");
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_peach"))
-        .args(["exec", "fix add", "--json", "--max-duration-secs", "4", "--telemetry"])
+        .args([
+            "exec",
+            "fix add",
+            "--json",
+            "--max-duration-secs",
+            "4",
+            "--telemetry",
+        ])
         .arg(&telemetry)
         .env("PEACH_CONFIG", config.path())
         .env("PEACH_TEST_BOGUS_KEY", "bogus-key-value")
@@ -80,8 +94,16 @@ fn test_a_test_edited_mid_run_is_reported_restored_and_logged() {
         .unwrap();
 
     wait_for_run_start(&telemetry);
-    std::fs::write(project.path().join("tests/test_math.py"), "def test_add():\n    pass\n").unwrap();
-    std::fs::write(project.path().join("tests/test_extra.py"), "def test_ok():\n    pass\n").unwrap();
+    std::fs::write(
+        project.path().join("tests/test_math.py"),
+        "def test_add():\n    pass\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project.path().join("tests/test_extra.py"),
+        "def test_ok():\n    pass\n",
+    )
+    .unwrap();
 
     let started = Instant::now();
     let status = loop {
@@ -95,7 +117,12 @@ fn test_a_test_edited_mid_run_is_reported_restored_and_logged() {
         std::thread::sleep(Duration::from_millis(20));
     };
     let mut stdout = String::new();
-    child.stdout.take().unwrap().read_to_string(&mut stdout).unwrap();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut stdout)
+        .unwrap();
     let report: serde_json::Value = stdout
         .lines()
         .rev()
@@ -140,13 +167,18 @@ fn test_a_test_edited_mid_run_is_reported_restored_and_logged() {
     // the first request records its prompt composition (T6.1), and a run
     // that did not complete says why (HACKATHON section 15, "errors").
     for expected in ["retry", "context_composition", "error:time_budget"] {
-        assert!(kinds.iter().any(|kind| kind == expected), "no {expected}: {kinds:?}");
+        assert!(
+            kinds.iter().any(|kind| kind == expected),
+            "no {expected}: {kinds:?}"
+        );
     }
     let kinds: Vec<&String> = kinds
         .iter()
         .filter(|kind| {
-            !matches!(kind.as_str(), "retry" | "context_composition" | "error:time_budget")
-                && !kind.starts_with("agent_state")
+            !matches!(
+                kind.as_str(),
+                "retry" | "context_composition" | "error:time_budget"
+            ) && !kind.starts_with("agent_state")
         })
         .collect();
     assert_eq!(
@@ -176,7 +208,14 @@ fn test_a_signal_still_restores_tests_and_writes_the_bundle() {
     let bundle = evidence.path().join("bundle");
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_peach"))
-        .args(["exec", "fix add", "--json", "--test-command", "true", "--evidence-dir"])
+        .args([
+            "exec",
+            "fix add",
+            "--json",
+            "--test-command",
+            "true",
+            "--evidence-dir",
+        ])
         .arg(&bundle)
         .env("PEACH_CONFIG", config.path())
         .env("PEACH_TEST_BOGUS_KEY", "bogus-key-value")
@@ -187,10 +226,17 @@ fn test_a_signal_still_restores_tests_and_writes_the_bundle() {
         .spawn()
         .unwrap();
     wait_for_run_start(&bundle.join("telemetry.jsonl"));
-    std::fs::write(project.path().join("tests/test_math.py"), "def test_add():\n    pass\n").unwrap();
+    std::fs::write(
+        project.path().join("tests/test_math.py"),
+        "def test_add():\n    pass\n",
+    )
+    .unwrap();
     // Give the handler a moment to be polled once the agent is running.
     std::thread::sleep(Duration::from_millis(300));
-    let killed = Command::new("kill").args(["-TERM", &child.id().to_string()]).status().unwrap();
+    let killed = Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .unwrap();
     assert!(killed.success());
 
     let started = Instant::now();
@@ -205,7 +251,12 @@ fn test_a_signal_still_restores_tests_and_writes_the_bundle() {
         std::thread::sleep(Duration::from_millis(20));
     };
     let mut stdout = String::new();
-    child.stdout.take().unwrap().read_to_string(&mut stdout).unwrap();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut stdout)
+        .unwrap();
 
     assert_eq!(status.code(), Some(5), "stdout:\n{stdout}");
     let exec: serde_json::Value =
@@ -213,7 +264,10 @@ fn test_a_signal_still_restores_tests_and_writes_the_bundle() {
     assert_eq!(exec["outcome"], "interrupted");
     assert_eq!(exec["error"], "stopped by SIGTERM");
     assert_eq!(exec["integrity"]["violations"][0]["restored"], true);
-    assert_eq!(std::fs::read_to_string(project.path().join("tests/test_math.py")).unwrap(), ORIGINAL_TEST);
+    assert_eq!(
+        std::fs::read_to_string(project.path().join("tests/test_math.py")).unwrap(),
+        ORIGINAL_TEST
+    );
     let tests: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(bundle.join("tests.json")).unwrap()).unwrap();
     assert_eq!(tests["ran"], false);
@@ -247,12 +301,17 @@ fn test_a_sigkilled_run_leaves_a_bundle_that_says_so_and_can_be_restored() {
         .spawn()
         .unwrap();
     wait_for_run_start(&bundle.join("telemetry.jsonl"));
-    std::fs::write(project.path().join("tests/test_math.py"), "def test_add():\n    pass\n").unwrap();
+    std::fs::write(
+        project.path().join("tests/test_math.py"),
+        "def test_add():\n    pass\n",
+    )
+    .unwrap();
     child.kill().unwrap();
     child.wait().unwrap();
 
     let manifest: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(bundle.join("manifest.json")).unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(bundle.join("manifest.json")).unwrap())
+            .unwrap();
     let baseline: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(bundle.join("integrity.baseline.json")).unwrap(),
     )
@@ -265,7 +324,11 @@ fn test_a_sigkilled_run_leaves_a_bundle_that_says_so_and_can_be_restored() {
     );
     let _ = std::fs::remove_dir_all(baseline["snapshot_dir"].as_str().unwrap());
 
-    let expected = (serde_json::json!("incomplete"), serde_json::json!(ORIGINAL_TEST.len()), ORIGINAL_TEST.to_string());
+    let expected = (
+        serde_json::json!("incomplete"),
+        serde_json::json!(ORIGINAL_TEST.len()),
+        ORIGINAL_TEST.to_string(),
+    );
     assert_eq!(actual, expected);
     assert!(bundle.join("prompt.txt").exists());
 }

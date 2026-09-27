@@ -40,14 +40,18 @@ pub fn enabled() -> bool {
 
 /// The model to escalate to, when one is configured.
 pub fn escalation_model() -> Option<ModelId> {
-    std::env::var(ESCALATE_MODEL_VAR).ok().filter(|v| !v.trim().is_empty()).map(|v| ModelId::new(v.trim()))
+    std::env::var(ESCALATE_MODEL_VAR)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .map(|v| ModelId::new(v.trim()))
 }
 
 /// What the harness has observed about the task's difficulty so far.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Difficulty {
     /// Fix attempts that failed: agent test runs after an edit that failed on
-    /// the code (not the environment). A reproduction run doesn't count (D-101).
+    /// the code (not the environment). A reproduction run doesn't count
+    /// (D-101).
     pub failed_test_runs: u32,
     /// Times the runtime gate had to check a stop.
     pub gate_runs: u32,
@@ -64,7 +68,12 @@ impl Difficulty {
     /// * `task` - The task's metrics so far.
     pub fn observe(task: &TaskMetrics) -> Self {
         let (failed_test_runs, gate_runs) = peach_harness::verify::difficulty_signals();
-        Self { failed_test_runs, gate_runs, tool_errors: task.tool_errors.values().sum(), llm_calls: task.llm_calls }
+        Self {
+            failed_test_runs,
+            gate_runs,
+            tool_errors: task.tool_errors.values().sum(),
+            llm_calls: task.llm_calls,
+        }
     }
 
     /// Why the task now counts as hard, or `None` while it still looks simple.
@@ -123,7 +132,10 @@ mod tests {
             Difficulty { llm_calls: 12, ..simple },
         ];
 
-        let actual: Vec<bool> = cases.iter().map(|d| d.escalation_reason().is_some()).collect();
+        let actual: Vec<bool> = cases
+            .iter()
+            .map(|d| d.escalation_reason().is_some())
+            .collect();
 
         assert_eq!(simple.escalation_reason(), None);
         assert_eq!(actual, vec![true, true, true, true]);
@@ -135,8 +147,12 @@ mod tests {
         let off = Context::default().reasoning(ReasoningConfig::default().enabled(false));
 
         let actual = (
-            with_effort(on, Effort::Low).reasoning.and_then(|r| r.effort),
-            with_effort(off, Effort::Low).reasoning.and_then(|r| r.effort),
+            with_effort(on, Effort::Low)
+                .reasoning
+                .and_then(|r| r.effort),
+            with_effort(off, Effort::Low)
+                .reasoning
+                .and_then(|r| r.effort),
             with_effort(Context::default(), Effort::Low).reasoning,
         );
 

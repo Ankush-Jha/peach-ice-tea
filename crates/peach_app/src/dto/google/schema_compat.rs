@@ -203,9 +203,7 @@ fn test_mcp_fixture_schema_is_gemini_compatible_after_conversion() {
         "$ref must be inlined or removed, not sent to Gemini"
     );
 
-    let status = decl.parameters["properties"]["status"]
-        .as_object()
-        .unwrap();
+    let status = decl.parameters["properties"]["status"].as_object().unwrap();
     assert!(!status.contains_key("const"), "const must become enum");
     assert_eq!(status["enum"], serde_json::json!(["active"]));
 

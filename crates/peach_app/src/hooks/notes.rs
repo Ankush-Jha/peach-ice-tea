@@ -58,7 +58,10 @@ fn mentions(entry: &MessageEntry, label: &str) -> bool {
 
 /// The scratchpad reminder listing `notes`.
 fn reminder(notes: &[ScratchNote]) -> String {
-    let lines: Vec<String> = notes.iter().map(|note| format!("{} {}", note.label(), note.text)).collect();
+    let lines: Vec<String> = notes
+        .iter()
+        .map(|note| format!("{} {}", note.label(), note.text))
+        .collect();
     format!("{HEADER}\n{}", lines.join("\n"))
 }
 
@@ -73,12 +76,17 @@ impl EventHandle<EventData<ResponsePayload>> for NotesHandler {
         let Some(context) = conversation.context.as_mut() else {
             return Ok(());
         };
-        let out_of_view = notes
-            .iter()
-            .any(|note| !context.messages.iter().any(|entry| mentions(entry, &note.label())));
+        let out_of_view = notes.iter().any(|note| {
+            !context
+                .messages
+                .iter()
+                .any(|entry| mentions(entry, &note.label()))
+        });
         if out_of_view {
             let content = Element::new("system_reminder").text(reminder(&notes));
-            context.messages.push(ContextMessage::user(content, None).into());
+            context
+                .messages
+                .push(ContextMessage::user(content, None).into());
         }
         Ok(())
     }
@@ -102,14 +110,21 @@ mod tests {
         let mut conversation = Conversation::generate();
         conversation.metrics = Metrics::default();
         conversation.metrics.notes = scratchpad;
-        conversation.context =
-            Some(messages.into_iter().fold(Context::default(), |ctx, message| ctx.add_message(message)));
+        conversation.context = Some(
+            messages
+                .into_iter()
+                .fold(Context::default(), |ctx, message| ctx.add_message(message)),
+        );
         conversation
     }
 
     fn fixture_event() -> EventData<ResponsePayload> {
         EventData::new(
-            Agent::new("peach", "test-provider".to_string().into(), ModelId::new("m")),
+            Agent::new(
+                "peach",
+                "test-provider".to_string().into(),
+                ModelId::new("m"),
+            ),
             ModelId::new("m"),
             ResponsePayload::new(ChatCompletionMessageFull {
                 content: String::new(),
@@ -133,19 +148,31 @@ mod tests {
     }
 
     async fn reminders_after(mut conversation: Conversation) -> Vec<String> {
-        NotesHandler::new().handle(&fixture_event(), &mut conversation).await.unwrap();
+        NotesHandler::new()
+            .handle(&fixture_event(), &mut conversation)
+            .await
+            .unwrap();
         conversation
             .context
             .unwrap()
             .messages
             .iter()
-            .filter_map(|entry| entry.message.content().filter(|text| text.contains("SCRATCHPAD")).map(str::to_string))
+            .filter_map(|entry| {
+                entry
+                    .message
+                    .content()
+                    .filter(|text| text.contains("SCRATCHPAD"))
+                    .map(str::to_string)
+            })
             .collect()
     }
 
     #[tokio::test]
     async fn test_a_note_whose_result_is_still_in_view_is_not_repeated() {
-        let fixture = fixture_conversation(&["tests run with python3 -m unittest"], vec![saved("[note 1]")]);
+        let fixture = fixture_conversation(
+            &["tests run with python3 -m unittest"],
+            vec![saved("[note 1]")],
+        );
 
         let actual = reminders_after(fixture).await;
 
@@ -155,8 +182,14 @@ mod tests {
     #[tokio::test]
     async fn test_notes_a_summary_removed_come_back_verbatim_once() {
         let fixture = fixture_conversation(
-            &["root cause: off-by-one in ledger.balance", "tests run with python3 -m unittest"],
-            vec![ContextMessage::user("summary of earlier work", None), saved("[note 2]")],
+            &[
+                "root cause: off-by-one in ledger.balance",
+                "tests run with python3 -m unittest",
+            ],
+            vec![
+                ContextMessage::user("summary of earlier work", None),
+                saved("[note 2]"),
+            ],
         );
 
         let actual = reminders_after(fixture).await;
@@ -171,8 +204,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_the_reminder_itself_keeps_the_notes_in_view() {
-        let mut fixture = fixture_conversation(&["keep me"], vec![ContextMessage::user("summary", None)]);
-        NotesHandler::new().handle(&fixture_event(), &mut fixture).await.unwrap();
+        let mut fixture =
+            fixture_conversation(&["keep me"], vec![ContextMessage::user("summary", None)]);
+        NotesHandler::new()
+            .handle(&fixture_event(), &mut fixture)
+            .await
+            .unwrap();
 
         let actual = reminders_after(fixture).await;
 

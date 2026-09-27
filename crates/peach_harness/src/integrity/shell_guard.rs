@@ -19,7 +19,11 @@ const WRITE_REDIRECTS: &[&str] = &[">", ">>", ">|"];
 ///
 /// Errs toward refusing: a false refusal costs one turn and says exactly why,
 /// while a missed mutation risks the competition.
-pub fn check_command(protected: &ProtectedSet, command: &str, cwd: &std::path::Path) -> Option<String> {
+pub fn check_command(
+    protected: &ProtectedSet,
+    command: &str,
+    cwd: &std::path::Path,
+) -> Option<String> {
     let offending = mutated_paths(command)
         .into_iter()
         .rfind(|target| is_protected_token(protected, target, cwd))?;
@@ -51,7 +55,9 @@ pub fn mutated_paths(command: &str) -> Vec<String> {
 
     // Segment on separators so `cd x && rm y` is screened per command.
     for segment in split_segments(&tokens) {
-        let Some(program) = segment.first() else { continue };
+        let Some(program) = segment.first() else {
+            continue;
+        };
         let program = program.rsplit('/').next().unwrap_or(program);
 
         let mutates = MUTATING_PROGRAMS.contains(&program)
@@ -60,7 +66,10 @@ pub fn mutated_paths(command: &str) -> Vec<String> {
                 && segment.get(1).map(String::as_str) == Some("checkout")
                 && segment.iter().any(|t| t == "--"))
             || (program == "sed" && segment.iter().any(|t| t == "-i" || t.starts_with("-i")))
-            || (program == "perl" && segment.iter().any(|t| t.contains('i') && t.starts_with('-')));
+            || (program == "perl"
+                && segment
+                    .iter()
+                    .any(|t| t.contains('i') && t.starts_with('-')));
 
         if mutates {
             paths.extend(
@@ -81,7 +90,11 @@ fn is_protected_token(protected: &ProtectedSet, token: &str, cwd: &std::path::Pa
         return false;
     }
     let path = std::path::Path::new(cleaned);
-    let absolute = if path.is_absolute() { path.to_path_buf() } else { cwd.join(path) };
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    };
     protected.is_protected(&absolute)
 }
 

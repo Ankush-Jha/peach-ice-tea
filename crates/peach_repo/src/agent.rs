@@ -260,8 +260,14 @@ mod tests {
         );
 
         let expected = (
-            (ProviderId::from("nvidia".to_string()), ModelId::from("fast-model".to_string())),
-            (ProviderId::from("open_router".to_string()), ModelId::from("main-model".to_string())),
+            (
+                ProviderId::from("nvidia".to_string()),
+                ModelId::from("fast-model".to_string()),
+            ),
+            (
+                ProviderId::from("open_router".to_string()),
+                ModelId::from("main-model".to_string()),
+            ),
         );
         assert_eq!(actual, expected);
     }

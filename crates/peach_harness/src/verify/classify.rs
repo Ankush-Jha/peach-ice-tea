@@ -64,7 +64,9 @@ pub fn classify(exit_code: Option<i32>, timed_out: bool, output: &str) -> Classi
         // load. With some tests passing, it is one broken module among
         // working ones, so it falls through to an assertion failure.
         FailureClass::Compile
-    } else if failed.is_some_and(|f| f > 0) || ASSERTION.iter().any(|marker| output.contains(marker)) {
+    } else if failed.is_some_and(|f| f > 0)
+        || ASSERTION.iter().any(|marker| output.contains(marker))
+    {
         FailureClass::TestAssertion
     } else {
         FailureClass::Unknown
@@ -95,18 +97,40 @@ const COMPILE: &[&str] = &[
     "undefined: ",
 ];
 
-const ASSERTION: &[&str] = &["AssertionError", "assertion failed", "--- FAIL", "FAILED", "not ok "];
+const ASSERTION: &[&str] = &[
+    "AssertionError",
+    "assertion failed",
+    "--- FAIL",
+    "FAILED",
+    "not ok ",
+];
 
 /// `(passed, failed, skipped)` from the first runner summary format found.
 fn counts(output: &str) -> (Option<u64>, Option<u64>, Option<u64>) {
     // cargo: `test result: ok. 3 passed; 1 failed; 0 ignored; ...` per binary.
-    let cargo: Vec<&str> = output.lines().filter(|l| l.contains("test result:")).collect();
+    let cargo: Vec<&str> = output
+        .lines()
+        .filter(|l| l.contains("test result:"))
+        .collect();
     if !cargo.is_empty() {
-        let sum = |word: &str| cargo.iter().filter_map(|l| number_before(l, word)).sum::<u64>();
-        return (Some(sum(" passed")), Some(sum(" failed")), Some(sum(" ignored")));
+        let sum = |word: &str| {
+            cargo
+                .iter()
+                .filter_map(|l| number_before(l, word))
+                .sum::<u64>()
+        };
+        return (
+            Some(sum(" passed")),
+            Some(sum(" failed")),
+            Some(sum(" ignored")),
+        );
     }
-    // unittest: `Ran 5 tests` then `OK` or `FAILED (failures=1, errors=1, skipped=2)`.
-    if let Some(ran) = output.lines().find_map(|l| l.strip_prefix("Ran ").and_then(first_number)) {
+    // unittest: `Ran 5 tests` then `OK` or `FAILED (failures=1, errors=1,
+    // skipped=2)`.
+    if let Some(ran) = output
+        .lines()
+        .find_map(|l| l.strip_prefix("Ran ").and_then(first_number))
+    {
         let field = |name: &str| {
             output
                 .lines()
@@ -117,15 +141,30 @@ fn counts(output: &str) -> (Option<u64>, Option<u64>, Option<u64>) {
         };
         let failed = field("failures") + field("errors");
         let skipped = field("skipped");
-        return (Some(ran.saturating_sub(failed + skipped)), Some(failed), Some(skipped));
+        return (
+            Some(ran.saturating_sub(failed + skipped)),
+            Some(failed),
+            Some(skipped),
+        );
     }
     // node --test (TAP): `# pass 3`, `# fail 1`, `# skipped 0`.
     if output.contains("# pass ") {
-        let tap = |name: &str| output.lines().find_map(|l| l.strip_prefix(name).and_then(first_number));
-        return (tap("# pass "), tap("# fail "), tap("# skipped ").or(Some(0)));
+        let tap = |name: &str| {
+            output
+                .lines()
+                .find_map(|l| l.strip_prefix(name).and_then(first_number))
+        };
+        return (
+            tap("# pass "),
+            tap("# fail "),
+            tap("# skipped ").or(Some(0)),
+        );
     }
     // jest/vitest: `Tests:       1 failed, 4 passed, 5 total`.
-    if let Some(line) = output.lines().find(|l| l.trim_start().starts_with("Tests:")) {
+    if let Some(line) = output
+        .lines()
+        .find(|l| l.trim_start().starts_with("Tests:"))
+    {
         return (
             number_before(line, " passed").or(Some(0)),
             number_before(line, " failed").or(Some(0)),
@@ -139,7 +178,8 @@ fn counts(output: &str) -> (Option<u64>, Option<u64>, Option<u64>) {
         .find(|l| l.contains(" passed") || l.contains(" failed") || l.contains(" error"))
         .filter(|l| l.contains(" in ") && l.contains('s'))
     {
-        let failed = number_before(line, " failed").unwrap_or(0) + number_before(line, " error").unwrap_or(0);
+        let failed = number_before(line, " failed").unwrap_or(0)
+            + number_before(line, " error").unwrap_or(0);
         return (
             number_before(line, " passed").or(Some(0)),
             Some(failed),
@@ -149,19 +189,32 @@ fn counts(output: &str) -> (Option<u64>, Option<u64>, Option<u64>) {
     // go: one `--- PASS:` / `--- FAIL:` / `--- SKIP:` per test with -v.
     if output.contains("--- PASS:") || output.contains("--- FAIL:") {
         let count = |marker: &str| output.matches(marker).count() as u64;
-        return (Some(count("--- PASS:")), Some(count("--- FAIL:")), Some(count("--- SKIP:")));
+        return (
+            Some(count("--- PASS:")),
+            Some(count("--- FAIL:")),
+            Some(count("--- SKIP:")),
+        );
     }
     (None, None, None)
 }
 
 fn first_number(text: &str) -> Option<u64> {
-    text.split(|c: char| !c.is_ascii_digit()).find(|part| !part.is_empty())?.parse().ok()
+    text.split(|c: char| !c.is_ascii_digit())
+        .find(|part| !part.is_empty())?
+        .parse()
+        .ok()
 }
 
 /// The number immediately before `word` in `line` (`"3 passed"` → 3).
 fn number_before(line: &str, word: &str) -> Option<u64> {
     let index = line.find(word)?;
-    line.split_at(index).0.split(|c: char| !c.is_ascii_digit()).rev().find(|p| !p.is_empty())?.parse().ok()
+    line.split_at(index)
+        .0
+        .split(|c: char| !c.is_ascii_digit())
+        .rev()
+        .find(|p| !p.is_empty())?
+        .parse()
+        .ok()
 }
 
 /// The number immediately after `prefix` in `line` (`"failures=2"` → 2).
@@ -176,7 +229,10 @@ mod tests {
 
     use super::*;
 
-    fn fixture(class: FailureClass, counts: (Option<u64>, Option<u64>, Option<u64>)) -> Classification {
+    fn fixture(
+        class: FailureClass,
+        counts: (Option<u64>, Option<u64>, Option<u64>),
+    ) -> Classification {
         Classification { class, passed: counts.0, failed: counts.1, skipped: counts.2 }
     }
 

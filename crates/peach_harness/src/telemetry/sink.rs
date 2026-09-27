@@ -10,8 +10,8 @@ use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::identity::{HarnessIdentity, TELEMETRY_SCHEMA_VERSION};
@@ -169,7 +169,12 @@ impl JsonlSink {
         }
     }
 
-    fn emit(&self, event: TelemetryEvent, conversation_id: Option<String>, agent_id: Option<String>) {
+    fn emit(
+        &self,
+        event: TelemetryEvent,
+        conversation_id: Option<String>,
+        agent_id: Option<String>,
+    ) {
         // A RunEnd is the last event of a run: force it to disk immediately
         // rather than leaving it in the buffer for a flush that may never
         // come (SHOULD-FIX 6).
@@ -201,8 +206,10 @@ impl JsonlSink {
         agent_id: Option<String>,
         force_flush: bool,
     ) -> anyhow::Result<()> {
-        let mut guard =
-            self.state.lock().map_err(|_| anyhow::anyhow!("telemetry sink lock poisoned"))?;
+        let mut guard = self
+            .state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("telemetry sink lock poisoned"))?;
 
         let seq = guard.next_seq;
         // Reserved unconditionally, even if the write below fails: ordering
@@ -225,7 +232,10 @@ impl JsonlSink {
         let line = serde_json::to_string(&envelope)?;
 
         if guard.writer.is_none() {
-            let file = OpenOptions::new().create(true).append(true).open(&self.path)?;
+            let file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&self.path)?;
             guard.writer = Some(BufWriter::new(file));
         }
 
@@ -235,7 +245,10 @@ impl JsonlSink {
         let should_flush = force_flush || due_by_count || due_by_time;
 
         // `is_some()` was just established above; this cannot panic.
-        let writer = guard.writer.as_mut().expect("sink writer initialised above");
+        let writer = guard
+            .writer
+            .as_mut()
+            .expect("sink writer initialised above");
         writer.write_all(line.as_bytes())?;
         writer.write_all(b"\n")?;
         if should_flush {
@@ -349,7 +362,9 @@ fn cap(existing: Truncated, max_chars: usize) -> Truncated {
 
 /// The current time as an RFC 3339 timestamp with millisecond precision.
 fn now_rfc3339_millis() -> String {
-    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+    chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string()
 }
 
 /// Reads a JSONL telemetry file back into its events, in file order.
@@ -448,7 +463,10 @@ mod tests {
         let key = format!("AIza{}", "x".repeat(35));
 
         sink.emit(
-            fixture_tool_call(&format!("curl -H 'x-goog-api-key: {key}'"), &format!("echo {key}")),
+            fixture_tool_call(
+                &format!("curl -H 'x-goog-api-key: {key}'"),
+                &format!("echo {key}"),
+            ),
             None,
             None,
         );
@@ -630,7 +648,8 @@ mod tests {
         sink.flush();
 
         let actual = read_jsonl(&path).unwrap();
-        let sequences_in_file_order: Vec<u64> = actual.iter().map(|envelope| envelope.seq).collect();
+        let sequences_in_file_order: Vec<u64> =
+            actual.iter().map(|envelope| envelope.seq).collect();
 
         let expected_in_file_order: Vec<u64> = (0..1_600).collect();
         assert_eq!(sequences_in_file_order, expected_in_file_order);
@@ -640,7 +659,11 @@ mod tests {
     fn test_sink_truncates_large_arguments_and_marks_it_visibly() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("telemetry.jsonl");
-        let limits = SinkLimits { max_argument_chars: 10, max_result_chars: 10, ..never_auto_flush() };
+        let limits = SinkLimits {
+            max_argument_chars: 10,
+            max_result_chars: 10,
+            ..never_auto_flush()
+        };
         let sink = Sink::jsonl(path.clone(), "run-1", limits);
         let long_argument = "x".repeat(100);
         let long_result = "y".repeat(200);
@@ -681,7 +704,8 @@ mod tests {
         // Simulate a crash mid-write: a truncated, unparseable final line
         // appended straight to the file, bypassing the sink.
         let mut raw = OpenOptions::new().append(true).open(&path).unwrap();
-        raw.write_all(b"{\"schema_id\": \"peach-ice-tea.telemetry\", \"trunc").unwrap();
+        raw.write_all(b"{\"schema_id\": \"peach-ice-tea.telemetry\", \"trunc")
+            .unwrap();
 
         let actual = read_jsonl(&path);
 
@@ -711,7 +735,8 @@ mod tests {
         );
         sink.flush();
         let mut raw = OpenOptions::new().append(true).open(&path).unwrap();
-        raw.write_all(b"{\"schema_id\": \"peach-ice-tea.telemetry\", \"trunc").unwrap();
+        raw.write_all(b"{\"schema_id\": \"peach-ice-tea.telemetry\", \"trunc")
+            .unwrap();
 
         let (actual_events, actual_skipped) = read_jsonl_lenient(&path).unwrap();
 
@@ -803,7 +828,10 @@ mod tests {
 
         for _ in 0..3 {
             sink.emit(
-                TelemetryEvent::RunStart(RunStart { task_id: None, repo_root: "/repo".to_string() }),
+                TelemetryEvent::RunStart(RunStart {
+                    task_id: None,
+                    repo_root: "/repo".to_string(),
+                }),
                 None,
                 None,
             );

@@ -70,7 +70,9 @@ impl Stage {
 
     fn apply(&self, context: Context) -> anyhow::Result<(Context, Vec<recall::RecallHandle>)> {
         match self {
-            Stage::Supersede { retention_window } => Ok(supersede::supersede(context, *retention_window)),
+            Stage::Supersede { retention_window } => {
+                Ok(supersede::supersede(context, *retention_window))
+            }
             Stage::Offload { retention_window } => Ok(offload::offload(context, *retention_window)),
             Stage::Score { retention_window } => Ok(score::score(context, *retention_window)),
             Stage::Summarize(compactor) => Ok((compactor.compact(context, false)?, Vec::new())),
@@ -111,7 +113,10 @@ impl Pipeline {
     /// * `target_tokens` - Stop once the context is at or below this size.
     pub fn new(compact: Compact, environment: Environment, target_tokens: usize) -> Self {
         Self {
-            stages: vec![Stage::Summarize(Box::new(Compactor::new(compact, environment)))],
+            stages: vec![Stage::Summarize(Box::new(Compactor::new(
+                compact,
+                environment,
+            )))],
             target_tokens,
             handoff_note: None,
             recall_handles: false,
@@ -126,7 +131,10 @@ impl Pipeline {
     /// * `target_tokens` - Stop once the context is at or below this size.
     pub fn reversible(retention_window: usize, target_tokens: usize) -> Self {
         Self {
-            stages: vec![Stage::Supersede { retention_window }, Stage::Offload { retention_window }],
+            stages: vec![
+                Stage::Supersede { retention_window },
+                Stage::Offload { retention_window },
+            ],
             target_tokens,
             handoff_note: None,
             recall_handles: false,
@@ -143,7 +151,8 @@ impl Pipeline {
     /// Puts S2 scoring just before the summary (T3.9, heuristic scorer).
     pub fn score(mut self, retention_window: usize) -> Self {
         let before_summary = self.stages.len().saturating_sub(1);
-        self.stages.insert(before_summary, Stage::Score { retention_window });
+        self.stages
+            .insert(before_summary, Stage::Score { retention_window });
         self
     }
 
@@ -189,7 +198,9 @@ impl Pipeline {
                 if self.recall_handles {
                     let summarised = recall::write_handles(&before, &context.messages);
                     if let Some(section) = recall::recall_section(&summarised) {
-                        edit_new_summary(&mut context, &before, |text| format!("{text}\n\n{section}"));
+                        edit_new_summary(&mut context, &before, |text| {
+                            format!("{text}\n\n{section}")
+                        });
                     }
                     recall_handles.extend(summarised);
                 }
@@ -204,8 +215,15 @@ impl Pipeline {
 
 /// Rewrites the text of the one message S3 added: the summary is the
 /// message that was not in the context before the stage ran.
-fn edit_new_summary(context: &mut Context, before: &[peach_domain::MessageEntry], edit: impl Fn(&str) -> String) {
-    let summary = context.messages.iter_mut().find(|entry| !before.contains(entry));
+fn edit_new_summary(
+    context: &mut Context,
+    before: &[peach_domain::MessageEntry],
+    edit: impl Fn(&str) -> String,
+) {
+    let summary = context
+        .messages
+        .iter_mut()
+        .find(|entry| !before.contains(entry));
     if let Some(entry) = summary
         && let ContextMessage::Text(text) = &mut **entry
     {
@@ -230,7 +248,9 @@ mod tests {
         let tool_turn = |n: usize| {
             let call = ToolCallFull::new(ToolName::new("read"))
                 .call_id(ToolCallId::new(format!("call_{n}")))
-                .arguments(peach_domain::ToolCallArguments::from_json(&format!(r#"{{"file_path":"f{n}.py"}}"#)));
+                .arguments(peach_domain::ToolCallArguments::from_json(&format!(
+                    r#"{{"file_path":"f{n}.py"}}"#
+                )));
             vec![
                 ContextMessage::assistant(format!("Reading f{n}.py"), None, None, Some(vec![call])),
                 ContextMessage::tool_result(
@@ -240,9 +260,14 @@ mod tests {
                 ),
             ]
         };
-        let long = (0..12).fold(Context::default().add_message(ContextMessage::user("Fix the bug.", None)), |ctx, n| {
-            tool_turn(n).into_iter().fold(ctx, |ctx, m| ctx.add_message(m))
-        });
+        let long = (0..12).fold(
+            Context::default().add_message(ContextMessage::user("Fix the bug.", None)),
+            |ctx, n| {
+                tool_turn(n)
+                    .into_iter()
+                    .fold(ctx, |ctx, m| ctx.add_message(m))
+            },
+        );
         vec![
             Context::default(),
             Context::default().add_message(ContextMessage::user("hello", None)),
@@ -267,14 +292,20 @@ mod tests {
             assert_eq!(actual, expected);
         }
         // Guards the guard: identical no-ops would prove nothing.
-        assert!(compacted >= 2, "only {compacted} fixture(s) were actually compacted");
+        assert!(
+            compacted >= 2,
+            "only {compacted} fixture(s) were actually compacted"
+        );
     }
 
     #[test]
     fn test_the_handoff_note_tops_the_summary_and_nothing_else_changes() {
         let compact = Compact::new().retention_window(2usize).eviction_window(0.5);
         let fixture = fixture_contexts().remove(2);
-        let plain = Pipeline::new(compact.clone(), fixture_environment(), 0).run(fixture.clone()).unwrap().context;
+        let plain = Pipeline::new(compact.clone(), fixture_environment(), 0)
+            .run(fixture.clone())
+            .unwrap()
+            .context;
 
         let actual = Pipeline::new(compact, fixture_environment(), 0)
             .handoff_note(Some("HANDOFF NOTE test".to_string()))
@@ -282,11 +313,20 @@ mod tests {
             .unwrap()
             .context;
 
-        let changed: Vec<usize> = (0..plain.messages.len()).filter(|&i| plain.messages[i] != actual.messages[i]).collect();
+        let changed: Vec<usize> = (0..plain.messages.len())
+            .filter(|&i| plain.messages[i] != actual.messages[i])
+            .collect();
         assert_eq!(changed.len(), 1, "exactly the summary should differ");
-        let ContextMessage::Text(text) = &*actual.messages[changed[0]] else { panic!("summary is not text") };
-        let ContextMessage::Text(plain_text) = &*plain.messages[changed[0]] else { panic!("summary is not text") };
-        assert_eq!(text.content, format!("HANDOFF NOTE test\n\n{}", plain_text.content));
+        let ContextMessage::Text(text) = &*actual.messages[changed[0]] else {
+            panic!("summary is not text")
+        };
+        let ContextMessage::Text(plain_text) = &*plain.messages[changed[0]] else {
+            panic!("summary is not text")
+        };
+        assert_eq!(
+            text.content,
+            format!("HANDOFF NOTE test\n\n{}", plain_text.content)
+        );
     }
 
     #[test]
@@ -294,21 +334,30 @@ mod tests {
         let compact = Compact::new().retention_window(2usize).eviction_window(0.5);
         let fixture = fixture_contexts().remove(2);
 
-        let outcome = Pipeline::new(compact, fixture_environment(), 0).recall_handles(true).run(fixture).unwrap();
+        let outcome = Pipeline::new(compact, fixture_environment(), 0)
+            .recall_handles(true)
+            .run(fixture)
+            .unwrap();
 
         let summary = outcome
             .context
             .messages
             .iter()
             .find_map(|entry| match &**entry {
-                ContextMessage::Text(text) if text.content.contains("RECOVERABLE RESULTS") => Some(text.content.clone()),
+                ContextMessage::Text(text) if text.content.contains("RECOVERABLE RESULTS") => {
+                    Some(text.content.clone())
+                }
                 _ => None,
             })
             .expect("no recall section in the summary");
         assert!(!outcome.recall_handles.is_empty());
         for handle in &outcome.recall_handles {
             assert!(summary.contains(&handle.path.display().to_string()));
-            assert!(std::fs::read_to_string(&handle.path).unwrap().contains("contents of f"));
+            assert!(
+                std::fs::read_to_string(&handle.path)
+                    .unwrap()
+                    .contains("contents of f")
+            );
             let _ = std::fs::remove_file(&handle.path);
         }
     }
@@ -317,24 +366,43 @@ mod tests {
     fn test_when_offload_is_enough_the_lossy_summary_never_runs() {
         let compact = Compact::new().retention_window(2usize).eviction_window(0.5);
         // Results above S1's 2,000-character threshold.
-        let fixture = (0..6).fold(Context::default().add_message(ContextMessage::user("Fix the bug.", None)), |ctx, n| {
-            let call = ToolCallFull::new(ToolName::new("read")).call_id(ToolCallId::new(format!("call_{n}")));
-            ctx.add_message(ContextMessage::assistant(format!("Reading f{n}.py"), None, None, Some(vec![call])))
+        let fixture = (0..6).fold(
+            Context::default().add_message(ContextMessage::user("Fix the bug.", None)),
+            |ctx, n| {
+                let call = ToolCallFull::new(ToolName::new("read"))
+                    .call_id(ToolCallId::new(format!("call_{n}")));
+                ctx.add_message(ContextMessage::assistant(
+                    format!("Reading f{n}.py"),
+                    None,
+                    None,
+                    Some(vec![call]),
+                ))
                 .add_message(ContextMessage::tool_result(
                     ToolResult::new(ToolName::new("read"))
                         .call_id(ToolCallId::new(format!("call_{n}")))
                         .success(format!("contents of f{n}.py ").repeat(200)),
                 ))
-        });
+            },
+        );
         let target = *fixture.token_count() / 2;
 
-        let outcome = Pipeline::new(compact, fixture_environment(), target).offload(2).run(fixture.clone()).unwrap();
+        let outcome = Pipeline::new(compact, fixture_environment(), target)
+            .offload(2)
+            .run(fixture.clone())
+            .unwrap();
 
         assert_eq!(outcome.stage_reached, "offload");
-        assert_eq!(outcome.context.messages.len(), fixture.messages.len(), "nothing summarised away");
+        assert_eq!(
+            outcome.context.messages.len(),
+            fixture.messages.len(),
+            "nothing summarised away"
+        );
         assert!(*outcome.context.token_count() <= target);
         assert!(!outcome.recall_handles.is_empty());
-        outcome.recall_handles.iter().for_each(|h| drop(std::fs::remove_file(&h.path)));
+        outcome
+            .recall_handles
+            .iter()
+            .for_each(|h| drop(std::fs::remove_file(&h.path)));
     }
 
     #[test]
@@ -344,7 +412,11 @@ mod tests {
         let outcome = Pipeline::reversible(2, 0).run(fixture.clone()).unwrap();
 
         assert_eq!(outcome.stage_reached, "offload");
-        assert_eq!(outcome.context.messages.len(), fixture.messages.len(), "a message was summarised away");
+        assert_eq!(
+            outcome.context.messages.len(),
+            fixture.messages.len(),
+            "a message was summarised away"
+        );
         assert!(!format!("{:?}", outcome.context).contains("summary frames"));
     }
 
@@ -352,7 +424,10 @@ mod tests {
     fn test_the_final_stage_always_runs_and_is_reported() {
         let pipeline = Pipeline::new(Compact::new(), fixture_environment(), usize::MAX);
 
-        let actual = pipeline.run(fixture_contexts().remove(2)).unwrap().stage_reached;
+        let actual = pipeline
+            .run(fixture_contexts().remove(2))
+            .unwrap()
+            .stage_reached;
 
         assert_eq!(actual, "summarize");
     }

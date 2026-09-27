@@ -722,15 +722,26 @@ fn concurrency_fixture(parallel: bool) -> TestContext {
     let call = |name: &str, id: &str| {
         ToolCallFull::new(name)
             .call_id(ToolCallId::new(id))
-            .arguments(ToolCallArguments::from(json!({"file_path": format!("/{id}")})))
+            .arguments(ToolCallArguments::from(
+                json!({"file_path": format!("/{id}")}),
+            ))
     };
-    let calls = vec![call("read", "r1"), call("fs_search", "s1"), call("write", "w1"), call("read", "r2"), call("read", "r3")];
+    let calls = vec![
+        call("read", "r1"),
+        call("fs_search", "s1"),
+        call("write", "w1"),
+        call("read", "r2"),
+        call("read", "r3"),
+    ];
     let results: Vec<(ToolCallFull, ToolResult)> = calls
         .iter()
         .map(|call| {
             let result = ToolResult::new(call.name.clone())
                 .call_id(call.call_id.clone().unwrap())
-                .output(Ok(ToolOutput::text(format!("result of {}", call.call_id.as_ref().unwrap().as_str()))));
+                .output(Ok(ToolOutput::text(format!(
+                    "result of {}",
+                    call.call_id.as_ref().unwrap().as_str()
+                ))));
             (call.clone(), result)
         })
         .collect();
@@ -742,14 +753,18 @@ fn concurrency_fixture(parallel: bool) -> TestContext {
         ])
         .mock_tool_call_responses(results)
         .mock_assistant_responses(vec![
-            ChatCompletionMessage::assistant("Working").tool_calls(calls.into_iter().map(Into::into).collect::<Vec<_>>()),
+            ChatCompletionMessage::assistant("Working")
+                .tool_calls(calls.into_iter().map(Into::into).collect::<Vec<_>>()),
             ChatCompletionMessage::assistant("Done").finish_reason(FinishReason::Stop),
         ])
         .tool_delay(std::time::Duration::from_millis(100))
         .parallel_readonly(parallel)
 }
 
-fn overlaps(a: &(String, std::time::Instant, std::time::Instant), b: &(String, std::time::Instant, std::time::Instant)) -> bool {
+fn overlaps(
+    a: &(String, std::time::Instant, std::time::Instant),
+    b: &(String, std::time::Instant, std::time::Instant),
+) -> bool {
     a.1 < b.2 && b.1 < a.2
 }
 
@@ -768,8 +783,14 @@ async fn test_parallel_readonly_overlaps_reads_but_never_the_write() {
     }
     let first_batch: Vec<_> = spans.iter().filter(|span| span.1 < write.1).collect();
     let second_batch: Vec<_> = spans.iter().filter(|span| span.1 > write.1).collect();
-    assert!(overlaps(first_batch[0], first_batch[1]), "the first two reads should overlap");
-    assert!(overlaps(second_batch[0], second_batch[1]), "the last two reads should overlap");
+    assert!(
+        overlaps(first_batch[0], first_batch[1]),
+        "the first two reads should overlap"
+    );
+    assert!(
+        overlaps(second_batch[0], second_batch[1]),
+        "the last two reads should overlap"
+    );
 }
 
 #[tokio::test]
@@ -783,15 +804,28 @@ async fn test_parallel_readonly_keeps_result_order_and_the_start_end_handshake()
     let actual: Vec<String> = context
         .iter()
         .filter_map(|message| match &message.message {
-            ContextMessage::Tool(result) => result.call_id.as_ref().map(|id| id.as_str().to_string()),
+            ContextMessage::Tool(result) => {
+                result.call_id.as_ref().map(|id| id.as_str().to_string())
+            }
             _ => None,
         })
         .collect();
     assert_eq!(actual, vec!["r1", "s1", "w1", "r2", "r3"]);
     // Every call still gets exactly one start and one end.
-    let responses: Vec<&ChatResponse> = fixture.output.chat_responses.iter().filter_map(|r| r.as_ref().ok()).collect();
-    let starts = responses.iter().filter(|r| matches!(r, ChatResponse::ToolCallStart { .. })).count();
-    let ends = responses.iter().filter(|r| matches!(r, ChatResponse::ToolCallEnd(_))).count();
+    let responses: Vec<&ChatResponse> = fixture
+        .output
+        .chat_responses
+        .iter()
+        .filter_map(|r| r.as_ref().ok())
+        .collect();
+    let starts = responses
+        .iter()
+        .filter(|r| matches!(r, ChatResponse::ToolCallStart { .. }))
+        .count();
+    let ends = responses
+        .iter()
+        .filter(|r| matches!(r, ChatResponse::ToolCallEnd(_)))
+        .count();
     assert_eq!((starts, ends), (5, 5));
 }
 
@@ -805,18 +839,23 @@ async fn test_without_the_flag_every_call_runs_alone() {
     assert_eq!(spans.len(), 5);
     for (index, a) in spans.iter().enumerate() {
         for b in &spans[index + 1..] {
-            assert!(!overlaps(a, b), "{} overlapped {} with the flag off", a.0, b.0);
+            assert!(
+                !overlaps(a, b),
+                "{} overlapped {} with the flag off",
+                a.0,
+                b.0
+            );
         }
     }
 }
-
 
 #[tokio::test]
 async fn test_doom_loop_escalation_runs_twice_skips_then_pauses_the_run() {
     // harness: R-LOOP-5 (D-082). Four identical calls with the ladder on: the
     // first two run (the second with a warning), the third is withheld, the
     // fourth is withheld and pauses the run.
-    let tool_call = ToolCallFull::new("fs_read").arguments(ToolCallArguments::from(json!({"path": "loop.txt"})));
+    let tool_call = ToolCallFull::new("fs_read")
+        .arguments(ToolCallArguments::from(json!({"path": "loop.txt"})));
     let tool_result = ToolResult::new("fs_read").output(Ok(ToolOutput::text("Same content")));
     let mut ctx = TestContext::default()
         .mock_tool_call_responses(vec![
@@ -836,7 +875,12 @@ async fn test_doom_loop_escalation_runs_twice_skips_then_pauses_the_run() {
 
     ctx.run("Test doom loop escalation").await.unwrap();
 
-    let responses: Vec<_> = ctx.output.chat_responses.iter().filter_map(|r| r.as_ref().ok()).collect();
+    let responses: Vec<_> = ctx
+        .output
+        .chat_responses
+        .iter()
+        .filter_map(|r| r.as_ref().ok())
+        .collect();
     let ends: Vec<String> = responses
         .iter()
         .filter_map(|response| match response {
@@ -844,12 +888,27 @@ async fn test_doom_loop_escalation_runs_twice_skips_then_pauses_the_run() {
             _ => None,
         })
         .collect();
-    let executed = ends.iter().filter(|text| !text.contains("NOT executed")).count();
-    let warned = ends.iter().filter(|text| text.contains("It ran again this time")).count();
-    let paused = responses
+    let executed = ends
         .iter()
-        .any(|response| matches!(response, ChatResponse::Interrupt { reason: peach_domain::InterruptionReason::DoomLoopEscalation { occurrences: 4, .. } }));
+        .filter(|text| !text.contains("NOT executed"))
+        .count();
+    let warned = ends
+        .iter()
+        .filter(|text| text.contains("It ran again this time"))
+        .count();
+    let paused = responses.iter().any(|response| {
+        matches!(
+            response,
+            ChatResponse::Interrupt {
+                reason: peach_domain::InterruptionReason::DoomLoopEscalation { occurrences: 4, .. }
+            }
+        )
+    });
 
-    assert_eq!((ends.len(), executed, warned), (4, 2, 1), "results: {ends:?}");
+    assert_eq!(
+        (ends.len(), executed, warned),
+        (4, 2, 1),
+        "results: {ends:?}"
+    );
     assert!(paused, "the fourth identical call did not pause the run");
 }

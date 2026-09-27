@@ -234,11 +234,16 @@ mod tests {
     fn test_an_exhausted_daily_quota_is_not_retried_but_a_rate_limit_is() {
         let retry_config = fixture_retry_config(vec![429]);
         let with_body = |body: &str| {
-            anyhow::Error::from(Error::InvalidStatusCode(429)).context(format!("429 Too Many Requests Reason: {body}"))
+            anyhow::Error::from(Error::InvalidStatusCode(429))
+                .context(format!("429 Too Many Requests Reason: {body}"))
         };
 
-        let daily = with_body(r#"{"violations":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}"#);
-        let per_minute = with_body(r#"{"violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel"}]}"#);
+        let daily = with_body(
+            r#"{"violations":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}"#,
+        );
+        let per_minute = with_body(
+            r#"{"violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel"}]}"#,
+        );
 
         assert!(!is_retryable(into_retry(daily, &retry_config)));
         assert!(is_retryable(into_retry(per_minute, &retry_config)));

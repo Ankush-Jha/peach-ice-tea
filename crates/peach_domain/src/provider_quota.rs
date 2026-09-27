@@ -20,10 +20,15 @@ pub fn exhausted_quota(error: &anyhow::Error) -> Option<String> {
     if text.contains("insufficient_quota") {
         return Some("insufficient_quota".to_string());
     }
-    if text.replace("\\\"", "\"").contains("\"limit_source\":\"openrouter_credits\"") {
+    if text
+        .replace("\\\"", "\"")
+        .contains("\"limit_source\":\"openrouter_credits\"")
+    {
         return Some("openrouter_credits".to_string());
     }
-    quota_ids(&text).into_iter().find(|id| id.contains("PerDay"))
+    quota_ids(&text)
+        .into_iter()
+        .find(|id| id.contains("PerDay"))
 }
 
 /// Every `"quotaId": "<id>"` value in `text`, with or without a space after
@@ -36,7 +41,11 @@ fn quota_ids(text: &str) -> Vec<String> {
         .split("\"quotaId\"")
         .skip(1)
         .filter_map(|rest| {
-            let value = rest.trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+            let value = rest
+                .trim_start()
+                .strip_prefix(':')?
+                .trim_start()
+                .strip_prefix('"')?;
             let (id, _) = value.split_once('"')?;
             Some(id.to_string())
         })
@@ -65,7 +74,9 @@ mod tests {
         let actual = vec![
             exhausted_quota(&provider_error(GOOGLE_DAILY)),
             exhausted_quota(&provider_error(GOOGLE_MINUTE)),
-            exhausted_quota(&provider_error(r#"{"error":{"code":"insufficient_quota"}}"#)),
+            exhausted_quota(&provider_error(
+                r#"{"error":{"code":"insufficient_quota"}}"#,
+            )),
             exhausted_quota(&anyhow::anyhow!("Invalid Status Code: 503")),
             exhausted_quota(&provider_error(&GOOGLE_DAILY.replace('"', "\\\""))),
             exhausted_quota(&provider_error(OPENROUTER_CREDITS)),

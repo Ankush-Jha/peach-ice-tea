@@ -15,8 +15,9 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use peach_domain::{
-    CompactionMetrics, Conversation, EndPayload, EventData, EventHandle, RequestPayload, ResponsePayload,
-    StartPayload, TokenCount, ToolOutput, ToolValue, ToolcallEndPayload, ToolcallStartPayload,
+    CompactionMetrics, Conversation, EndPayload, EventData, EventHandle, RequestPayload,
+    ResponsePayload, StartPayload, TokenCount, ToolOutput, ToolValue, ToolcallEndPayload,
+    ToolcallStartPayload,
 };
 use peach_harness::telemetry::event::Truncated;
 use peach_harness::telemetry::{self, TelemetryEvent, event};
@@ -68,7 +69,10 @@ pub struct CompactionObserver {
 }
 
 fn message_count(conversation: &Conversation) -> usize {
-    conversation.context.as_ref().map_or(0, |context| context.messages.len())
+    conversation
+        .context
+        .as_ref()
+        .map_or(0, |context| context.messages.len())
 }
 
 /// The compaction event implied by the counters before and after the
@@ -82,10 +86,14 @@ fn compaction_event(
         messages_before: *messages_before,
         messages_after: *messages_after,
         tokens_before_estimated: Some(
-            metrics_after.tokens_before.saturating_sub(metrics_before.tokens_before),
+            metrics_after
+                .tokens_before
+                .saturating_sub(metrics_before.tokens_before),
         ),
         tokens_after_estimated: Some(
-            metrics_after.tokens_after.saturating_sub(metrics_before.tokens_after),
+            metrics_after
+                .tokens_after
+                .saturating_sub(metrics_before.tokens_after),
         ),
         retained_content_kinds: vec![],
     })
@@ -101,8 +109,15 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionObserver {
         if !telemetry::is_installed() {
             return Ok(());
         }
-        let before = self.state.lock().ok().and_then(|mut state| state.pre_compaction.take());
-        let after = (conversation.metrics.task.compactions.clone(), message_count(conversation));
+        let before = self
+            .state
+            .lock()
+            .ok()
+            .and_then(|mut state| state.pre_compaction.take());
+        let after = (
+            conversation.metrics.task.compactions.clone(),
+            message_count(conversation),
+        );
         if let Some(compaction) = before.and_then(|before| compaction_event(&before, &after)) {
             emit(
                 TelemetryEvent::ContextCompaction(compaction),
@@ -115,7 +130,9 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionObserver {
 }
 
 fn now() -> String {
-    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+    chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string()
 }
 
 /// A provider-reported count, or `None` for a local estimate (§16).
@@ -189,7 +206,11 @@ fn output_text(output: &ToolOutput) -> String {
 }
 
 fn emit(event: TelemetryEvent, conversation: &Conversation, agent_id: &str) {
-    telemetry::emit_with(event, Some(conversation.id.to_string()), Some(agent_id.to_string()));
+    telemetry::emit_with(
+        event,
+        Some(conversation.id.to_string()),
+        Some(agent_id.to_string()),
+    );
 }
 
 /// Records one failed provider attempt that is about to be retried. Called
@@ -240,11 +261,13 @@ pub fn record_model_retry(
 
 /// Whether `error` is an empty completion anywhere in its chain.
 fn is_empty_completion(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| match cause.downcast_ref::<peach_domain::Error>() {
-        Some(peach_domain::Error::EmptyCompletion { .. }) => true,
-        Some(peach_domain::Error::Retryable(inner)) => is_empty_completion(inner),
-        _ => false,
-    })
+    error
+        .chain()
+        .any(|cause| match cause.downcast_ref::<peach_domain::Error>() {
+            Some(peach_domain::Error::EmptyCompletion { .. }) => true,
+            Some(peach_domain::Error::Retryable(inner)) => is_empty_completion(inner),
+            _ => false,
+        })
 }
 
 #[async_trait]
@@ -261,7 +284,11 @@ impl EventHandle<EventData<StartPayload>> for TelemetryHandler {
                 reason: None,
                 iteration: None,
             };
-            emit(TelemetryEvent::AgentState(state), conversation, event.agent.id.as_str());
+            emit(
+                TelemetryEvent::AgentState(state),
+                conversation,
+                event.agent.id.as_str(),
+            );
         }
         Ok(())
     }
@@ -280,9 +307,18 @@ impl EventHandle<EventData<RequestPayload>> for TelemetryHandler {
         let (context_tokens_estimated, context_messages) = conversation
             .context
             .as_ref()
-            .map(|context| (Some(request_tokens_estimated(context)), context.messages.len()))
+            .map(|context| {
+                (
+                    Some(request_tokens_estimated(context)),
+                    context.messages.len(),
+                )
+            })
             .unwrap_or((None, 0));
-        let first = self.state.lock().map(|mut state| !std::mem::replace(&mut state.composed, true)).unwrap_or(false);
+        let first = self
+            .state
+            .lock()
+            .map(|mut state| !std::mem::replace(&mut state.composed, true))
+            .unwrap_or(false);
         if first && let Some(context) = conversation.context.as_ref() {
             emit(
                 TelemetryEvent::ContextComposition(composition(context)),
@@ -359,7 +395,11 @@ impl EventHandle<EventData<ResponsePayload>> for TelemetryHandler {
                 .filter_map(|call| call.call_id.as_ref().map(|id| id.as_str().to_string()))
                 .collect(),
         };
-        emit(TelemetryEvent::ModelCall(model_call), conversation, event.agent.id.as_str());
+        emit(
+            TelemetryEvent::ModelCall(model_call),
+            conversation,
+            event.agent.id.as_str(),
+        );
         Ok(())
     }
 }
@@ -375,7 +415,9 @@ impl EventHandle<EventData<ToolcallStartPayload>> for TelemetryHandler {
             return Ok(());
         }
         if let (Some(id), Ok(mut state)) = (&event.payload.tool_call.call_id, self.state.lock()) {
-            state.tool_started.insert(id.as_str().to_string(), Instant::now());
+            state
+                .tool_started
+                .insert(id.as_str().to_string(), Instant::now());
         }
         Ok(())
     }
@@ -399,7 +441,10 @@ impl EventHandle<EventData<ToolcallEndPayload>> for TelemetryHandler {
             .map(|id| id.as_str().to_string())
             .unwrap_or_default();
         let (started, origin_call_id) = match self.state.lock() {
-            Ok(mut state) => (state.tool_started.remove(&call_id), state.last_model_call_id.clone()),
+            Ok(mut state) => (
+                state.tool_started.remove(&call_id),
+                state.last_model_call_id.clone(),
+            ),
             Err(_) => (None, None),
         };
         let text = output_text(&result.output);
@@ -415,7 +460,11 @@ impl EventHandle<EventData<ToolcallEndPayload>> for TelemetryHandler {
             handle: None,
             origin_call_id,
         };
-        emit(TelemetryEvent::ToolCall(tool), conversation, event.agent.id.as_str());
+        emit(
+            TelemetryEvent::ToolCall(tool),
+            conversation,
+            event.agent.id.as_str(),
+        );
         Ok(())
     }
 }
@@ -434,7 +483,11 @@ impl EventHandle<EventData<EndPayload>> for TelemetryHandler {
                 reason: None,
                 iteration: self.state.lock().ok().map(|state| state.model_calls),
             };
-            emit(TelemetryEvent::AgentState(state), conversation, event.agent.id.as_str());
+            emit(
+                TelemetryEvent::AgentState(state),
+                conversation,
+                event.agent.id.as_str(),
+            );
         }
         Ok(())
     }
@@ -458,7 +511,10 @@ mod tests {
             6,
         );
 
-        let actual = (compaction_event(&before, &after), compaction_event(&before, &before));
+        let actual = (
+            compaction_event(&before, &after),
+            compaction_event(&before, &before),
+        );
 
         let expected = (
             Some(event::ContextCompaction {
@@ -477,11 +533,14 @@ mod tests {
     fn test_the_request_estimate_includes_tool_definitions() {
         let messages_only = peach_domain::Context::default()
             .add_message(peach_domain::ContextMessage::user("x".repeat(400), None));
-        let with_tools = messages_only
-            .clone()
-            .tools(vec![peach_domain::ToolDefinition::new("read").description("d".repeat(4000))]);
+        let with_tools = messages_only.clone().tools(vec![
+            peach_domain::ToolDefinition::new("read").description("d".repeat(4000)),
+        ]);
 
-        let (without, with) = (request_tokens_estimated(&messages_only), request_tokens_estimated(&with_tools));
+        let (without, with) = (
+            request_tokens_estimated(&messages_only),
+            request_tokens_estimated(&with_tools),
+        );
 
         assert_eq!(without, messages_only.token_count_approx() as u64);
         assert!(with >= without + 1000, "{without} -> {with}");
@@ -492,7 +551,9 @@ mod tests {
         let fixture = peach_domain::Context::default()
             .add_message(peach_domain::ContextMessage::system("s".repeat(400)))
             .add_message(peach_domain::ContextMessage::user("u".repeat(40), None))
-            .tools(vec![peach_domain::ToolDefinition::new("read").description("d".repeat(4000))]);
+            .tools(vec![
+                peach_domain::ToolDefinition::new("read").description("d".repeat(4000)),
+            ]);
 
         let actual = composition(&fixture);
 
@@ -505,16 +566,20 @@ mod tests {
 
     #[test]
     fn test_only_provider_reported_counts_are_kept() {
-        let actual = (actual(TokenCount::Actual(42)), actual(TokenCount::Approx(42)));
+        let actual = (
+            actual(TokenCount::Actual(42)),
+            actual(TokenCount::Approx(42)),
+        );
 
         assert_eq!(actual, (Some(42), None));
     }
 
     #[test]
     fn test_tool_output_is_flattened_to_what_the_model_saw() {
-        let fixture = ToolOutput::text("first").combine(ToolOutput::image(
-            Image::new_base64("aGk=".to_string(), "image/png"),
-        ));
+        let fixture = ToolOutput::text("first").combine(ToolOutput::image(Image::new_base64(
+            "aGk=".to_string(),
+            "image/png",
+        )));
 
         let actual = output_text(&fixture);
 

@@ -1133,17 +1133,21 @@ mod tests {
 
         // Gemini 3: thinking_budget must never be set alongside
         // thinking_level.
-        let gemini_3_config =
-            thinking_for(GEMINI_3, &reasoning(Some(true), Some(Effort::High), Some(8000)))
-                .unwrap();
+        let gemini_3_config = thinking_for(
+            GEMINI_3,
+            &reasoning(Some(true), Some(Effort::High), Some(8000)),
+        )
+        .unwrap();
         assert!(gemini_3_config.thinking_level.is_some());
         assert!(gemini_3_config.thinking_budget.is_none());
 
         // Gemini 2.x: thinking_budget from max_tokens, thinking_level never
         // set, regardless of effort.
-        let gemini_2_config =
-            thinking_for(GEMINI_2, &reasoning(Some(true), Some(Effort::High), Some(8000)))
-                .unwrap();
+        let gemini_2_config = thinking_for(
+            GEMINI_2,
+            &reasoning(Some(true), Some(Effort::High), Some(8000)),
+        )
+        .unwrap();
         assert!(gemini_2_config.thinking_level.is_none());
         assert_eq!(gemini_2_config.thinking_budget, Some(8000));
 

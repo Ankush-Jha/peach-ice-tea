@@ -5,8 +5,8 @@
 //! it is deterministic, pure, and needs nothing beyond the call summaries
 //! already in hand.
 
-use super::plan::{decide, ResultStatus, ScoredCall, ScorerConfig, ToolCallSummary};
 use super::RelevanceScorer;
+use super::plan::{ResultStatus, ScoredCall, ScorerConfig, ToolCallSummary, decide};
 
 /// Result sizes at or above this many characters are treated as "large" for
 /// the purpose of the size penalty below: cheap to reconstruct the gist of
@@ -59,7 +59,10 @@ fn recency(message_index: usize, min_index: usize, max_index: usize) -> f32 {
 /// that won't recur.
 fn is_recoverable_by_rerun(tool_name: &str) -> bool {
     let name = tool_name.to_ascii_lowercase();
-    name.contains("read") || name.contains("search") || name.contains("fetch") || name.contains("list")
+    name.contains("read")
+        || name.contains("search")
+        || name.contains("fetch")
+        || name.contains("list")
 }
 
 impl RelevanceScorer for HeuristicScorer {
@@ -67,9 +70,22 @@ impl RelevanceScorer for HeuristicScorer {
         "heuristic"
     }
 
-    fn score(&self, calls: &[ToolCallSummary], _goal: &str, config: &ScorerConfig) -> anyhow::Result<Vec<ScoredCall>> {
-        let min_index = calls.iter().map(|call| call.message_index).min().unwrap_or(0);
-        let max_index = calls.iter().map(|call| call.message_index).max().unwrap_or(0);
+    fn score(
+        &self,
+        calls: &[ToolCallSummary],
+        _goal: &str,
+        config: &ScorerConfig,
+    ) -> anyhow::Result<Vec<ScoredCall>> {
+        let min_index = calls
+            .iter()
+            .map(|call| call.message_index)
+            .min()
+            .unwrap_or(0);
+        let max_index = calls
+            .iter()
+            .map(|call| call.message_index)
+            .max()
+            .unwrap_or(0);
 
         let scored = calls
             .iter()
@@ -83,7 +99,8 @@ impl RelevanceScorer for HeuristicScorer {
                 // likely to still be in play than something from long ago.
                 // An error is worth remembering happened even if its exact
                 // bytes get truncated later, so it adds a modest flat bonus.
-                let keep_call = (0.3 + 0.4 * recency_score + if is_error { 0.2 } else { 0.0 }).clamp(0.0, 1.0);
+                let keep_call =
+                    (0.3 + 0.4 * recency_score + if is_error { 0.2 } else { 0.0 }).clamp(0.0, 1.0);
 
                 // `keep_result` — must the full result stay verbatim?
                 // Errors explain what went wrong and are worth keeping in
@@ -99,13 +116,17 @@ impl RelevanceScorer for HeuristicScorer {
                 let recoverable_penalty = if recoverable { 0.25 } else { 0.0 };
                 let error_bonus = if is_error { 0.4 } else { 0.0 };
                 let keep_result =
-                    (0.35 + 0.2 * recency_score + error_bonus - size_penalty - recoverable_penalty).clamp(0.0, 1.0);
+                    (0.35 + 0.2 * recency_score + error_bonus - size_penalty - recoverable_penalty)
+                        .clamp(0.0, 1.0);
 
                 // R-CTX-4: a result whose path or file name the conversation
                 // mentioned afterwards is still in use, whatever its size or
                 // tool; never score it below a keep.
                 let (keep_call, keep_result) = if call.referenced_later {
-                    (keep_call.max(REFERENCED_FLOOR), keep_result.max(REFERENCED_FLOOR))
+                    (
+                        keep_call.max(REFERENCED_FLOOR),
+                        keep_result.max(REFERENCED_FLOOR),
+                    )
                 } else {
                     (keep_call, keep_result)
                 };
@@ -132,71 +153,158 @@ mod tests {
 
     use super::*;
 
-    fn fixture_call(call_id: &str, result_status: ResultStatus, message_index: usize) -> ToolCallSummary {
-        ToolCallSummary::new(call_id, "shell", "echo hi", result_status, 100, message_index)
+    fn fixture_call(
+        call_id: &str,
+        result_status: ResultStatus,
+        message_index: usize,
+    ) -> ToolCallSummary {
+        ToolCallSummary::new(
+            call_id,
+            "shell",
+            "echo hi",
+            result_status,
+            100,
+            message_index,
+        )
     }
 
     #[test]
     fn test_an_error_result_outranks_a_routine_success_at_the_same_recency() {
-        let calls = vec![fixture_call("error", ResultStatus::Error, 3), fixture_call("ok", ResultStatus::Ok, 3)];
+        let calls = vec![
+            fixture_call("error", ResultStatus::Error, 3),
+            fixture_call("ok", ResultStatus::Ok, 3),
+        ];
         let config = ScorerConfig::default();
         let scorer = HeuristicScorer::new();
 
         let actual = scorer.score(&calls, "goal", &config).unwrap();
 
-        let error_score = actual.iter().find(|scored| scored.call_id == "error").unwrap().keep_result.unwrap();
-        let ok_score = actual.iter().find(|scored| scored.call_id == "ok").unwrap().keep_result.unwrap();
-        assert!(error_score > ok_score, "error {error_score} should outrank success {ok_score}");
+        let error_score = actual
+            .iter()
+            .find(|scored| scored.call_id == "error")
+            .unwrap()
+            .keep_result
+            .unwrap();
+        let ok_score = actual
+            .iter()
+            .find(|scored| scored.call_id == "ok")
+            .unwrap()
+            .keep_result
+            .unwrap();
+        assert!(
+            error_score > ok_score,
+            "error {error_score} should outrank success {ok_score}"
+        );
     }
 
     #[test]
     fn test_a_recent_call_outranks_an_old_call_at_the_same_status() {
-        let calls = vec![fixture_call("old", ResultStatus::Ok, 0), fixture_call("recent", ResultStatus::Ok, 10)];
+        let calls = vec![
+            fixture_call("old", ResultStatus::Ok, 0),
+            fixture_call("recent", ResultStatus::Ok, 10),
+        ];
         let config = ScorerConfig::default();
         let scorer = HeuristicScorer::new();
 
         let actual = scorer.score(&calls, "goal", &config).unwrap();
 
-        let old_score = actual.iter().find(|scored| scored.call_id == "old").unwrap().keep_call.unwrap();
-        let recent_score = actual.iter().find(|scored| scored.call_id == "recent").unwrap().keep_call.unwrap();
-        assert!(recent_score > old_score, "recent {recent_score} should outrank old {old_score}");
+        let old_score = actual
+            .iter()
+            .find(|scored| scored.call_id == "old")
+            .unwrap()
+            .keep_call
+            .unwrap();
+        let recent_score = actual
+            .iter()
+            .find(|scored| scored.call_id == "recent")
+            .unwrap()
+            .keep_call
+            .unwrap();
+        assert!(
+            recent_score > old_score,
+            "recent {recent_score} should outrank old {old_score}"
+        );
     }
 
     #[test]
     fn test_a_large_recoverable_read_scores_lower_for_keep_result_than_a_small_shell_result() {
-        let large_read = ToolCallSummary::new("read", "fs_read", "path=/tmp/big.log", ResultStatus::Ok, 20_000, 5);
-        let small_shell = ToolCallSummary::new("shell", "shell", "echo hi", ResultStatus::Ok, 20, 5);
+        let large_read = ToolCallSummary::new(
+            "read",
+            "fs_read",
+            "path=/tmp/big.log",
+            ResultStatus::Ok,
+            20_000,
+            5,
+        );
+        let small_shell =
+            ToolCallSummary::new("shell", "shell", "echo hi", ResultStatus::Ok, 20, 5);
         let calls = vec![large_read, small_shell];
         let config = ScorerConfig::default();
         let scorer = HeuristicScorer::new();
 
         let actual = scorer.score(&calls, "goal", &config).unwrap();
 
-        let read_score = actual.iter().find(|scored| scored.call_id == "read").unwrap().keep_result.unwrap();
-        let shell_score = actual.iter().find(|scored| scored.call_id == "shell").unwrap().keep_result.unwrap();
-        assert!(read_score < shell_score, "large recoverable read {read_score} should score below small shell result {shell_score}");
+        let read_score = actual
+            .iter()
+            .find(|scored| scored.call_id == "read")
+            .unwrap()
+            .keep_result
+            .unwrap();
+        let shell_score = actual
+            .iter()
+            .find(|scored| scored.call_id == "shell")
+            .unwrap()
+            .keep_result
+            .unwrap();
+        assert!(
+            read_score < shell_score,
+            "large recoverable read {read_score} should score below small shell result {shell_score}"
+        );
     }
 
     #[test]
     fn test_a_read_the_conversation_referred_to_is_kept_and_an_unreferenced_one_is_not() {
-        let read = |id: &str| ToolCallSummary::new(id, "read", r#"{"file_path":"/repo/src/stats.py"}"#, ResultStatus::Ok, 20_000, 5);
+        let read = |id: &str| {
+            ToolCallSummary::new(
+                id,
+                "read",
+                r#"{"file_path":"/repo/src/stats.py"}"#,
+                ResultStatus::Ok,
+                20_000,
+                5,
+            )
+        };
         let later = "The bug is in stats.py: dedupe keeps insertion order.";
         let calls = vec![
-            read("referenced").referenced_later(super::super::plan::is_referenced_later(r#"{"file_path":"/repo/src/stats.py"}"#, later)),
+            read("referenced").referenced_later(super::super::plan::is_referenced_later(
+                r#"{"file_path":"/repo/src/stats.py"}"#,
+                later,
+            )),
             read("unreferenced"),
         ];
         let config = ScorerConfig::default();
 
-        let actual = HeuristicScorer::new().score(&calls, "goal", &config).unwrap();
+        let actual = HeuristicScorer::new()
+            .score(&calls, "goal", &config)
+            .unwrap();
 
-        let decision = |id: &str| actual.iter().find(|scored| scored.call_id == id).unwrap().decision;
+        let decision = |id: &str| {
+            actual
+                .iter()
+                .find(|scored| scored.call_id == id)
+                .unwrap()
+                .decision
+        };
         assert_eq!(decision("referenced"), super::super::plan::Decision::Keep);
         assert_ne!(decision("unreferenced"), super::super::plan::Decision::Keep);
     }
 
     #[test]
     fn test_scoring_is_deterministic() {
-        let calls = vec![fixture_call("a", ResultStatus::Ok, 2), fixture_call("b", ResultStatus::Error, 4)];
+        let calls = vec![
+            fixture_call("a", ResultStatus::Ok, 2),
+            fixture_call("b", ResultStatus::Error, 4),
+        ];
         let config = ScorerConfig::default();
         let scorer = HeuristicScorer::new();
 
@@ -220,8 +328,14 @@ mod tests {
         for scored in &actual {
             let keep_call = scored.keep_call.unwrap();
             let keep_result = scored.keep_result.unwrap();
-            assert!((0.0..=1.0).contains(&keep_call), "keep_call {keep_call} out of range");
-            assert!((0.0..=1.0).contains(&keep_result), "keep_result {keep_result} out of range");
+            assert!(
+                (0.0..=1.0).contains(&keep_call),
+                "keep_call {keep_call} out of range"
+            );
+            assert!(
+                (0.0..=1.0).contains(&keep_result),
+                "keep_result {keep_result} out of range"
+            );
         }
     }
 }

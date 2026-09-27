@@ -239,7 +239,10 @@ fn create_stream_element<T: StreamElement>(
     }
     if stream.truncated_lines_count() > 0 {
         let recovery = match full_output_path {
-            Some(path) => format!("Full output: read {} (the complete output).", path.display()),
+            Some(path) => format!(
+                "Full output: read {} (the complete output).",
+                path.display()
+            ),
             None => "the full output was not saved".to_string(),
         };
         notices.push(format!(
@@ -505,10 +508,11 @@ impl ToolOperation {
                                 truncated_output.end
                             )
                         };
-                        elm = elm.append(
-                            Element::new("truncated")
-                                .text(recovery_notice(withheld as u64, "matches", &recovery)),
-                        );
+                        elm = elm.append(Element::new("truncated").text(recovery_notice(
+                            withheld as u64,
+                            "matches",
+                            &recovery,
+                        )));
                     }
 
                     peach_domain::ToolOutput::text(elm)
@@ -701,11 +705,15 @@ impl ToolOperation {
                 if let Some(path) = content_files.stdout
                     && withheld > 0
                 {
-                    let recovery = format!("Full output: read {} (the complete output).", path.display());
-                    elm = elm.append(
-                        Element::new("truncated")
-                            .text(recovery_notice(withheld as u64, "chars", &recovery)),
+                    let recovery = format!(
+                        "Full output: read {} (the complete output).",
+                        path.display()
                     );
+                    elm = elm.append(Element::new("truncated").text(recovery_notice(
+                        withheld as u64,
+                        "chars",
+                        &recovery,
+                    )));
                 }
 
                 peach_domain::ToolOutput::text(elm)
@@ -878,7 +886,10 @@ impl ToolOperation {
                     peach_domain::MAX_NOTES
                 );
                 if let Some(evicted) = evicted {
-                    text.push_str(&format!(" The oldest note, {}, was dropped to make room.", evicted.label()));
+                    text.push_str(&format!(
+                        " The oldest note, {}, was dropped to make room.",
+                        evicted.label()
+                    ));
                 }
                 peach_domain::ToolOutput::text(text)
             }

@@ -139,7 +139,8 @@ pub struct TaskMetrics {
 /// Each field is a distinct way the agent spent a turn recovering from
 /// something the harness withheld, repeated, or got wrong the first time.
 /// `first_error_recovered` is derived when the exec report is built
-/// (`ExecReport::new`: task completed with `tool_errors > 0`), not counted here.
+/// (`ExecReport::new`: task completed with `tool_errors > 0`), not counted
+/// here.
 #[derive(Debug, Clone, Default, PartialEq, Setters, Serialize, Deserialize)]
 #[setters(into, strip_option)]
 #[serde(default)]
@@ -363,7 +364,8 @@ impl TaskMetrics {
         if rerun {
             self.recovery.rerun_same_command += 1;
         }
-        self.recent_shell_commands.push_back((now, command.to_string()));
+        self.recent_shell_commands
+            .push_back((now, command.to_string()));
         rerun
     }
 
@@ -419,14 +421,20 @@ impl TaskMetrics {
 
         TaskMetrics {
             llm_calls: self.llm_calls.saturating_sub(baseline.llm_calls),
-            failed_llm_calls: self.failed_llm_calls.saturating_sub(baseline.failed_llm_calls),
-            retried_llm_calls: self.retried_llm_calls.saturating_sub(baseline.retried_llm_calls),
+            failed_llm_calls: self
+                .failed_llm_calls
+                .saturating_sub(baseline.failed_llm_calls),
+            retried_llm_calls: self
+                .retried_llm_calls
+                .saturating_sub(baseline.retried_llm_calls),
             input_tokens: self.input_tokens.saturating_sub(baseline.input_tokens),
             cached_input_tokens: self
                 .cached_input_tokens
                 .saturating_sub(baseline.cached_input_tokens),
             output_tokens: self.output_tokens.saturating_sub(baseline.output_tokens),
-            reasoning_tokens: self.reasoning_tokens.saturating_sub(baseline.reasoning_tokens),
+            reasoning_tokens: self
+                .reasoning_tokens
+                .saturating_sub(baseline.reasoning_tokens),
             cost: match (self.cost, baseline.cost) {
                 (Some(after), Some(before)) => Some((after - before).max(0.0)),
                 (after, _) => after,
@@ -436,7 +444,10 @@ impl TaskMetrics {
             // Wall time is not absorbed from subagents, so a delta is meaningless.
             wall_ms: 0,
             compactions: CompactionMetrics {
-                count: self.compactions.count.saturating_sub(baseline.compactions.count),
+                count: self
+                    .compactions
+                    .count
+                    .saturating_sub(baseline.compactions.count),
                 tokens_before: self
                     .compactions
                     .tokens_before
@@ -628,9 +639,7 @@ mod tests {
 
         parent.absorb_subagent(&child_after_run_two.since(&child_after_run_one));
 
-        let expected = TaskMetrics::default()
-            .llm_calls(2u64)
-            .input_tokens(800u64);
+        let expected = TaskMetrics::default().llm_calls(2u64).input_tokens(800u64);
 
         assert_eq!(parent, expected);
     }

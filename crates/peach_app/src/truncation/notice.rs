@@ -11,9 +11,9 @@
 ///   whatever unit is being reported.
 /// * `unit` - a plural, human-readable unit for `withheld_count`, e.g.
 ///   `"lines"`, `"chars"` or `"matches"`.
-/// * `recovery_call` - the exact tool call that gets the withheld content
-///   back, phrased as a complete sentence (e.g. `"Full output: read
-///   /tmp/x.txt (lines 100-1532)."`).
+/// * `recovery_call` - the exact tool call that gets the withheld content back,
+///   phrased as a complete sentence (e.g. `"Full output: read /tmp/x.txt (lines
+///   100-1532)."`).
 pub fn recovery_notice(withheld_count: u64, unit: &str, recovery_call: &str) -> String {
     format!("{withheld_count} more {unit} not shown. {recovery_call}")
 }

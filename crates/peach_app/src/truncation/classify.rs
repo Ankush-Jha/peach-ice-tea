@@ -30,11 +30,13 @@ pub enum OutputClass {
 
 const SEARCH: &[&str] = &["grep", "egrep", "rg", "ag", "ack", "find", "fd"];
 const NOISE: &[&str] = &[
-    "npm", "pnpm", "yarn", "npx", "pip", "pip3", "uv", "poetry", "cargo", "go", "mvn", "gradle", "gradlew", "make",
-    "cmake", "pytest", "tox", "nox", "jest", "vitest", "mocha", "eslint", "tsc", "ruff", "mypy", "flake8", "black",
-    "prettier", "bundle", "rake", "dotnet", "swift", "composer",
+    "npm", "pnpm", "yarn", "npx", "pip", "pip3", "uv", "poetry", "cargo", "go", "mvn", "gradle",
+    "gradlew", "make", "cmake", "pytest", "tox", "nox", "jest", "vitest", "mocha", "eslint", "tsc",
+    "ruff", "mypy", "flake8", "black", "prettier", "bundle", "rake", "dotnet", "swift", "composer",
 ];
-const SOURCE_LIKE: &[&str] = &["cat", "head", "tail", "sed", "bat", "less", "more", "jq", "nl", "awk"];
+const SOURCE_LIKE: &[&str] = &[
+    "cat", "head", "tail", "sed", "bat", "less", "more", "jq", "nl", "awk",
+];
 
 /// The class of `command`, from the first program of each pipeline or list
 /// segment. Search wins over noise, and noise over source-like, so
@@ -43,11 +45,18 @@ const SOURCE_LIKE: &[&str] = &["cat", "head", "tail", "sed", "bat", "less", "mor
 /// # Arguments
 /// * `command` - The shell command line.
 pub fn classify(command: &str) -> OutputClass {
-    let classes: Vec<OutputClass> = segments(command).iter().map(|words| segment_class(words)).collect();
-    [OutputClass::Search, OutputClass::Noise, OutputClass::SourceLike]
-        .into_iter()
-        .find(|class| classes.contains(class))
-        .unwrap_or(OutputClass::Unknown)
+    let classes: Vec<OutputClass> = segments(command)
+        .iter()
+        .map(|words| segment_class(words))
+        .collect();
+    [
+        OutputClass::Search,
+        OutputClass::Noise,
+        OutputClass::SourceLike,
+    ]
+    .into_iter()
+    .find(|class| classes.contains(class))
+    .unwrap_or(OutputClass::Unknown)
 }
 
 fn segments(command: &str) -> Vec<Vec<&str>> {
@@ -60,11 +69,13 @@ fn segments(command: &str) -> Vec<Vec<&str>> {
 
 fn segment_class(words: &[&str]) -> OutputClass {
     // Skip env assignments and wrappers to reach the program itself.
-    let mut rest = words
-        .iter()
-        .copied()
-        .skip_while(|w| w.contains('=') && !w.starts_with('-') || matches!(*w, "sudo" | "time" | "env" | "exec" | "nice"));
-    let Some(program) = rest.next() else { return OutputClass::Unknown };
+    let mut rest = words.iter().copied().skip_while(|w| {
+        w.contains('=') && !w.starts_with('-')
+            || matches!(*w, "sudo" | "time" | "env" | "exec" | "nice")
+    });
+    let Some(program) = rest.next() else {
+        return OutputClass::Unknown;
+    };
     let program = program.rsplit('/').next().unwrap_or(program);
     let next = rest.next();
     match (program, next) {
@@ -105,7 +116,16 @@ pub fn regroup_search(output: &str) -> Option<String> {
     }
     let regrouped: String = groups
         .iter()
-        .map(|(path, lines)| format!("{path}\n{}", lines.iter().map(|l| format!("  {l}")).collect::<Vec<_>>().join("\n")))
+        .map(|(path, lines)| {
+            format!(
+                "{path}\n{}",
+                lines
+                    .iter()
+                    .map(|l| format!("  {l}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
     (regrouped.len() < output.len()).then_some(regrouped)
@@ -126,19 +146,29 @@ pub fn shape_shell_stream<'a>(
     full_output: Option<&std::path::Path>,
 ) -> std::borrow::Cow<'a, str> {
     match classify(command) {
-        OutputClass::Noise if super::noise_compression_enabled() => match super::compress_noise(text) {
-            Some((compressed, collapsed)) => {
-                let recovery = match full_output {
-                    // A parenthetical, not a full stop, after the path: a period
-                    // glued to a path gets read as part of it.
-                    Some(path) => format!("Full output: read {} (the complete output).", path.display()),
-                    None => "The full output was not saved; re-run with a narrower command.".to_string(),
-                };
-                let notice = super::recovery_notice(collapsed as u64, "similar or passing lines", &recovery);
-                std::borrow::Cow::Owned(format!("{compressed}\n{notice}"))
+        OutputClass::Noise if super::noise_compression_enabled() => {
+            match super::compress_noise(text) {
+                Some((compressed, collapsed)) => {
+                    let recovery = match full_output {
+                        // A parenthetical, not a full stop, after the path: a period
+                        // glued to a path gets read as part of it.
+                        Some(path) => format!(
+                            "Full output: read {} (the complete output).",
+                            path.display()
+                        ),
+                        None => "The full output was not saved; re-run with a narrower command."
+                            .to_string(),
+                    };
+                    let notice = super::recovery_notice(
+                        collapsed as u64,
+                        "similar or passing lines",
+                        &recovery,
+                    );
+                    std::borrow::Cow::Owned(format!("{compressed}\n{notice}"))
+                }
+                None => std::borrow::Cow::Borrowed(text),
             }
-            None => std::borrow::Cow::Borrowed(text),
-        },
+        }
         OutputClass::Search if search_regroup_enabled() => {
             regroup_search(text).map_or(std::borrow::Cow::Borrowed(text), std::borrow::Cow::Owned)
         }
@@ -149,7 +179,9 @@ pub fn shape_shell_stream<'a>(
 /// Whether [`shape_shell_stream`] would withhold part of `text`, so its full
 /// form must be saved even when it is under the truncation caps.
 pub fn shaping_withholds(command: &str, text: &str) -> bool {
-    classify(command) == OutputClass::Noise && super::noise_compression_enabled() && super::compress_noise(text).is_some()
+    classify(command) == OutputClass::Noise
+        && super::noise_compression_enabled()
+        && super::compress_noise(text).is_some()
 }
 
 #[cfg(test)]
@@ -176,7 +208,13 @@ mod tests {
         let actual: Vec<OutputClass> = fixture.iter().map(|c| classify(c)).collect();
 
         use OutputClass::*;
-        assert_eq!(actual, vec![Search, Search, Search, Noise, Noise, Noise, SourceLike, SourceLike, Unknown, Unknown]);
+        assert_eq!(
+            actual,
+            vec![
+                Search, Search, Search, Noise, Noise, Noise, SourceLike, SourceLike, Unknown,
+                Unknown
+            ]
+        );
     }
 
     #[test]
@@ -196,6 +234,10 @@ mod tests {
     #[test]
     fn test_output_not_in_match_shape_is_left_alone() {
         assert_eq!(regroup_search("no colon here\n"), None);
-        assert_eq!(regroup_search("a.py:1:x\n"), None, "not smaller, so unchanged");
+        assert_eq!(
+            regroup_search("a.py:1:x\n"),
+            None,
+            "not smaller, so unchanged"
+        );
     }
 }

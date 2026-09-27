@@ -41,9 +41,14 @@ impl Usage {
     /// default is all zero, which cannot be told apart from a provider that
     /// sent no usage, so zero is treated as "not reported".
     pub fn has_reported_tokens(&self) -> bool {
-        [self.prompt_tokens, self.completion_tokens, self.total_tokens, self.reasoning_tokens]
-            .iter()
-            .any(|count| **count > 0)
+        [
+            self.prompt_tokens,
+            self.completion_tokens,
+            self.total_tokens,
+            self.reasoning_tokens,
+        ]
+        .iter()
+        .any(|count| **count > 0)
     }
 
     /// Accumulates usage from another Usage instance by summing all fields.
@@ -463,10 +468,10 @@ mod tests {
 
         let expected = Usage {
             reasoning_tokens: Default::default(),
-            prompt_tokens: TokenCount::Actual(1000),   // max(1000, 0)
+            prompt_tokens: TokenCount::Actual(1000), // max(1000, 0)
             completion_tokens: TokenCount::Actual(75), // max(1, 75) = 75, NOT 1+75=76
-            total_tokens: TokenCount::Actual(1001),    // max(1001, 75)
-            cached_tokens: TokenCount::Actual(300),    // max(300, 0)
+            total_tokens: TokenCount::Actual(1001),  // max(1001, 75)
+            cached_tokens: TokenCount::Actual(300),  // max(300, 0)
             cost: None,
         };
 

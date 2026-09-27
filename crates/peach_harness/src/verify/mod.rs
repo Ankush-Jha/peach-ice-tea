@@ -4,8 +4,8 @@
 //! - every test run the agent makes is classified and recorded
 //!   ([`record_test_run`]);
 //! - a run may not end on an unverified edit: when the agent stops after
-//!   editing source with no passing test run since, it is told to verify,
-//!   at most [`MAX_GATE_NUDGES`] times ([`gate_message`]);
+//!   editing source with no passing test run since, it is told to verify, at
+//!   most [`MAX_GATE_NUDGES`] times ([`gate_message`]);
 //! - after the agent stops, the harness runs the tests once itself
 //!   ([`run_final`]), so the evidence says whether they pass rather than
 //!   whether the agent claimed they did (§16).
@@ -67,7 +67,12 @@ pub fn record_edit() {
 /// * `exit_code` - Its exit code, when it exited on its own.
 /// * `output` - stdout and stderr together.
 /// * `duration_ms` - How long it took.
-pub fn record_shell(command: &str, exit_code: Option<i32>, output: &str, duration_ms: u64) -> Option<String> {
+pub fn record_shell(
+    command: &str,
+    exit_code: Option<i32>,
+    output: &str,
+    duration_ms: u64,
+) -> Option<String> {
     let detected = crate::runtime::get().and_then(|runtime| runtime.test_command());
     if !is_test_command(command, detected) {
         // D-037 gap closed: an edit made through the shell arms the gate too.
@@ -130,7 +135,9 @@ fn attribution_of(class: FailureClass) -> event::FailureAttribution {
 /// * `class` - The run's classification.
 /// * `test` - The repository's test command, when known.
 pub fn recovery_hint(class: FailureClass, test: Option<&TestCommand>) -> Option<String> {
-    let command = test.map_or(String::new(), |test| format!(" The expected test command is `{}`.", test.command));
+    let command = test.map_or(String::new(), |test| {
+        format!(" The expected test command is `{}`.", test.command)
+    });
     match class {
         FailureClass::Environment => Some(format!(
             "RECOVERY HINT (harness): this run failed before any test executed — a runner, tool or module is \
@@ -154,18 +161,26 @@ pub fn recovery_hint(class: FailureClass, test: Option<&TestCommand>) -> Option<
 /// `/dev/null` or scratch files elsewhere don't count). Relative paths are
 /// taken as relative to the repository root, where the agent's shell runs.
 fn writes_inside(command: &str, repo: &Path) -> bool {
-    crate::integrity::mutated_paths(command).iter().any(|target| {
-        let target = target.trim_matches(['"', '\'']);
-        let path = Path::new(target);
-        if path.is_absolute() {
-            path.starts_with(repo)
-        } else {
-            !target.is_empty() && !target.starts_with('&')
-        }
-    })
+    crate::integrity::mutated_paths(command)
+        .iter()
+        .any(|target| {
+            let target = target.trim_matches(['"', '\'']);
+            let path = Path::new(target);
+            if path.is_absolute() {
+                path.starts_with(repo)
+            } else {
+                !target.is_empty() && !target.starts_with('&')
+            }
+        })
 }
 
-fn emit_test_run(command: &str, exit_code: Option<i32>, result: &Classification, duration_ms: u64, origin: &str) {
+fn emit_test_run(
+    command: &str,
+    exit_code: Option<i32>,
+    result: &Classification,
+    duration_ms: u64,
+    origin: &str,
+) {
     telemetry::emit(TelemetryEvent::TestRun(event::TestRun {
         command: command.to_string(),
         exit_code,
@@ -309,21 +324,32 @@ static FAILED_AGENT_RUNS: std::sync::atomic::AtomicU32 = std::sync::atomic::Atom
 /// reproducing the bug, which is expected on every bug fix and says nothing
 /// about how hard the fix is (D-101).
 fn is_failed_fix_attempt(class: FailureClass, edited: bool) -> bool {
-    edited && matches!(class, FailureClass::TestAssertion | FailureClass::Compile | FailureClass::Timeout)
+    edited
+        && matches!(
+            class,
+            FailureClass::TestAssertion | FailureClass::Compile | FailureClass::Timeout
+        )
 }
 
 /// How hard the task has proven so far: `(agent test runs that failed on the
 /// code, runtime-gate runs)`. A gate run happens only when the model stopped
 /// and the harness had to check, so any is a sign of difficulty.
 pub fn difficulty_signals() -> (u32, u32) {
-    let gate = *RUNTIME_GATE_ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
-    (FAILED_AGENT_RUNS.load(std::sync::atomic::Ordering::Relaxed), gate)
+    let gate = *RUNTIME_GATE_ATTEMPTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    (
+        FAILED_AGENT_RUNS.load(std::sync::atomic::Ordering::Relaxed),
+        gate,
+    )
 }
 static RUNTIME_GATE_ATTEMPTS: std::sync::Mutex<u32> = std::sync::Mutex::new(0);
 
 /// Records one runtime-gate attempt. Returns `(attempt_number, exhausted)`.
 pub fn runtime_gate_attempt() -> (u32, bool) {
-    let mut attempts = RUNTIME_GATE_ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut attempts = RUNTIME_GATE_ATTEMPTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     *attempts += 1;
     (*attempts, *attempts > MAX_RUNTIME_GATE_ATTEMPTS)
 }
@@ -344,7 +370,13 @@ fn run_bounded(root: &Path, command: &str, timeout: Duration) -> (Option<i32>, b
     builder.process_group(0);
     let mut child = match builder.spawn() {
         Ok(child) => child,
-        Err(error) => return (None, false, format!("could not start the test command: {error}")),
+        Err(error) => {
+            return (
+                None,
+                false,
+                format!("could not start the test command: {error}"),
+            );
+        }
     };
     let mut stdout = child.stdout.take();
     let reader = std::thread::spawn(move || {
@@ -372,7 +404,11 @@ fn run_bounded(root: &Path, command: &str, timeout: Duration) -> (Option<i32>, b
         }
     };
     let output = reader.join().unwrap_or_default();
-    (exit_code, timed_out, bstr::ByteSlice::to_str_lossy(output.as_slice()).into_owned())
+    (
+        exit_code,
+        timed_out,
+        bstr::ByteSlice::to_str_lossy(output.as_slice()).into_owned(),
+    )
 }
 
 #[cfg(test)]
@@ -396,10 +432,14 @@ mod tests {
 
     #[test]
     fn test_hinted_failures_are_attributed_to_whoever_caused_them() {
-        let actual: Vec<_> = [FailureClass::Environment, FailureClass::Compile, FailureClass::Timeout]
-            .into_iter()
-            .map(attribution_of)
-            .collect();
+        let actual: Vec<_> = [
+            FailureClass::Environment,
+            FailureClass::Compile,
+            FailureClass::Timeout,
+        ]
+        .into_iter()
+        .map(attribution_of)
+        .collect();
 
         let expected = vec![
             event::FailureAttribution::Environment,
@@ -421,12 +461,18 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(actual, vec![(true, false), (true, false), (false, true), (false, false)]);
+        assert_eq!(
+            actual,
+            vec![(true, false), (true, false), (false, true), (false, false)]
+        );
     }
 
     #[test]
     fn test_hints_only_for_failures_that_happened_before_the_code_ran() {
-        let test = TestCommand { command: "python3 -m unittest".into(), source: "explicit".into() };
+        let test = TestCommand {
+            command: "python3 -m unittest".into(),
+            source: "explicit".into(),
+        };
 
         let actual: Vec<bool> = [
             FailureClass::Passed,
@@ -442,7 +488,10 @@ mod tests {
 
         assert_eq!(actual, vec![false, false, false, true, true, true]);
         let environment = recovery_hint(FailureClass::Environment, Some(&test)).unwrap();
-        assert!(environment.contains("`python3 -m unittest`") && environment.contains("do not modify tests"));
+        assert!(
+            environment.contains("`python3 -m unittest`")
+                && environment.contains("do not modify tests")
+        );
     }
 
     #[test]
@@ -469,7 +518,10 @@ mod tests {
         let mut no_edit = State::default();
         let mut verified = State { edited: true, edited_since_green: false, ..State::default() };
 
-        let actual = (gate_decision(&mut no_edit, None), gate_decision(&mut verified, None));
+        let actual = (
+            gate_decision(&mut no_edit, None),
+            gate_decision(&mut verified, None),
+        );
 
         assert_eq!(actual, ((None, false), (None, false)));
     }
@@ -490,15 +542,24 @@ mod tests {
     #[test]
     fn test_the_final_run_is_bounded_and_classified() {
         let dir = tempfile::tempdir().unwrap();
-        let passing = TestCommand { command: "echo 'Ran 2 tests in 0.1s'; echo; echo OK".into(), source: "explicit".into() };
+        let passing = TestCommand {
+            command: "echo 'Ran 2 tests in 0.1s'; echo; echo OK".into(),
+            source: "explicit".into(),
+        };
         let hanging = TestCommand { command: "sleep 30".into(), source: "explicit".into() };
 
         let ok = run_final(dir.path(), &passing, Duration::from_secs(10));
         let started = Instant::now();
         let hung = run_final(dir.path(), &hanging, Duration::from_millis(300));
 
-        assert_eq!((ok.class, ok.passed, ok.failed), (FailureClass::Passed, Some(2), Some(0)));
+        assert_eq!(
+            (ok.class, ok.passed, ok.failed),
+            (FailureClass::Passed, Some(2), Some(0))
+        );
         assert_eq!((hung.class, hung.timed_out), (FailureClass::Timeout, true));
-        assert!(started.elapsed() < Duration::from_secs(5), "the timeout must kill the process");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the timeout must kill the process"
+        );
     }
 }

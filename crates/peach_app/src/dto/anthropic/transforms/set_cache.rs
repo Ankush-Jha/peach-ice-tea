@@ -54,7 +54,8 @@ impl Transformer for SetCache {
         // harness: D-084 — a breakpoint on the last tool definition caches the
         // whole (static, ~38 KB) tool array on its own, instead of only as part
         // of the system prefix. Anthropic rejects more than
-        // `MAX_CACHE_BREAKPOINTS` per request, so it is added only when it fits.
+        // `MAX_CACHE_BREAKPOINTS` per request, so it is added only when it
+        // fits.
         for tool in request.tools.iter_mut() {
             tool.set_cached(false);
         }
@@ -74,11 +75,19 @@ pub const MAX_CACHE_BREAKPOINTS: usize = 4;
 /// Cache breakpoints set anywhere in `request`: system messages, message
 /// content and tool definitions.
 pub fn count_cache_breakpoints(request: &Request) -> usize {
-    let system = request.system.as_ref().map_or(0, |messages| messages.iter().filter(|m| m.is_cached()).count());
+    let system = request.system.as_ref().map_or(0, |messages| {
+        messages.iter().filter(|m| m.is_cached()).count()
+    });
     let messages = request
         .get_messages()
         .iter()
-        .map(|message| message.content.iter().filter(|content| content.is_cached()).count())
+        .map(|message| {
+            message
+                .content
+                .iter()
+                .filter(|content| content.is_cached())
+                .count()
+        })
         .sum::<usize>();
     let tools = request.tools.iter().filter(|tool| tool.is_cached()).count();
     system + messages + tools
@@ -187,13 +196,20 @@ mod tests {
             .map(|i| ContextMessage::Text(TextMessage::new(Role::System, format!("s{i}"))).into())
             .collect();
         for c in turns.chars() {
-            let role = if c == 'u' { Role::User } else { Role::Assistant };
+            let role = if c == 'u' {
+                Role::User
+            } else {
+                Role::Assistant
+            };
             messages.push(ContextMessage::Text(TextMessage::new(role, c.to_string())).into());
         }
-        let context = Context::default()
-            .messages(messages)
-            .tools((0..tools).map(|i| peach_domain::ToolDefinition::new(format!("tool_{i}"))).collect::<Vec<_>>());
-        SetCache.transform(Request::try_from(context).expect("Failed to convert context to request"))
+        let context = Context::default().messages(messages).tools(
+            (0..tools)
+                .map(|i| peach_domain::ToolDefinition::new(format!("tool_{i}")))
+                .collect::<Vec<_>>(),
+        );
+        SetCache
+            .transform(Request::try_from(context).expect("Failed to convert context to request"))
     }
 
     #[test]
@@ -215,7 +231,10 @@ mod tests {
 
                 let actual = count_cache_breakpoints(&request);
 
-                assert!(actual <= MAX_CACHE_BREAKPOINTS, "{system} system + {turns}: {actual} breakpoints");
+                assert!(
+                    actual <= MAX_CACHE_BREAKPOINTS,
+                    "{system} system + {turns}: {actual} breakpoints"
+                );
             }
         }
     }
@@ -236,7 +255,10 @@ mod tests {
     fn test_the_tool_breakpoint_is_dropped_when_the_limit_is_already_reached() {
         let request = transformed_with_tools(3, "uau", 4);
 
-        let actual = (count_cache_breakpoints(&request), request.tools.iter().any(|tool| tool.is_cached()));
+        let actual = (
+            count_cache_breakpoints(&request),
+            request.tools.iter().any(|tool| tool.is_cached()),
+        );
 
         assert_eq!(actual, (4, false));
     }

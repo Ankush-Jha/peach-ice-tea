@@ -24,10 +24,19 @@ pub fn enabled() -> bool {
 
 /// Names models commonly use for a schema property, by property.
 const ALIASES: &[(&str, &[&str])] = &[
-    ("file_path", &["filepath", "file", "filename", "path_to_file"]),
+    (
+        "file_path",
+        &["filepath", "file", "filename", "path_to_file"],
+    ),
     ("command", &["cmd", "shell_command", "script"]),
-    ("old_string", &["old", "old_str", "old_text", "search", "find"]),
-    ("new_string", &["new", "new_str", "new_text", "replace", "replacement"]),
+    (
+        "old_string",
+        &["old", "old_str", "old_text", "search", "find"],
+    ),
+    (
+        "new_string",
+        &["new", "new_str", "new_text", "replace", "replacement"],
+    ),
     ("content", &["contents", "text", "data", "body"]),
     ("pattern", &["regex", "query", "search_pattern"]),
 ];
@@ -36,13 +45,16 @@ const ALIASES: &[(&str, &[&str])] = &[
 /// and the renames made, as `(from, to)`.
 pub fn correct(call: ToolCallFull) -> (ToolCallFull, Vec<(String, String)>) {
     let name = call.name.as_str().trim().to_ascii_lowercase();
-    let Some(definition) = ToolCatalog::iter().map(|tool| tool.definition()).find(|d| d.name.as_str() == name)
+    let Some(definition) = ToolCatalog::iter()
+        .map(|tool| tool.definition())
+        .find(|d| d.name.as_str() == name)
     else {
         return (call, vec![]);
     };
     let schema = serde_json::to_value(&definition.input_schema).unwrap_or_default();
-    let properties: Vec<String> = schema["properties"]
-        .as_object()
+    let properties: Vec<String> = schema
+        .get("properties")
+        .and_then(Value::as_object)
         .map(|properties| properties.keys().cloned().collect())
         .unwrap_or_default();
     let Ok(Value::Object(arguments)) = call.arguments.parse() else {
@@ -58,7 +70,10 @@ pub fn correct(call: ToolCallFull) -> (ToolCallFull, Vec<(String, String)>) {
 
 /// The pure core of [`correct`]: renames keys not in `properties` to the one
 /// property they unambiguously mean.
-fn rename_keys(arguments: Map<String, Value>, properties: &[String]) -> (Map<String, Value>, Vec<(String, String)>) {
+fn rename_keys(
+    arguments: Map<String, Value>,
+    properties: &[String],
+) -> (Map<String, Value>, Vec<(String, String)>) {
     let mut out = Map::new();
     let mut renames = vec![];
     // Known keys first, so a rename can never overwrite one.
@@ -91,12 +106,17 @@ fn target(key: &str, properties: &[String]) -> Option<String> {
     }
     let alias = ALIASES
         .iter()
-        .find(|(property, aliases)| properties.iter().any(|p| p == property) && aliases.contains(&snake.as_str()))
+        .find(|(property, aliases)| {
+            properties.iter().any(|p| p == property) && aliases.contains(&snake.as_str())
+        })
         .map(|(property, _)| property.to_string());
     if alias.is_some() {
         return alias;
     }
-    let near: Vec<&String> = properties.iter().filter(|property| distance(&snake, property) <= 2).collect();
+    let near: Vec<&String> = properties
+        .iter()
+        .filter(|property| distance(&snake, property) <= 2)
+        .collect();
     match near.as_slice() {
         [only] => Some((*only).clone()),
         _ => None,
@@ -125,14 +145,22 @@ fn distance(a: &str, b: &str) -> usize {
     let b: Vec<char> = b.chars().collect();
     let mut previous: Vec<usize> = (0..=b.len()).collect();
     for (i, ca) in a.chars().enumerate() {
-        let mut current = vec![i + 1];
-        for (j, cb) in b.iter().enumerate() {
+        let mut current = Vec::with_capacity(b.len() + 1);
+        current.push(i + 1);
+        // `previous` always has `b.len() + 1` entries, so each window is the
+        // (diagonal, above) pair for one character of `b`.
+        for (pair, cb) in previous.windows(2).zip(&b) {
+            let [diagonal, above] = [
+                pair.first().copied().unwrap_or(0),
+                pair.last().copied().unwrap_or(0),
+            ];
+            let left = current.last().copied().unwrap_or(0);
             let cost = usize::from(ca != *cb);
-            current.push((previous[j] + cost).min(previous[j + 1] + 1).min(current[j] + 1));
+            current.push((diagonal + cost).min(above + 1).min(left + 1));
         }
         previous = current;
     }
-    previous[b.len()]
+    previous.last().copied().unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -147,7 +175,9 @@ mod tests {
     }
 
     fn renamed(arguments: Value, names: &[&str]) -> (Value, Vec<(String, String)>) {
-        let Value::Object(map) = arguments else { unreachable!() };
+        let Value::Object(map) = arguments else {
+            unreachable!()
+        };
         let (out, renames) = rename_keys(map, &properties(names));
         (Value::Object(out), renames)
     }
@@ -195,16 +225,25 @@ mod tests {
 
     #[test]
     fn test_real_catalog_calls_are_corrected_and_others_untouched() {
-        let misnamed = ToolCallFull::new("write")
-            .arguments(ToolCallArguments::from(json!({"filePath": "/tmp/a", "contents": "x"})));
-        let correct_call = ToolCallFull::new("read").arguments(ToolCallArguments::from(json!({"file_path": "/tmp/a"})));
-        let mcp = ToolCallFull::new("mcp_github_search").arguments(ToolCallArguments::from(json!({"q": 1})));
+        let misnamed = ToolCallFull::new("write").arguments(ToolCallArguments::from(
+            json!({"filePath": "/tmp/a", "contents": "x"}),
+        ));
+        let correct_call = ToolCallFull::new("read")
+            .arguments(ToolCallArguments::from(json!({"file_path": "/tmp/a"})));
+        let mcp = ToolCallFull::new("mcp_github_search")
+            .arguments(ToolCallArguments::from(json!({"q": 1})));
 
         let (fixed, renames) = correct(misnamed);
-        let untouched: Vec<usize> = [correct_call, mcp].into_iter().map(|call| correct(call).1.len()).collect();
+        let untouched: Vec<usize> = [correct_call, mcp]
+            .into_iter()
+            .map(|call| correct(call).1.len())
+            .collect();
 
         assert_eq!(renames.len(), 2);
-        assert_eq!(fixed.arguments.parse().unwrap(), json!({"file_path": "/tmp/a", "content": "x"}));
+        assert_eq!(
+            fixed.arguments.parse().unwrap(),
+            json!({"file_path": "/tmp/a", "content": "x"})
+        );
         assert_eq!(untouched, vec![0, 0]);
     }
 }

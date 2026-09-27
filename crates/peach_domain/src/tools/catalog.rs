@@ -1957,12 +1957,7 @@ mod tests {
             ("sem_search", "queries[]"),
         ];
 
-        fn walk(
-            value: &serde_json::Value,
-            path: &str,
-            is_root: bool,
-            found: &mut Vec<String>,
-        ) {
+        fn walk(value: &serde_json::Value, path: &str, is_root: bool, found: &mut Vec<String>) {
             let serde_json::Value::Object(map) = value else {
                 return;
             };
@@ -1995,9 +1990,7 @@ mod tests {
             walk(&schema_value, "", true, &mut found_paths);
 
             for path in found_paths {
-                let is_allowlisted = ALLOWLIST
-                    .iter()
-                    .any(|(t, p)| *t == tool_name && *p == path);
+                let is_allowlisted = ALLOWLIST.iter().any(|(t, p)| *t == tool_name && *p == path);
                 if !is_allowlisted {
                     violations.push((tool_name.clone(), path.clone()));
                 }
@@ -2017,9 +2010,7 @@ mod tests {
         // stale exception nobody notices.
         for (tool_name, path) in ALLOWLIST {
             assert!(
-                all_found
-                    .iter()
-                    .any(|(t, p)| t == tool_name && p == path),
+                all_found.iter().any(|(t, p)| t == tool_name && p == path),
                 "allowlisted nested `required` at {tool_name}.{path} no longer \
                  exists; remove it from ALLOWLIST"
             );

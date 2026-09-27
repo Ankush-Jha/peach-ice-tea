@@ -716,7 +716,8 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
                     telemetry: telemetry.as_deref(),
                     test_command: test_command.as_deref(),
                 };
-                self.handle_exec(task.clone(), json, max_duration_secs, outputs).await?;
+                self.handle_exec(task.clone(), json, max_duration_secs, outputs)
+                    .await?;
                 return Ok(());
             }
             TopLevelCommand::Banner => {
@@ -4314,7 +4315,9 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
                     }
                     // harness: R-LOOP-5 (D-082)
                     InterruptionReason::DoomLoopEscalation { tool_name, occurrences } => {
-                        format!("`{tool_name}` called with identical arguments {occurrences} times in a row")
+                        format!(
+                            "`{tool_name}` called with identical arguments {occurrences} times in a row"
+                        )
                     }
                 };
 
@@ -4412,7 +4415,9 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
             Ok(()) => {
                 let budget = async {
                     match max_duration_secs {
-                        Some(secs) => tokio::time::sleep(std::time::Duration::from_secs(secs)).await,
+                        Some(secs) => {
+                            tokio::time::sleep(std::time::Duration::from_secs(secs)).await
+                        }
                         None => std::future::pending().await,
                     }
                 };
@@ -4441,9 +4446,10 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
         // it fires, the agent was stopped mid-flight, and whatever it was
         // doing is not the outcome (R-HACK-1, D-029).
         let (outcome, error) = match (timed_out, &run, &self.state.interruption) {
-            _ if let Some(signal) = interrupted => {
-                (TaskOutcome::Interrupted, Some(format!("stopped by {signal}")))
-            }
+            _ if let Some(signal) = interrupted => (
+                TaskOutcome::Interrupted,
+                Some(format!("stopped by {signal}")),
+            ),
             (true, _, _) => (
                 TaskOutcome::TimeBudget,
                 Some(format!(
@@ -4452,7 +4458,11 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
                 )),
             ),
             (false, Err(error), _) => (TaskOutcome::Error, Some(exec_error_summary(error))),
-            (false, Ok(_), Some(InterruptionReason::MaxToolFailurePerTurnLimitReached { limit, .. })) => (
+            (
+                false,
+                Ok(_),
+                Some(InterruptionReason::MaxToolFailurePerTurnLimitReached { limit, .. }),
+            ) => (
                 TaskOutcome::ToolFailureLimit,
                 Some(format!("tool failure limit ({limit}) reached")),
             ),
@@ -4462,7 +4472,9 @@ impl<A: API + ConsoleWriter + 'static, F: Fn(PeachConfig) -> A + Send + Sync> UI
             ),
             (false, Ok(_), Some(InterruptionReason::DoomLoopEscalation { occurrences, .. })) => (
                 TaskOutcome::DoomLoopEscalation,
-                Some(format!("doom-loop escalation after {occurrences} identical calls")),
+                Some(format!(
+                    "doom-loop escalation after {occurrences} identical calls"
+                )),
             ),
             (false, Ok(_), None) => (TaskOutcome::Completed, None),
         };
@@ -5514,8 +5526,19 @@ const EXEC_ERROR_MAX_CHARS: usize = 300;
 fn exec_error_summary(error: &anyhow::Error) -> String {
     // Outermost context says what was being done; the root cause says why it
     // failed. The layers between are where providers put response bodies.
-    let outer = error.to_string().lines().next().unwrap_or_default().to_string();
-    let root = error.root_cause().to_string().lines().next().unwrap_or_default().to_string();
+    let outer = error
+        .to_string()
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    let root = error
+        .root_cause()
+        .to_string()
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_string();
     let first_line = if error.chain().count() > 1 && root != outer {
         format!("{outer}: {root}")
     } else {

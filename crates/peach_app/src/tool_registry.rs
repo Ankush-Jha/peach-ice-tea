@@ -109,15 +109,25 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> ToolReg
             let input = if crate::tool_correction::enabled() {
                 let (input, renames) = crate::tool_correction::correct(input);
                 for (from, to) in renames {
-                    peach_harness::telemetry::emit(peach_harness::telemetry::TelemetryEvent::Recovery(
-                        peach_harness::telemetry::event::Recovery {
-                            action: "tool_argument_renamed".to_string(),
-                            trigger: format!("{}: `{from}` is not a parameter; used `{to}`", input.name),
-                            outcome: None,
-                            origin_call_id: input.call_id.as_ref().map(|id| id.as_str().to_string()),
-                            attribution: Some(peach_harness::telemetry::event::FailureAttribution::Model),
-                        },
-                    ));
+                    peach_harness::telemetry::emit(
+                        peach_harness::telemetry::TelemetryEvent::Recovery(
+                            peach_harness::telemetry::event::Recovery {
+                                action: "tool_argument_renamed".to_string(),
+                                trigger: format!(
+                                    "{}: `{from}` is not a parameter; used `{to}`",
+                                    input.name
+                                ),
+                                outcome: None,
+                                origin_call_id: input
+                                    .call_id
+                                    .as_ref()
+                                    .map(|id| id.as_str().to_string()),
+                                attribution: Some(
+                                    peach_harness::telemetry::event::FailureAttribution::Model,
+                                ),
+                            },
+                        ),
+                    );
                 }
                 input
             } else {
@@ -191,7 +201,9 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> ToolReg
                 } else {
                     "User has denied the permission to execute this tool"
                 };
-                return Ok(ToolOutput::text(Element::new("permission_denied").cdata(reason)));
+                return Ok(ToolOutput::text(
+                    Element::new("permission_denied").cdata(reason),
+                ));
             }
 
             // Validate tool modality support before execution
@@ -1166,7 +1178,6 @@ fn test_all_rendered_tool_descriptions() {
     );
 }
 
-
 /// Refusal text when a tool call would alter a protected test file.
 ///
 /// Maps each file-touching tool onto the operation it performs, and screens
@@ -1176,7 +1187,11 @@ fn harness_integrity_refusal(tool_input: &ToolCatalog, cwd: &std::path::Path) ->
 
     let resolve = |path: &str| -> std::path::PathBuf {
         let path = std::path::Path::new(path);
-        if path.is_absolute() { path.to_path_buf() } else { cwd.join(path) }
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            cwd.join(path)
+        }
     };
 
     match tool_input {

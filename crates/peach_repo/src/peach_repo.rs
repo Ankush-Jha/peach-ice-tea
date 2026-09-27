@@ -26,12 +26,12 @@ use url::Url;
 use crate::agent::PeachAgentRepository;
 use crate::context_engine::PeachContextEngineRepository;
 use crate::conversation::ConversationRepositoryImpl;
-use crate::thread_event::{EventLogWriter, ThreadEventRepositoryImpl};
 use crate::database::{DatabasePool, PoolConfig};
 use crate::fs_snap::PeachFileSnapshotService;
 use crate::fuzzy_search::PeachFuzzySearchRepository;
 use crate::provider::{PeachChatRepository, PeachProviderRepository};
 use crate::skill::PeachSkillRepository;
+use crate::thread_event::{EventLogWriter, ThreadEventRepositoryImpl};
 use crate::validation::PeachValidationRepository;
 
 /// Repository layer that implements all domain repository traits
@@ -72,7 +72,9 @@ impl<
             db_pool.clone(),
             env.workspace_hash(),
         ));
-        let event_log = Arc::new(EventLogWriter::new(Arc::new(ThreadEventRepositoryImpl::new(db_pool.clone()))));
+        let event_log = Arc::new(EventLogWriter::new(Arc::new(
+            ThreadEventRepositoryImpl::new(db_pool.clone()),
+        )));
 
         let mcp_cache_repository = Arc::new(CacacheStorage::new(
             env.cache_dir().join("mcp_cache"),

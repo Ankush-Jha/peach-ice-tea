@@ -13,12 +13,12 @@
 //! - `missing_model_config`: nothing is configured at all.
 //! - `unknown_provider`: a provider id that exists nowhere in the registry.
 //! - `provider_connection_failure`: a real, configured provider whose URL
-//!   points at a closed local port, capped with `--max-duration-secs` — a
-//!   real run pays for `RetryConfig`'s backoff every time a request fails at
-//!   the transport level, and that backoff is not itself bounded (confirmed
-//!   manually: an uncapped run here was still retrying past two minutes
-//!   before being killed), so this scenario is the one place a wall-clock
-//!   budget is not optional for a bounded test.
+//!   points at a closed local port, capped with `--max-duration-secs` — a real
+//!   run pays for `RetryConfig`'s backoff every time a request fails at the
+//!   transport level, and that backoff is not itself bounded (confirmed
+//!   manually: an uncapped run here was still retrying past two minutes before
+//!   being killed), so this scenario is the one place a wall-clock budget is
+//!   not optional for a bounded test.
 //!
 //! Every test uses its own `PEACH_CONFIG` directory (`tempfile::tempdir`), so
 //! `~/.peach` is never read or written.
@@ -178,12 +178,8 @@ fn test_missing_model_config_exits_fast_with_open_never_written_pipe() {
     let config = isolated_config_dir();
     let project = isolated_project_dir();
 
-    let (status, elapsed) = run_with_open_never_written_pipe(
-        &config,
-        &project,
-        &[],
-        &["exec", "do nothing", "--json"],
-    );
+    let (status, elapsed) =
+        run_with_open_never_written_pipe(&config, &project, &[], &["exec", "do nothing", "--json"]);
 
     assert_eq!(status.code(), Some(1));
     assert!(elapsed < BOUND);
@@ -343,13 +339,17 @@ fn test_a_project_mcp_config_never_prompts_even_with_a_terminal() {
     let (_status, elapsed) = wait_bounded(child, BOUND);
 
     let output = std::fs::read_to_string(&transcript).unwrap_or_default();
-    assert!(!output.contains("Accept"), "the trust prompt was shown:\n{output}");
+    assert!(
+        !output.contains("Accept"),
+        "the trust prompt was shown:\n{output}"
+    );
     // It reached the (closed-port) provider instead of waiting: transport
     // retries, then the budget, not a prompt. A pty merges stderr into the
     // transcript, so the spinner's last frame shares the JSON's line.
-    let json = &output[output.rfind("{\"outcome\"").expect("no outcome JSON in transcript")..];
+    let json = &output[output
+        .rfind("{\"outcome\"")
+        .expect("no outcome JSON in transcript")..];
     let report = last_json_line(json);
     assert_eq!(report["outcome"], "time_budget");
     assert!(elapsed < BOUND);
 }
-

@@ -11,7 +11,14 @@ use peach_domain::ToolName;
 pub const ENV_VAR: &str = "PEACH_HARNESS_PARALLEL_READONLY";
 
 /// Wire names of the read-only built-in tools.
-const READ_ONLY: &[&str] = &["read", "fs_search", "sem_search", "fetch", "skill", "todo_read"];
+const READ_ONLY: &[&str] = &[
+    "read",
+    "fs_search",
+    "sem_search",
+    "fetch",
+    "skill",
+    "todo_read",
+];
 
 /// Whether this process enables concurrent read-only batches.
 pub fn enabled() -> bool {
@@ -28,12 +35,15 @@ pub fn is_read_only(name: &ToolName) -> bool {
 /// read-only calls is one concurrent segment, and every other call is a
 /// segment of its own. Concatenating the segments gives back the input, in
 /// order.
-pub fn segments<T>(calls: &[T], name: impl Fn(&T) -> &ToolName) -> Vec<(bool, std::ops::Range<usize>)> {
+pub fn segments<T>(
+    calls: &[T],
+    name: impl Fn(&T) -> &ToolName,
+) -> Vec<(bool, std::ops::Range<usize>)> {
     let mut segments = Vec::new();
     let mut index = 0;
     while index < calls.len() {
         let mut end = index;
-        while end < calls.len() && is_read_only(name(&calls[end])) {
+        while calls.get(end).is_some_and(|call| is_read_only(name(call))) {
             end += 1;
         }
         if end - index >= 2 {
@@ -57,20 +67,38 @@ mod tests {
     #[test]
     fn test_every_read_only_name_is_a_real_catalog_tool() {
         for name in READ_ONLY {
-            assert!(ToolCatalog::contains(&ToolName::new(*name)), "{name} is not a catalog tool");
+            assert!(
+                ToolCatalog::contains(&ToolName::new(*name)),
+                "{name} is not a catalog tool"
+            );
         }
     }
 
     #[test]
     fn test_only_runs_of_two_or_more_reads_become_concurrent() {
-        let fixture: Vec<ToolName> = ["read", "fs_search", "write", "read", "shell", "READ", "fetch", "todo_read"]
-            .into_iter()
-            .map(ToolName::new)
-            .collect();
+        let fixture: Vec<ToolName> = [
+            "read",
+            "fs_search",
+            "write",
+            "read",
+            "shell",
+            "READ",
+            "fetch",
+            "todo_read",
+        ]
+        .into_iter()
+        .map(ToolName::new)
+        .collect();
 
         let actual = segments(&fixture, |name| name);
 
-        let expected = vec![(true, 0..2), (false, 2..3), (false, 3..4), (false, 4..5), (true, 5..8)];
+        let expected = vec![
+            (true, 0..2),
+            (false, 2..3),
+            (false, 3..4),
+            (false, 4..5),
+            (true, 5..8),
+        ];
         assert_eq!(actual, expected);
     }
 }

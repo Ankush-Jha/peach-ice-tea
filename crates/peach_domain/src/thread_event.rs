@@ -85,7 +85,9 @@ pub fn replay_history(events: &[ThreadEvent]) -> Vec<MessageEntry> {
         .iter()
         .filter_map(|event| match event {
             ThreadEvent::Message { entry } => Some((**entry).clone()),
-            ThreadEvent::Revise { .. } | ThreadEvent::Compaction { .. } | ThreadEvent::Note { .. } => None,
+            ThreadEvent::Revise { .. }
+            | ThreadEvent::Compaction { .. }
+            | ThreadEvent::Note { .. } => None,
         })
         .collect()
 }
@@ -118,7 +120,10 @@ pub fn replay_view(events: &[ThreadEvent]) -> Vec<MessageEntry> {
 /// # Arguments
 /// * `events` - The conversation's events in `seq` order.
 /// * `compaction_index` - Where in `events` to start looking.
-pub fn replay_view_before_compaction(events: &[ThreadEvent], compaction_index: usize) -> Vec<MessageEntry> {
+pub fn replay_view_before_compaction(
+    events: &[ThreadEvent],
+    compaction_index: usize,
+) -> Vec<MessageEntry> {
     let end = events
         .iter()
         .enumerate()
@@ -148,9 +153,10 @@ pub const OFFLOAD_STUB_MARKER: &str = "[offloaded by the harness:";
 
 fn is_offload_stub(entry: &MessageEntry) -> bool {
     match &entry.message {
-        crate::ContextMessage::Tool(result) => {
-            result.output.values.iter().any(|v| v.as_str().is_some_and(|t| t.starts_with(OFFLOAD_STUB_MARKER)))
-        }
+        crate::ContextMessage::Tool(result) => result.output.values.iter().any(|v| {
+            v.as_str()
+                .is_some_and(|t| t.starts_with(OFFLOAD_STUB_MARKER))
+        }),
         _ => false,
     }
 }
@@ -179,7 +185,11 @@ fn same_run(a: &[MessageEntry], b: &[MessageEntry]) -> bool {
 /// * `after` - The view to record.
 pub fn events_between(before: &[MessageEntry], after: &[MessageEntry]) -> Vec<ThreadEvent> {
     let messages = |entries: &[MessageEntry]| -> Vec<ThreadEvent> {
-        entries.iter().cloned().map(|entry| ThreadEvent::Message { entry: Box::new(entry) }).collect()
+        entries
+            .iter()
+            .cloned()
+            .map(|entry| ThreadEvent::Message { entry: Box::new(entry) })
+            .collect()
     };
     // Bounds are checked by construction (`split_at_checked`, `zip`, `get`),
     // so no input can make this panic (CI's `indexing_slicing` lint).
@@ -190,14 +200,24 @@ pub fn events_between(before: &[MessageEntry], after: &[MessageEntry]) -> Vec<Th
                 .zip(before)
                 .enumerate()
                 .filter(|(_, (now, was))| now != was)
-                .map(|(index, (now, _))| ThreadEvent::Revise { index, entry: Box::new(now.clone()) });
+                .map(|(index, (now, _))| ThreadEvent::Revise {
+                    index,
+                    entry: Box::new(now.clone()),
+                });
             return revisions.chain(messages(tail)).collect();
         }
         // An in-place rewrite (S1 offload replaces results with stubs, same
         // positions), possibly followed by new messages: the view is
         // `before`'s length of `after`, and the rest is new.
-        if head.iter().zip(before).all(|(now, was)| same_content(now, was) || is_offload_stub(now)) {
-            let mut events = vec![ThreadEvent::Compaction { messages_before: before.len(), view: head.to_vec() }];
+        if head
+            .iter()
+            .zip(before)
+            .all(|(now, was)| same_content(now, was) || is_offload_stub(now))
+        {
+            let mut events = vec![ThreadEvent::Compaction {
+                messages_before: before.len(),
+                view: head.to_vec(),
+            }];
             events.extend(messages(tail));
             return events;
         }
@@ -206,18 +226,27 @@ pub fn events_between(before: &[MessageEntry], after: &[MessageEntry]) -> Vec<Th
     // began (`Compactor::compress_single_sequence`): after the common prefix,
     // the first entry is that summary, then whatever it kept from `before`,
     // then anything new.
-    let prefix = before.iter().zip(after).take_while(|(b, a)| same_content(a, b)).count();
+    let prefix = before
+        .iter()
+        .zip(after)
+        .take_while(|(b, a)| same_content(a, b))
+        .count();
     let kept = before.get(prefix..).unwrap_or_default();
     let view_end = if prefix >= after.len() {
         after.len()
     } else {
         (prefix + 1..after.len())
             .rev()
-            .find(|&i| after.get(i).is_some_and(|entry| kept.iter().any(|k| same_content(k, entry))))
+            .find(|&i| {
+                after
+                    .get(i)
+                    .is_some_and(|entry| kept.iter().any(|k| same_content(k, entry)))
+            })
             .map_or(prefix + 1, |last_kept| last_kept + 1)
     };
     let (view, rest) = after.split_at_checked(view_end).unwrap_or((after, &[]));
-    let mut events = vec![ThreadEvent::Compaction { messages_before: before.len(), view: view.to_vec() }];
+    let mut events =
+        vec![ThreadEvent::Compaction { messages_before: before.len(), view: view.to_vec() }];
     events.extend(messages(rest));
     events
 }
@@ -230,14 +259,21 @@ pub trait ThreadEventRepository: Send + Sync {
     ///
     /// # Errors
     /// Returns an error if storage fails; nothing is appended then.
-    async fn append_events(&self, conversation_id: &ConversationId, events: Vec<ThreadEvent>) -> anyhow::Result<()>;
+    async fn append_events(
+        &self,
+        conversation_id: &ConversationId,
+        events: Vec<ThreadEvent>,
+    ) -> anyhow::Result<()>;
 
     /// The conversation's events in `seq` order; empty for a conversation
     /// that predates the log.
     ///
     /// # Errors
     /// Returns an error if storage fails or an event cannot be decoded.
-    async fn list_events(&self, conversation_id: &ConversationId) -> anyhow::Result<Vec<StoredThreadEvent>>;
+    async fn list_events(
+        &self,
+        conversation_id: &ConversationId,
+    ) -> anyhow::Result<Vec<StoredThreadEvent>>;
 }
 
 #[cfg(test)]
@@ -251,9 +287,16 @@ mod tests {
         let call = ToolCallFull::new(ToolName::new("read")).call_id(ToolCallId::new("c1"));
         Context::default()
             .add_message(ContextMessage::user("Fix the adder.", None))
-            .add_message(ContextMessage::assistant("Reading it.", None, None, Some(vec![call])))
+            .add_message(ContextMessage::assistant(
+                "Reading it.",
+                None,
+                None,
+                Some(vec![call]),
+            ))
             .add_message(ContextMessage::tool_result(
-                ToolResult::new(ToolName::new("read")).call_id(ToolCallId::new("c1")).success("def add(a, b): return a - b"),
+                ToolResult::new(ToolName::new("read"))
+                    .call_id(ToolCallId::new("c1"))
+                    .success("def add(a, b): return a - b"),
             ))
             .add_message(ContextMessage::assistant("Found it.", None, None, None))
     }
@@ -261,7 +304,8 @@ mod tests {
     #[test]
     fn test_replaying_the_log_reproduces_the_pre_compaction_context_byte_for_byte() {
         let before = fixture_context();
-        let summary = Context::default().add_message(ContextMessage::user("Summary: adder read.", None));
+        let summary =
+            Context::default().add_message(ContextMessage::user("Summary: adder read.", None));
         let mut events = events_between(&[], &before.messages);
         events.extend(events_between(&before.messages, &summary.messages));
 
@@ -295,8 +339,14 @@ mod tests {
     fn test_messages_appended_after_a_compaction_in_the_same_snapshot_stay_in_the_history() {
         let before = fixture_context().messages;
         let summary: MessageEntry = ContextMessage::user("Summary.", None).into();
-        let new_turn: MessageEntry = ContextMessage::assistant("Next step.", None, None, None).into();
-        let after = vec![before[0].clone(), summary.clone(), before[3].clone(), new_turn.clone()];
+        let new_turn: MessageEntry =
+            ContextMessage::assistant("Next step.", None, None, None).into();
+        let after = vec![
+            before[0].clone(),
+            summary.clone(),
+            before[3].clone(),
+            new_turn.clone(),
+        ];
         let mut events = events_between(&[], &before);
         events.extend(events_between(&before, &after));
 
@@ -307,7 +357,14 @@ mod tests {
         );
 
         let expected = (
-            vec!["message", "message", "message", "message", "compaction", "message"],
+            vec![
+                "message",
+                "message",
+                "message",
+                "message",
+                "compaction",
+                "message",
+            ],
             after,
             Some(new_turn),
         );
@@ -327,9 +384,17 @@ mod tests {
         let mut events = events_between(&[], &before);
         events.extend(events_between(&before, &after));
 
-        let actual = (events.iter().map(ThreadEvent::kind).collect::<Vec<_>>(), replay_view(&events));
+        let actual = (
+            events.iter().map(ThreadEvent::kind).collect::<Vec<_>>(),
+            replay_view(&events),
+        );
 
-        let expected = (vec!["message", "message", "message", "message", "revise", "message"], after);
+        let expected = (
+            vec![
+                "message", "message", "message", "message", "revise", "message",
+            ],
+            after,
+        );
         assert_eq!(actual, expected);
     }
 
@@ -339,12 +404,23 @@ mod tests {
         let summary: MessageEntry = ContextMessage::user("Summary.", None).into();
         let new_call: MessageEntry = ContextMessage::assistant("Calling.", None, None, None).into();
         let new_result: MessageEntry = ContextMessage::user("result", None).into();
-        let after = vec![before[0].clone(), summary, new_call.clone(), new_result.clone()];
+        let after = vec![
+            before[0].clone(),
+            summary,
+            new_call.clone(),
+            new_result.clone(),
+        ];
 
-        let actual: Vec<&str> = events_between(&before, &after).iter().map(ThreadEvent::kind).collect();
+        let actual: Vec<&str> = events_between(&before, &after)
+            .iter()
+            .map(ThreadEvent::kind)
+            .collect();
 
         assert_eq!(actual, vec!["compaction", "message", "message"]);
-        assert_eq!(replay_history(&events_between(&before, &after)), vec![new_call, new_result]);
+        assert_eq!(
+            replay_history(&events_between(&before, &after)),
+            vec![new_call, new_result]
+        );
     }
 
     #[test]

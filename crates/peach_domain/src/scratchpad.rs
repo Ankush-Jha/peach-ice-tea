@@ -91,7 +91,12 @@ mod tests {
 
         let (note, evicted) = fixture.add("one more").unwrap();
 
-        let actual = (note.id, evicted.map(|e| e.id), fixture.items.len(), fixture.items[0].id);
+        let actual = (
+            note.id,
+            evicted.map(|e| e.id),
+            fixture.items.len(),
+            fixture.items[0].id,
+        );
         let expected = (MAX_NOTES as u64 + 1, Some(1), MAX_NOTES, 2);
         assert_eq!(actual, expected);
     }

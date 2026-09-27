@@ -42,7 +42,6 @@ fn stream_needs_dump(
     line_count_truncated || has_clipped_line
 }
 
-
 impl<
     S: FsReadService
         + ImageReadService
@@ -109,21 +108,24 @@ impl<
             }
             ToolOperation::Shell { output } => {
                 let config = self.services.get_config()?;
-                // harness: R-OUT-2 (D-073) — compressed output must be recoverable
-                // even when it is under the truncation caps.
+                // harness: R-OUT-2 (D-073) — compressed output must be
+                // recoverable even when it is under the
+                // truncation caps.
                 let command = &output.output.command;
-                let stdout_truncated = stream_needs_dump(
-                    &output.output.stdout,
-                    config.max_stdout_prefix_lines,
-                    config.max_stdout_suffix_lines,
-                    config.max_stdout_line_chars,
-                ) || crate::truncation::shaping_withholds(command, &output.output.stdout);
-                let stderr_truncated = stream_needs_dump(
-                    &output.output.stderr,
-                    config.max_stdout_prefix_lines,
-                    config.max_stdout_suffix_lines,
-                    config.max_stdout_line_chars,
-                ) || crate::truncation::shaping_withholds(command, &output.output.stderr);
+                let stdout_truncated =
+                    stream_needs_dump(
+                        &output.output.stdout,
+                        config.max_stdout_prefix_lines,
+                        config.max_stdout_suffix_lines,
+                        config.max_stdout_line_chars,
+                    ) || crate::truncation::shaping_withholds(command, &output.output.stdout);
+                let stderr_truncated =
+                    stream_needs_dump(
+                        &output.output.stderr,
+                        config.max_stdout_prefix_lines,
+                        config.max_stdout_suffix_lines,
+                        config.max_stdout_line_chars,
+                    ) || crate::truncation::shaping_withholds(command, &output.output.stderr);
 
                 let mut files = TempContentFiles::default();
 
@@ -211,9 +213,11 @@ impl<
                 // truncation dump files, `reread_same_range` if this exact
                 // range on this path was already the most recent read.
                 let fired = context.with_metrics(|metrics| {
-                    metrics
-                        .task
-                        .record_read(&normalized_path, output.info.start_line, output.info.end_line)
+                    metrics.task.record_read(
+                        &normalized_path,
+                        output.info.start_line,
+                        output.info.end_line,
+                    )
                 })?;
                 for counter in fired {
                     emit_counter_recovery(counter, &normalized_path);
@@ -225,7 +229,11 @@ impl<
                 let normalized_path = self.normalize_path(input.file_path.clone());
                 let output = self
                     .services
-                    .write(normalized_path.clone(), input.content.clone(), input.overwrite)
+                    .write(
+                        normalized_path.clone(),
+                        input.content.clone(),
+                        input.overwrite,
+                    )
                     .await?;
                 // Breaks the `reread_same_range` chain for this path (T1.3).
                 context.with_metrics(|metrics| metrics.task.record_write(&normalized_path))?;
@@ -325,7 +333,9 @@ impl<
                     .unwrap_or_else(|| self.services.get_environment().cwd.display().to_string());
                 let normalized_cwd = self.normalize_path(cwd);
                 // `rerun_same_command` within the last five LLM calls (T1.3).
-                if context.with_metrics(|metrics| metrics.task.record_shell_command(&input.command))? {
+                if context
+                    .with_metrics(|metrics| metrics.task.record_shell_command(&input.command))?
+                {
                     emit_counter_recovery("rerun_same_command", &input.command);
                 }
                 let output = self
@@ -455,7 +465,11 @@ impl<
         // `read` of one counts as `offload_read`. Nothing did before, so that
         // counter could never move.
         context.with_metrics(|metrics| {
-            for path in truncation_path.stdout.iter().chain(truncation_path.stderr.iter()) {
+            for path in truncation_path
+                .stdout
+                .iter()
+                .chain(truncation_path.stderr.iter())
+            {
                 metrics.task.record_dump_file(path.display().to_string());
             }
         })?;
@@ -504,7 +518,10 @@ mod stream_needs_dump_tests {
 
     #[test]
     fn test_too_many_lines_needs_a_dump() {
-        let content = (1..=10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let content = (1..=10)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let actual = stream_needs_dump(&content, 2, 2, 2000);
         assert!(actual);
     }

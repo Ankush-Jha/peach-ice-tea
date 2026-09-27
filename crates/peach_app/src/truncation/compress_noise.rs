@@ -16,7 +16,18 @@ pub fn noise_compression_enabled() -> bool {
 }
 
 /// Words that make a line worth keeping verbatim, with its context.
-const SIGNAL: &[&str] = &["error", "warn", "fail", "panic", "exception", "traceback", "assert", "fatal", "denied", "not found"];
+const SIGNAL: &[&str] = &[
+    "error",
+    "warn",
+    "fail",
+    "panic",
+    "exception",
+    "traceback",
+    "assert",
+    "fatal",
+    "denied",
+    "not found",
+];
 /// Lines kept around each signal line, before and after.
 const CONTEXT: usize = 3;
 /// Trailing lines always kept: where tools print their summary.
@@ -39,41 +50,54 @@ pub fn compress_noise(raw: &str) -> Option<(String, usize)> {
 
     let mut out: Vec<String> = Vec::new();
     let mut collapsed = 0usize;
+    // Bounds-checked throughout (`get`, `split_first`, `split_at`), so no
+    // input can panic here (CI's `indexing_slicing` lint).
+    let kept = |index: usize| keep.get(index).copied().unwrap_or(true);
     let mut i = 0;
-    while i < lines.len() {
-        if keep[i] {
-            out.push(lines[i].clone());
+    while let Some(line) = lines.get(i) {
+        if kept(i) {
+            out.push(line.clone());
             i += 1;
             continue;
         }
         // A stretch of lines nothing marked as important.
         let start = i;
-        while i < lines.len() && !keep[i] {
+        while i < lines.len() && !kept(i) {
             i += 1;
         }
-        let (passing, rest): (Vec<&String>, Vec<&String>) = lines[start..i].iter().partition(|l| is_passing_test(l));
+        let stretch = lines.get(start..i).unwrap_or_default();
+        let (passing, rest): (Vec<&String>, Vec<&String>) =
+            stretch.iter().partition(|l| is_passing_test(l));
         if !passing.is_empty() {
             out.push(format!("… {} passing test lines", passing.len()));
             collapsed += passing.len();
         }
-        let mut j = 0;
-        while j < rest.len() {
-            let shape = normalise(rest[j]);
-            let run = rest[j..].iter().take_while(|l| normalise(l) == shape).count();
+        let mut remaining: &[&String] = &rest;
+        while let Some((first, _)) = remaining.split_first() {
+            let shape = normalise(first);
+            // At least 1: the first line always matches its own shape.
+            let run = remaining
+                .iter()
+                .take_while(|l| normalise(l) == shape)
+                .count()
+                .max(1);
+            let (group, tail) = remaining.split_at(run.min(remaining.len()));
             if run >= MIN_RUN {
-                out.push(rest[j].clone());
+                out.push((*first).clone());
                 out.push(format!("… {} similar lines", run - 1));
                 collapsed += run - 1;
             } else {
-                out.extend(rest[j..j + run].iter().map(|l| (*l).clone()));
+                out.extend(group.iter().map(|l| (*l).clone()));
             }
-            j += run;
+            remaining = tail;
         }
     }
 
     let compressed = out.join("\n");
     let saved = raw.len().saturating_sub(compressed.len());
-    (saved >= MIN_SAVING_CHARS && saved as f64 >= raw.len() as f64 * MIN_SAVING_RATIO && collapsed > 0)
+    (saved >= MIN_SAVING_CHARS
+        && saved as f64 >= raw.len() as f64 * MIN_SAVING_RATIO
+        && collapsed > 0)
         .then_some((compressed, collapsed))
 }
 
@@ -107,11 +131,15 @@ fn keep_mask(lines: &[String]) -> Vec<bool> {
         if SIGNAL.iter().any(|word| lower.contains(word)) && !is_passing_test(line) {
             let from = i.saturating_sub(CONTEXT);
             let to = (i + CONTEXT + 1).min(lines.len());
-            keep[from..to].iter_mut().for_each(|k| *k = true);
+            if let Some(window) = keep.get_mut(from..to) {
+                window.iter_mut().for_each(|k| *k = true);
+            }
         }
     }
     let summary_from = lines.len().saturating_sub(SUMMARY_LINES);
-    keep[summary_from..].iter_mut().for_each(|k| *k = true);
+    if let Some(summary) = keep.get_mut(summary_from..) {
+        summary.iter_mut().for_each(|k| *k = true);
+    }
     keep
 }
 
@@ -133,7 +161,15 @@ fn is_passing_test(line: &str) -> bool {
 fn normalise(line: &str) -> String {
     line.split_whitespace()
         .enumerate()
-        .map(|(i, word)| if i == 0 { word.to_string() } else if word.chars().any(|c| c.is_ascii_digit()) { "#".into() } else { "*".into() })
+        .map(|(i, word)| {
+            if i == 0 {
+                word.to_string()
+            } else if word.chars().any(|c| c.is_ascii_digit()) {
+                "#".into()
+            } else {
+                "*".into()
+            }
+        })
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -145,7 +181,9 @@ mod tests {
     use super::*;
 
     fn cargo_build_with_one_error() -> String {
-        let mut log: Vec<String> = (0..300).map(|i| format!("   Compiling crate{i} v0.{i}.1")).collect();
+        let mut log: Vec<String> = (0..300)
+            .map(|i| format!("   Compiling crate{i} v0.{i}.1"))
+            .collect();
         log.push("error[E0308]: mismatched types".into());
         log.push("  --> src/money.rs:14:5".into());
         log.push("   |".into());
@@ -166,12 +204,19 @@ mod tests {
         assert!(actual.contains("could not compile `ledger`"));
         assert!(actual.contains("similar lines"));
         assert!(collapsed > 250, "collapsed {collapsed}");
-        assert!(actual.len() * 5 < fixture.len(), "{} vs {}", actual.len(), fixture.len());
+        assert!(
+            actual.len() * 5 < fixture.len(),
+            "{} vs {}",
+            actual.len(),
+            fixture.len()
+        );
     }
 
     #[test]
     fn test_pytest_passes_are_counted_and_the_failure_kept_with_context() {
-        let mut log: Vec<String> = (0..200).map(|i| format!("tests/test_money.py::test_case_{i} PASSED")).collect();
+        let mut log: Vec<String> = (0..200)
+            .map(|i| format!("tests/test_money.py::test_case_{i} PASSED"))
+            .collect();
         log.insert(120, "tests/test_money.py::test_half_cent FAILED".into());
         log.push("E       AssertionError: assert Decimal('2.66') == Decimal('2.67')".into());
         log.push("=========== 1 failed, 200 passed in 0.52s ===========".into());
@@ -187,8 +232,12 @@ mod tests {
 
     #[test]
     fn test_npm_progress_frames_and_ansi_are_stripped() {
-        let frames: String = (0..400).map(|i| format!("\u{1b}[32m⸨{i:>3}%⸩\u{1b}[0m reify:package-{i}: timing reifyNode\r")).collect();
-        let fixture = format!("{frames}\nadded 812 packages in 9s\nnpm WARN deprecated left-pad@1.3.0: use String.padStart\n");
+        let frames: String = (0..400)
+            .map(|i| format!("\u{1b}[32m⸨{i:>3}%⸩\u{1b}[0m reify:package-{i}: timing reifyNode\r"))
+            .collect();
+        let fixture = format!(
+            "{frames}\nadded 812 packages in 9s\nnpm WARN deprecated left-pad@1.3.0: use String.padStart\n"
+        );
 
         let (actual, _) = compress_noise(&fixture).unwrap_or((clean_line(&fixture), 0));
 
@@ -203,6 +252,10 @@ mod tests {
         let dense: String = (0..200).map(|i| format!("error: problem {i}\n")).collect();
 
         assert_eq!(compress_noise(short), None);
-        assert_eq!(compress_noise(&dense), None, "every line is a signal line; nothing to collapse");
+        assert_eq!(
+            compress_noise(&dense),
+            None,
+            "every line is a signal line; nothing to collapse"
+        );
     }
 }

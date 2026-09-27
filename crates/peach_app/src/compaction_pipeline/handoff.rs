@@ -13,8 +13,17 @@ use peach_domain::{Context, ContextMessage, Role, Todo, TodoStatus};
 pub const ENV_VAR: &str = "PEACH_HARNESS_HANDOFF_NOTE";
 
 /// Words that mark a user message as a constraint to keep verbatim.
-const CONSTRAINT_MARKERS: &[&str] =
-    &["must", "never", "always", "don't", "do not", "only", "should not", "shouldn't", "required"];
+const CONSTRAINT_MARKERS: &[&str] = &[
+    "must",
+    "never",
+    "always",
+    "don't",
+    "do not",
+    "only",
+    "should not",
+    "shouldn't",
+    "required",
+];
 
 /// Longest verbatim excerpt kept per constraint or failure.
 const MAX_EXCERPT_CHARS: usize = 600;
@@ -49,7 +58,10 @@ pub fn handoff_note(context: &Context, todos: &[Todo], changed_files: &[String])
     let constraints = user_constraints(context);
     if !constraints.is_empty() {
         let lines: Vec<String> = constraints.iter().map(|c| format!("- \"{c}\"")).collect();
-        sections.push(format!("User constraints (verbatim):\n{}", lines.join("\n")));
+        sections.push(format!(
+            "User constraints (verbatim):\n{}",
+            lines.join("\n")
+        ));
     }
 
     if !changed_files.is_empty() {
@@ -97,13 +109,17 @@ fn user_constraints(context: &Context) -> Vec<String> {
         .messages
         .iter()
         .filter_map(|entry| match &**entry {
-            ContextMessage::Text(text) if text.role == Role::User && !text.droppable => Some(text.content.as_str()),
+            ContextMessage::Text(text) if text.role == Role::User && !text.droppable => {
+                Some(text.content.as_str())
+            }
             _ => None,
         })
         .filter(|content| !content.contains("HANDOFF NOTE"))
         .filter(|content| {
             let lower = content.to_lowercase();
-            CONSTRAINT_MARKERS.iter().any(|marker| contains_word(&lower, marker))
+            CONSTRAINT_MARKERS
+                .iter()
+                .any(|marker| contains_word(&lower, marker))
         })
         .map(excerpt)
         .collect();
@@ -113,8 +129,10 @@ fn user_constraints(context: &Context) -> Vec<String> {
 
 fn contains_word(haystack: &str, word: &str) -> bool {
     haystack.match_indices(word).any(|(index, _)| {
-        let before = haystack[..index].chars().next_back();
-        let after = haystack[index + word.len()..].chars().next();
+        let before = haystack.get(..index).and_then(|s| s.chars().next_back());
+        let after = haystack
+            .get(index + word.len()..)
+            .and_then(|s| s.chars().next());
         !before.is_some_and(|c| c.is_alphanumeric()) && !after.is_some_and(|c| c.is_alphanumeric())
     })
 }
@@ -126,21 +144,30 @@ fn last_failing_command(context: &Context) -> Option<(String, String)> {
         let ContextMessage::Tool(result) = &**entry else {
             return None;
         };
-        let text: String = result.output.values.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("\n");
+        let text: String = result
+            .output
+            .values
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         let exit_code = attribute(&text, "exit_code")?;
         if exit_code == "0" {
             return None;
         }
         let command = attribute(&text, "command")?;
         let body = text.split_once('>').map(|(_, rest)| rest).unwrap_or(&text);
-        Some((command, format!("exit code {exit_code}:\n{}", excerpt(body))))
+        Some((
+            command,
+            format!("exit code {exit_code}:\n{}", excerpt(body)),
+        ))
     })
 }
 
 fn attribute(text: &str, name: &str) -> Option<String> {
-    let start = text.find(&format!("{name}=\""))? + name.len() + 2;
-    let end = text[start..].find('"')?;
-    Some(text[start..start + end].to_string())
+    let (_, rest) = text.split_once(&format!("{name}=\""))?;
+    let (value, _) = rest.split_once('"')?;
+    Some(value.to_string())
 }
 
 #[cfg(test)]
@@ -159,7 +186,10 @@ mod tests {
     #[test]
     fn test_the_note_keeps_todos_constraints_files_and_the_last_failure_exactly() {
         let context = Context::default()
-            .add_message(ContextMessage::user("Fix the adder. Do not touch tests/.", None))
+            .add_message(ContextMessage::user(
+                "Fix the adder. Do not touch tests/.",
+                None,
+            ))
             .add_message(ContextMessage::user("Thanks, looks good so far", None))
             .add_message(failing_shell("pytest -q", 1))
             .add_message(failing_shell("ls", 0));

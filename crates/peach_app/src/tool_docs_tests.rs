@@ -26,7 +26,8 @@ fn lines_outside_examples(text: &str) -> Vec<&str> {
 
 fn is_example_heading(line: &str) -> bool {
     let lower = line.to_ascii_lowercase();
-    lower.contains("example") && (line.trim_start().starts_with('#') || line.trim_end().ends_with(':'))
+    lower.contains("example")
+        && (line.trim_start().starts_with('#') || line.trim_end().ends_with(':'))
 }
 
 #[test]
@@ -36,7 +37,8 @@ fn test_compaction_removes_only_examples_in_every_catalog_tool() {
         let compacted = peach_harness::tool_docs::compact(&original);
         let name = tool.definition().name.to_string();
 
-        // Nothing added or reworded: compacted lines appear, in order, in the original.
+        // Nothing added or reworded: compacted lines appear, in order, in the
+        // original.
         let mut source = original.lines();
         for line in compacted.lines() {
             assert!(
@@ -54,6 +56,9 @@ fn test_compaction_removes_only_examples_in_every_catalog_tool() {
             .filter(|line| !line.trim().is_empty() && !is_example_heading(line))
             .collect();
         assert_eq!(actual, expected, "{name}");
-        assert!(!compacted.contains("<example"), "{name}: an example block survived");
+        assert!(
+            !compacted.contains("<example"),
+            "{name}: an example block survived"
+        );
     }
 }

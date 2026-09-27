@@ -114,7 +114,10 @@ mod tests {
         // must not panic and must have nothing to assert on either side.
         assert!(!is_installed());
 
-        emit(TelemetryEvent::RunStart(RunStart { task_id: None, repo_root: "/repo".to_string() }));
+        emit(TelemetryEvent::RunStart(RunStart {
+            task_id: None,
+            repo_root: "/repo".to_string(),
+        }));
         emit_with(
             TelemetryEvent::RunStart(RunStart { task_id: None, repo_root: "/repo".to_string() }),
             Some("conv-1".to_string()),

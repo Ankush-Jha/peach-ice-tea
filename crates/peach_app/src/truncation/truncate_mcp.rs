@@ -81,14 +81,18 @@ fn shape_text(text: &str, config: &PeachConfig, dumps: &mut Vec<PathBuf>) -> Str
                 path.display(),
                 stdout.total_lines
             ),
-            None => "The full output was not saved; ask the tool for a narrower result."
-                .to_string(),
+            None => {
+                "The full output was not saved; ask the tool for a narrower result.".to_string()
+            }
         };
         notices.push(recovery_notice(hidden_lines as u64, "lines", &recovery));
     }
     if stdout.truncated_lines_count > 0 {
         let recovery = match &dump_path {
-            Some(path) => format!("Full output: read {} (the complete output).", path.display()),
+            Some(path) => format!(
+                "Full output: read {} (the complete output).",
+                path.display()
+            ),
             None => "the full output was not saved".to_string(),
         };
         notices.push(format!(
@@ -184,7 +188,10 @@ mod tests {
 
         assert_eq!(dumps.len(), 1);
         assert!(text.contains(&dumps[0].display().to_string()));
-        assert_eq!(std::fs::read_to_string(&dumps[0]).unwrap(), lines.join("\n"));
+        assert_eq!(
+            std::fs::read_to_string(&dumps[0]).unwrap(),
+            lines.join("\n")
+        );
         let _ = std::fs::remove_file(&dumps[0]);
     }
 

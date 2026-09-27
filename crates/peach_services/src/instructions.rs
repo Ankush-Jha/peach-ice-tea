@@ -49,7 +49,10 @@ impl<F: EnvironmentInfra + FileReaderInfra + CommandInfra> PeachCustomInstructio
     /// harness: R-MEM-1 (T6.4, D-067) — the project memory file, at the git
     /// root or else the working directory. Loaded after AGENTS.md.
     async fn discover_memory_file(&self) -> PathBuf {
-        let root = self.get_git_root().await.unwrap_or_else(|| self.infra.get_environment().cwd);
+        let root = self
+            .get_git_root()
+            .await
+            .unwrap_or_else(|| self.infra.get_environment().cwd);
         root.join(".peach").join("memory.md")
     }
 
@@ -83,7 +86,10 @@ impl<F: EnvironmentInfra + FileReaderInfra + CommandInfra> PeachCustomInstructio
             }
         }
 
-        if let Ok(memory) = self.infra.read_utf8(&self.discover_memory_file().await).await
+        if let Ok(memory) = self
+            .infra
+            .read_utf8(&self.discover_memory_file().await)
+            .await
             && !memory.trim().is_empty()
         {
             custom_instructions.push(bounded_memory(&memory));
@@ -129,7 +135,10 @@ mod tests {
         let short = bounded_memory("Always use tabs.");
         let long = bounded_memory(&"x".repeat(MEMORY_MAX_CHARS + 5));
 
-        assert_eq!(short, "# Project memory (.peach/memory.md)\n\nAlways use tabs.");
+        assert_eq!(
+            short,
+            "# Project memory (.peach/memory.md)\n\nAlways use tabs."
+        );
         assert!(long.ends_with("5 more characters not shown. Full file: read .peach/memory.md."));
     }
 }

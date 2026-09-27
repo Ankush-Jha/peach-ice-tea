@@ -208,7 +208,9 @@ mod tests {
     #[test]
     fn test_first_error_recovered_means_completed_after_a_tool_error() {
         let errored = TaskMetrics::default().tool_errors(
-            [("patch".to_string(), 1u64)].into_iter().collect::<std::collections::BTreeMap<_, _>>(),
+            [("patch".to_string(), 1u64)]
+                .into_iter()
+                .collect::<std::collections::BTreeMap<_, _>>(),
         );
 
         let actual = [

@@ -87,7 +87,8 @@ fn extract_toml(content: &str, paths: &[&[&str]]) -> Option<String> {
             }
         }
         if found {
-            // Round-trip through serde so formatting and comments do not count as a change.
+            // Round-trip through serde so formatting and comments do not count
+            // as a change.
             let value: serde_json::Value =
                 toml_edit::de::from_str(&item_as_document(item)?).ok()?;
             parts.push(format!("{}={}", path.join("."), value));
@@ -110,7 +111,10 @@ fn extract_ini_sections(content: &str, sections: &[&str]) -> String {
     for raw in content.lines() {
         let line = raw.trim();
         if line.starts_with('[') && line.ends_with(']') {
-            current = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')).map(|l| l.trim().to_string());
+            current = line
+                .strip_prefix('[')
+                .and_then(|l| l.strip_suffix(']'))
+                .map(|l| l.trim().to_string());
             continue;
         }
         let in_test_section = current

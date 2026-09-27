@@ -13,13 +13,13 @@
 //! **When `telemetry.schema.json` is published:**
 //! 1. Vendor it byte-for-byte into `telemetry/` (do not edit it) and add the
 //!    checksum check referenced in §16.
-//! 2. Fill in [`to_organizer`] (and, if the organizers batch events rather
-//!    than stream them, [`to_organizer_batch`]) to build a
-//!    [`serde_json::Value`] — or a generated type, if one is derived from
-//!    the schema — matching their structure field-by-field.
-//! 3. Nothing in `event.rs`, `sink.rs` or `mod.rs` should need to change:
-//!    the internal [`Envelope`] is the only input this file reads, and nothing
-//!    else reads this file's output until a later piece wires it up.
+//! 2. Fill in [`to_organizer`] (and, if the organizers batch events rather than
+//!    stream them, [`to_organizer_batch`]) to build a [`serde_json::Value`] —
+//!    or a generated type, if one is derived from the schema — matching their
+//!    structure field-by-field.
+//! 3. Nothing in `event.rs`, `sink.rs` or `mod.rs` should need to change: the
+//!    internal [`Envelope`] is the only input this file reads, and nothing else
+//!    reads this file's output until a later piece wires it up.
 
 use crate::telemetry::event::Envelope;
 
@@ -75,6 +75,9 @@ mod tests {
         let fixture = fixture_envelope();
 
         assert_eq!(to_organizer(&fixture), None);
-        assert_eq!(to_organizer_batch(&[fixture]), Vec::<serde_json::Value>::new());
+        assert_eq!(
+            to_organizer_batch(&[fixture]),
+            Vec::<serde_json::Value>::new()
+        );
     }
 }

@@ -23,8 +23,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use super::plan::{decide, ResultStatus, ScoredCall, ScorerConfig, ToolCallSummary};
 use super::RelevanceScorer;
+use super::plan::{ResultStatus, ScoredCall, ScorerConfig, ToolCallSummary, decide};
 
 /// The scorer command line, run through `/bin/sh -c`.
 pub const ENV_VAR: &str = "PEACH_HARNESS_EXTERNAL_SCORER";
@@ -95,7 +95,9 @@ impl ExternalScorer {
 
     /// The scorer configured by [`ENV_VAR`], if any.
     pub fn from_env() -> Option<Self> {
-        let command = std::env::var(ENV_VAR).ok().filter(|c| !c.trim().is_empty())?;
+        let command = std::env::var(ENV_VAR)
+            .ok()
+            .filter(|c| !c.trim().is_empty())?;
         let timeout = std::env::var(TIMEOUT_ENV_VAR)
             .ok()
             .and_then(|v| v.parse().ok())
@@ -142,10 +144,16 @@ impl ExternalScorer {
             .spawn()?;
         // Write stdin and read stdout on threads, so a scorer that answers
         // before reading everything (or a large request) cannot deadlock us.
-        let mut stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("no stdin"))?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("no stdin"))?;
         let input = input.to_vec();
         let writer = std::thread::spawn(move || stdin.write_all(&input));
-        let mut stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("no stdout"))?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("no stdout"))?;
         let reader = std::thread::spawn(move || {
             let mut out = Vec::new();
             stdout.read_to_end(&mut out).map(|_| out)
@@ -163,7 +171,9 @@ impl ExternalScorer {
             std::thread::sleep(Duration::from_millis(20));
         };
         let _ = writer.join();
-        let out = reader.join().map_err(|_| anyhow::anyhow!("reader panicked"))??;
+        let out = reader
+            .join()
+            .map_err(|_| anyhow::anyhow!("reader panicked"))??;
         anyhow::ensure!(status.success(), "external scorer exited with {status}");
         Ok(out)
     }
@@ -178,7 +188,10 @@ fn parse_answers(output: &[u8]) -> anyhow::Result<HashMap<String, Answer>> {
     let answers: HashMap<String, Answer> = serde_json::from_slice(output)?;
     for (id, answer) in &answers {
         for p in [answer.keep_call, answer.keep_result] {
-            anyhow::ensure!((0.0..=1.0).contains(&p), "answer for {id}: probability {p} outside 0-1");
+            anyhow::ensure!(
+                (0.0..=1.0).contains(&p),
+                "answer for {id}: probability {p} outside 0-1"
+            );
         }
     }
     Ok(answers)
@@ -189,7 +202,12 @@ impl RelevanceScorer for ExternalScorer {
         "external"
     }
 
-    fn score(&self, calls: &[ToolCallSummary], goal: &str, config: &ScorerConfig) -> anyhow::Result<Vec<ScoredCall>> {
+    fn score(
+        &self,
+        calls: &[ToolCallSummary],
+        goal: &str,
+        config: &ScorerConfig,
+    ) -> anyhow::Result<Vec<ScoredCall>> {
         let request = serde_json::to_vec(&Self::request(calls, goal, config))?;
         let answers = parse_answers(&self.run(&request)?)?;
         // Calls the scorer did not answer are left out; build_plan keeps them.
@@ -197,7 +215,12 @@ impl RelevanceScorer for ExternalScorer {
             .iter()
             .filter_map(|call| {
                 let answer = answers.get(&call.call_id)?;
-                let decision = decide(Some(answer.keep_call), Some(answer.keep_result), false, config);
+                let decision = decide(
+                    Some(answer.keep_call),
+                    Some(answer.keep_result),
+                    false,
+                    config,
+                );
                 Some(
                     ScoredCall::new(call.call_id.clone(), decision)
                         .keep_call(answer.keep_call)
@@ -221,7 +244,9 @@ mod tests {
             .map(|i| ToolCallSummary {
                 call_id: format!("c{i}"),
                 tool_name: "read".to_string(),
-                input_preview: format!("{{\"file_path\":\"f{i}.py\",\"api_key\":\"sk-live-123456789012345678901234\"}}"),
+                input_preview: format!(
+                    "{{\"file_path\":\"f{i}.py\",\"api_key\":\"sk-live-123456789012345678901234\"}}"
+                ),
                 result_status: ResultStatus::Ok,
                 result_chars: 5000,
                 message_index: i,
@@ -241,10 +266,17 @@ mod tests {
             Duration::from_secs(10),
         );
 
-        let actual: Vec<Decision> =
-            build_plan(&scorer, &fixture_calls(), "fix it", &config()).scored.into_iter().map(|s| s.decision).collect();
+        let actual: Vec<Decision> = build_plan(&scorer, &fixture_calls(), "fix it", &config())
+            .scored
+            .into_iter()
+            .map(|s| s.decision)
+            .collect();
 
-        let expected = vec![Decision::Keep, Decision::Truncate { head_chars: 300 }, Decision::Keep];
+        let expected = vec![
+            Decision::Keep,
+            Decision::Truncate { head_chars: 300 },
+            Decision::Keep,
+        ];
         assert_eq!(actual, expected);
     }
 
@@ -252,13 +284,19 @@ mod tests {
     fn test_the_scorer_sees_redacted_input_and_the_protocol_name() {
         let dir = tempfile::tempdir().unwrap();
         let seen = dir.path().join("request.json");
-        let scorer = ExternalScorer::new(format!("cat > {}; echo '{{}}'", seen.display()), Duration::from_secs(10));
+        let scorer = ExternalScorer::new(
+            format!("cat > {}; echo '{{}}'", seen.display()),
+            Duration::from_secs(10),
+        );
 
         build_plan(&scorer, &fixture_calls(), "fix it", &config());
 
         let request = std::fs::read_to_string(seen).unwrap();
         assert!(request.contains(PROTOCOL));
-        assert!(!request.contains("sk-live-123456789012345678901234"), "a secret reached the scorer");
+        assert!(
+            !request.contains("sk-live-123456789012345678901234"),
+            "a secret reached the scorer"
+        );
     }
 
     #[test]
@@ -266,17 +304,25 @@ mod tests {
         let broken = [
             ("exit 3", Duration::from_secs(10)),
             ("echo not json", Duration::from_secs(10)),
-            (r#"echo '{"c1":{"keep_call":7,"keep_result":0}}'"#, Duration::from_secs(10)),
+            (
+                r#"echo '{"c1":{"keep_call":7,"keep_result":0}}'"#,
+                Duration::from_secs(10),
+            ),
             ("sleep 5", Duration::from_millis(200)),
         ];
 
         let actual: Vec<bool> = broken
             .iter()
             .map(|(command, timeout)| {
-                build_plan(&ExternalScorer::new(*command, *timeout), &fixture_calls(), "g", &config())
-                    .scored
-                    .iter()
-                    .all(|s| s.decision == Decision::Keep)
+                build_plan(
+                    &ExternalScorer::new(*command, *timeout),
+                    &fixture_calls(),
+                    "g",
+                    &config(),
+                )
+                .scored
+                .iter()
+                .all(|s| s.decision == Decision::Keep)
             })
             .collect();
 

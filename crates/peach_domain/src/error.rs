@@ -144,11 +144,15 @@ impl Error {
     /// carried no usage, or the provider reported none (all zero): that is
     /// "unknown", not "free".
     pub fn billed_usage(error: &anyhow::Error) -> Option<Usage> {
-        error.chain().find_map(|cause| match cause.downcast_ref::<Error>() {
-            Some(Error::EmptyCompletion { usage }) if usage.has_reported_tokens() => Some(**usage),
-            Some(Error::Retryable(inner)) => Self::billed_usage(inner),
-            _ => None,
-        })
+        error
+            .chain()
+            .find_map(|cause| match cause.downcast_ref::<Error>() {
+                Some(Error::EmptyCompletion { usage }) if usage.has_reported_tokens() => {
+                    Some(**usage)
+                }
+                Some(Error::Retryable(inner)) => Self::billed_usage(inner),
+                _ => None,
+            })
     }
 
     pub fn into_retryable(self) -> Self {

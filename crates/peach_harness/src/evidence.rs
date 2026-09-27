@@ -114,11 +114,13 @@ impl Evidence {
     ///
     /// # Arguments
     /// * `repo` - Repository root.
-    /// * `start` - Commit the run started from; `None` when the repository
-    ///   was not a git repository or had no commit.
+    /// * `start` - Commit the run started from; `None` when the repository was
+    ///   not a git repository or had no commit.
     pub fn write_diff(&mut self, repo: &Path, start: Option<&str>) {
         let Some(start) = start else {
-            self.note(format!("{DIFF}: not written, the repository had no git commit to diff against"));
+            self.note(format!(
+                "{DIFF}: not written, the repository had no git commit to diff against"
+            ));
             return;
         };
         match git_diff_against(repo, start, self.dir.strip_prefix(repo).ok()) {
@@ -132,7 +134,10 @@ impl Evidence {
     pub fn write_report(&mut self) {
         if let Err(error) = crate::report::generate(&self.dir) {
             tracing::warn!(?error, "Could not write the run report");
-            self.note(format!("{}: not written: {error}", crate::report::REPORT_JSON));
+            self.note(format!(
+                "{}: not written: {error}",
+                crate::report::REPORT_JSON
+            ));
         }
     }
 
@@ -201,14 +206,23 @@ struct Manifest {
 
 /// Current time, RFC 3339 with milliseconds.
 pub fn now() -> String {
-    chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+    chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string()
 }
 
 /// The commit `repo` is at, or `None` when it is not a git repository or has
 /// no commits yet.
 pub fn git_head(repo: &Path) -> Option<String> {
-    let output = Command::new("git").args(["rev-parse", "--verify", "HEAD"]).current_dir(repo).output().ok()?;
-    output.status.success().then(|| output.stdout.to_str_lossy().trim().to_string())
+    let output = Command::new("git")
+        .args(["rev-parse", "--verify", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| output.stdout.to_str_lossy().trim().to_string())
 }
 
 fn git_diff_against(repo: &Path, start: &str, exclude: Option<&Path>) -> anyhow::Result<String> {
@@ -218,37 +232,56 @@ fn git_diff_against(repo: &Path, start: &str, exclude: Option<&Path>) -> anyhow:
     std::fs::remove_file(&index_path)?;
 
     let mut add = Command::new("git");
-    add.args(["add", "-A", "--", "."]).current_dir(repo).env("GIT_INDEX_FILE", &index_path);
+    add.args(["add", "-A", "--", "."])
+        .current_dir(repo)
+        .env("GIT_INDEX_FILE", &index_path);
     if let Some(exclude) = exclude {
         add.arg(format!(":(exclude){}", exclude.display()));
     }
     let added = add.output()?;
-    anyhow::ensure!(added.status.success(), "git add failed: {}", added.stderr.to_str_lossy());
+    anyhow::ensure!(
+        added.status.success(),
+        "git add failed: {}",
+        added.stderr.to_str_lossy()
+    );
 
     let diff = Command::new("git")
         .args(["diff", "--cached", "--binary", start])
         .current_dir(repo)
         .env("GIT_INDEX_FILE", &index_path)
         .output()?;
-    anyhow::ensure!(diff.status.success(), "git diff failed: {}", diff.stderr.to_str_lossy());
+    anyhow::ensure!(
+        diff.status.success(),
+        "git diff failed: {}",
+        diff.stderr.to_str_lossy()
+    );
     let _ = std::fs::remove_file(&index_path);
     Ok(diff.stdout.to_str_lossy().into_owned())
 }
 
 fn hash_files(dir: &Path) -> std::collections::BTreeMap<String, String> {
     let mut files = std::collections::BTreeMap::new();
-    for entry in ignore::WalkBuilder::new(dir).standard_filters(false).build().filter_map(Result::ok) {
+    for entry in ignore::WalkBuilder::new(dir)
+        .standard_filters(false)
+        .build()
+        .filter_map(Result::ok)
+    {
         if !entry.file_type().is_some_and(|kind| kind.is_file()) {
             continue;
         }
-        let Ok(relative) = entry.path().strip_prefix(dir) else { continue };
+        let Ok(relative) = entry.path().strip_prefix(dir) else {
+            continue;
+        };
         let name = relative.to_string_lossy().replace('\\', "/");
         if name == MANIFEST {
             continue;
         }
         if let Ok(bytes) = std::fs::read(entry.path()) {
             let digest = Sha256::digest(&bytes);
-            files.insert(name, digest.iter().map(|byte| format!("{byte:02x}")).collect());
+            files.insert(
+                name,
+                digest.iter().map(|byte| format!("{byte:02x}")).collect(),
+            );
         }
     }
     files
@@ -287,17 +320,36 @@ mod tests {
         std::fs::write(repo.path().join("a.py"), "x = 2\n").unwrap();
         git(repo.path(), &["commit", "-qam", "agent commit"]);
         std::fs::write(repo.path().join("new.py"), "y = 1\n").unwrap();
-        let status_before = Command::new("git").args(["status", "--porcelain"]).current_dir(repo.path()).output().unwrap().stdout;
+        let status_before = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(repo.path())
+            .output()
+            .unwrap()
+            .stdout;
         let dir = repo.path().join("evidence");
         let mut fixture = Evidence::create(&dir).unwrap();
 
         fixture.write_diff(repo.path(), Some(&start));
 
         let actual = std::fs::read_to_string(dir.join(DIFF)).unwrap();
-        assert!(actual.contains("-x = 1") && actual.contains("+x = 2"), "{actual}");
-        assert!(actual.contains("+y = 1"), "untracked file missing:\n{actual}");
-        assert!(!actual.contains("evidence/"), "the bundle diffed itself:\n{actual}");
-        let status_after = Command::new("git").args(["status", "--porcelain"]).current_dir(repo.path()).output().unwrap().stdout;
+        assert!(
+            actual.contains("-x = 1") && actual.contains("+x = 2"),
+            "{actual}"
+        );
+        assert!(
+            actual.contains("+y = 1"),
+            "untracked file missing:\n{actual}"
+        );
+        assert!(
+            !actual.contains("evidence/"),
+            "the bundle diffed itself:\n{actual}"
+        );
+        let status_after = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(repo.path())
+            .output()
+            .unwrap()
+            .stdout;
         // Only the evidence dir itself is new; nothing was staged.
         assert_eq!(
             status_after.to_str_lossy().replace("?? evidence/\n", ""),
@@ -315,12 +367,23 @@ mod tests {
         fixture.write_manifest("2026-09-25T00:00:00.000Z", "completed");
 
         let manifest: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(dir.path().join(MANIFEST)).unwrap()).unwrap();
-        let expected_hash: String =
-            Sha256::digest(b"fix the bug").iter().map(|byte| format!("{byte:02x}")).collect();
-        assert_eq!(manifest["files"], serde_json::json!({ PROMPT: expected_hash }));
+            serde_json::from_str(&std::fs::read_to_string(dir.path().join(MANIFEST)).unwrap())
+                .unwrap();
+        let expected_hash: String = Sha256::digest(b"fix the bug")
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        assert_eq!(
+            manifest["files"],
+            serde_json::json!({ PROMPT: expected_hash })
+        );
         assert_eq!(manifest["outcome"], "completed");
-        assert!(manifest["notes"][0].as_str().unwrap().starts_with("diff.patch: not written"));
+        assert!(
+            manifest["notes"][0]
+                .as_str()
+                .unwrap()
+                .starts_with("diff.patch: not written")
+        );
     }
 
     #[test]
@@ -330,7 +393,10 @@ mod tests {
         let key = format!("AIza{}", "z".repeat(35));
 
         fixture.write_text(PROMPT, &format!("key {key}"));
-        fixture.write_json(EXEC, &serde_json::json!({"error": format!("bad key {key}"), "input_tokens": 7}));
+        fixture.write_json(
+            EXEC,
+            &serde_json::json!({"error": format!("bad key {key}"), "input_tokens": 7}),
+        );
 
         let prompt = std::fs::read_to_string(dir.path().join(PROMPT)).unwrap();
         let exec = std::fs::read_to_string(dir.path().join(EXEC)).unwrap();

@@ -483,8 +483,11 @@ mod tests {
     fn test_truncated_whole_keeps_text_untruncated() {
         let actual = Truncated::whole("hello");
 
-        let expected =
-            Truncated { text: "hello".to_string(), truncated: false, original_chars: 5 };
+        let expected = Truncated {
+            text: "hello".to_string(),
+            truncated: false,
+            original_chars: 5,
+        };
         assert_eq!(actual, expected);
     }
 
@@ -492,8 +495,11 @@ mod tests {
     fn test_truncated_capped_leaves_short_text_alone() {
         let actual = Truncated::capped("hello", 10);
 
-        let expected =
-            Truncated { text: "hello".to_string(), truncated: false, original_chars: 5 };
+        let expected = Truncated {
+            text: "hello".to_string(),
+            truncated: false,
+            original_chars: 5,
+        };
         assert_eq!(actual, expected);
     }
 
@@ -501,8 +507,11 @@ mod tests {
     fn test_truncated_capped_cuts_long_text_and_flags_it() {
         let actual = Truncated::capped("hello world", 5);
 
-        let expected =
-            Truncated { text: "hello".to_string(), truncated: true, original_chars: 11 };
+        let expected = Truncated {
+            text: "hello".to_string(),
+            truncated: true,
+            original_chars: 11,
+        };
         assert_eq!(actual, expected);
     }
 
@@ -573,8 +582,14 @@ mod tests {
             attribution: None,
         };
 
-        assert_eq!(serde_json::to_value(&error).unwrap()["origin_call_id"], "call-3");
-        assert_eq!(serde_json::to_value(&recovery).unwrap()["origin_call_id"], "call-3");
+        assert_eq!(
+            serde_json::to_value(&error).unwrap()["origin_call_id"],
+            "call-3"
+        );
+        assert_eq!(
+            serde_json::to_value(&recovery).unwrap()["origin_call_id"],
+            "call-3"
+        );
     }
 
     #[test]
@@ -598,7 +613,10 @@ mod tests {
 
         let actual = serde_json::to_value(&fixture).unwrap();
 
-        assert_eq!(actual["tool_call_ids"], serde_json::json!(["call-1", "call-2"]));
+        assert_eq!(
+            actual["tool_call_ids"],
+            serde_json::json!(["call-1", "call-2"])
+        );
     }
 
     #[test]

@@ -52,14 +52,25 @@ fn calls_in_order(context: &Context) -> Vec<CallInfo> {
         match &entry.message {
             ContextMessage::Text(text) => {
                 for call in text.tool_calls.iter().flatten() {
-                    let Some(call_id) = call.call_id.as_ref().map(|id| id.as_str().to_string()) else { continue };
+                    let Some(call_id) = call.call_id.as_ref().map(|id| id.as_str().to_string())
+                    else {
+                        continue;
+                    };
                     let tool = call.name.to_string();
                     let args = call.arguments.parse().ok();
-                    let field =
-                        |name: &str| args.as_ref().and_then(|a| a.get(name)).and_then(|v| v.as_str()).map(str::to_string);
+                    let field = |name: &str| {
+                        args.as_ref()
+                            .and_then(|a| a.get(name))
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string)
+                    };
                     let target = match tool.as_str() {
-                        "read" => field("file_path").or_else(|| field("path")).map(Target::File),
-                        t if EDIT_TOOLS.contains(&t) => field("file_path").or_else(|| field("path")).map(Target::File),
+                        "read" => field("file_path")
+                            .or_else(|| field("path"))
+                            .map(Target::File),
+                        t if EDIT_TOOLS.contains(&t) => field("file_path")
+                            .or_else(|| field("path"))
+                            .map(Target::File),
                         "shell" => field("command").map(Target::Command),
                         _ => None,
                     };
@@ -67,9 +78,15 @@ fn calls_in_order(context: &Context) -> Vec<CallInfo> {
                 }
             }
             ContextMessage::Tool(result) => {
-                let Some(id) = result.call_id.as_ref().map(|id| id.as_str()) else { continue };
+                let Some(id) = result.call_id.as_ref().map(|id| id.as_str()) else {
+                    continue;
+                };
                 // The most recent unanswered call with this id.
-                if let Some(call) = calls.iter_mut().rev().find(|c| c.call_id == id && c.result_index.is_none()) {
+                if let Some(call) = calls
+                    .iter_mut()
+                    .rev()
+                    .find(|c| c.call_id == id && c.result_index.is_none())
+                {
                     call.result_index = Some(index);
                 }
             }
@@ -87,13 +104,25 @@ fn superseded(calls: &[CallInfo]) -> HashMap<usize, String> {
         if !matches!(call.tool.as_str(), "read" | "shell") {
             continue;
         }
-        let (Some(target), Some(result_index)) = (&call.target, call.result_index) else { continue };
-        let later = calls[i + 1..].iter().find(|next| next.target.as_ref() == Some(target));
+        let (Some(target), Some(result_index)) = (&call.target, call.result_index) else {
+            continue;
+        };
+        let later = calls
+            .get(i + 1..)
+            .unwrap_or_default()
+            .iter()
+            .find(|next| next.target.as_ref() == Some(target));
         if let Some(next) = later {
-            let what = match (&call.tool[..], &next.tool[..], target) {
-                ("read", "read", Target::File(path)) => format!("{path} was read again later ({})", next.call_id),
-                ("read", edit, Target::File(path)) => format!("{path} was changed later by {edit} ({})", next.call_id),
-                ("shell", _, Target::Command(command)) => format!("`{command}` was run again later ({})", next.call_id),
+            let what = match (call.tool.as_str(), next.tool.as_str(), target) {
+                ("read", "read", Target::File(path)) => {
+                    format!("{path} was read again later ({})", next.call_id)
+                }
+                ("read", edit, Target::File(path)) => {
+                    format!("{path} was changed later by {edit} ({})", next.call_id)
+                }
+                ("shell", _, Target::Command(command)) => {
+                    format!("`{command}` was run again later ({})", next.call_id)
+                }
                 _ => continue,
             };
             out.insert(result_index, what);
@@ -114,13 +143,24 @@ pub fn supersede(mut context: Context, retention_window: usize) -> (Context, Vec
     let eligible = context.messages.len().saturating_sub(retention_window);
     let mut handles = Vec::new();
     for (index, entry) in context.messages.iter_mut().enumerate().take(eligible) {
-        let ContextMessage::Tool(result) = &mut entry.message else { continue };
-        let Some(reason) = stale.get(&index) else { continue };
-        let text: String = result.output.values.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("\n");
+        let ContextMessage::Tool(result) = &mut entry.message else {
+            continue;
+        };
+        let Some(reason) = stale.get(&index) else {
+            continue;
+        };
+        let text: String = result
+            .output
+            .values
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         if text.starts_with(OFFLOAD_STUB_MARKER) || text.is_empty() {
             continue;
         }
-        let Ok(path) = write_file(&text).inspect_err(|error| tracing::warn!(?error, "Could not keep a superseded result"))
+        let Ok(path) = write_file(&text)
+            .inspect_err(|error| tracing::warn!(?error, "Could not keep a superseded result"))
         else {
             continue;
         };
@@ -158,7 +198,11 @@ mod tests {
     }
 
     fn result(id: &str, tool: &str, text: &str) -> ContextMessage {
-        ContextMessage::tool_result(ToolResult::new(ToolName::new(tool)).call_id(ToolCallId::new(id)).success(text))
+        ContextMessage::tool_result(
+            ToolResult::new(ToolName::new(tool))
+                .call_id(ToolCallId::new(id))
+                .success(text),
+        )
     }
 
     fn text_of(context: &Context, i: usize) -> String {
@@ -185,13 +229,20 @@ mod tests {
 
         let (actual, handles) = supersede(fixture, 0);
 
-        assert!(text_of(&actual, 2).contains("superseded: /p/a.py was changed later by patch (p1)"));
+        assert!(
+            text_of(&actual, 2).contains("superseded: /p/a.py was changed later by patch (p1)")
+        );
         assert_eq!(text_of(&actual, 4), "b.py", "b.py was never touched again");
         assert!(text_of(&actual, 6).contains("superseded: `pytest -q` was run again later (s2)"));
         assert_eq!(text_of(&actual, 10), "all passed", "the newest run is kept");
         assert_eq!(handles.len(), 2);
-        assert_eq!(std::fs::read_to_string(&handles[0].path).unwrap(), "old a.py");
-        handles.iter().for_each(|h| drop(std::fs::remove_file(&h.path)));
+        assert_eq!(
+            std::fs::read_to_string(&handles[0].path).unwrap(),
+            "old a.py"
+        );
+        handles
+            .iter()
+            .for_each(|h| drop(std::fs::remove_file(&h.path)));
     }
 
     #[test]
@@ -206,7 +257,9 @@ mod tests {
 
         assert!(text_of(&actual, 1).contains("was read again later"));
         assert_eq!(text_of(&actual, 3), "second read");
-        handles.iter().for_each(|h| drop(std::fs::remove_file(&h.path)));
+        handles
+            .iter()
+            .for_each(|h| drop(std::fs::remove_file(&h.path)));
     }
 
     #[test]

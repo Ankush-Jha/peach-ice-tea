@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use peach_domain::{
-    Conversation, ConversationId, MessageEntry, ThreadEvent, ThreadEventRepository, events_between, replay_view,
+    Conversation, ConversationId, MessageEntry, ThreadEvent, ThreadEventRepository, events_between,
+    replay_view,
 };
 use tokio::sync::Mutex;
 
@@ -47,8 +48,13 @@ impl<R: ThreadEventRepository> EventLogWriter<R> {
         let (before, notes_logged) = match views.get(&conversation.id) {
             Some(logged) => logged.clone(),
             None => {
-                let stored: Vec<ThreadEvent> =
-                    self.repository.list_events(&conversation.id).await?.into_iter().map(|s| s.event).collect();
+                let stored: Vec<ThreadEvent> = self
+                    .repository
+                    .list_events(&conversation.id)
+                    .await?
+                    .into_iter()
+                    .map(|s| s.event)
+                    .collect();
                 let notes_logged = stored
                     .iter()
                     .filter_map(|event| match event {
@@ -61,10 +67,19 @@ impl<R: ThreadEventRepository> EventLogWriter<R> {
             }
         };
         let mut events = events_between(&before, &context.messages);
-        let new_notes = conversation.metrics.notes.items.iter().filter(|note| note.id > notes_logged);
-        events.extend(new_notes.map(|note| ThreadEvent::Note { id: note.id, text: note.text.clone() }));
+        let new_notes = conversation
+            .metrics
+            .notes
+            .items
+            .iter()
+            .filter(|note| note.id > notes_logged);
+        events.extend(
+            new_notes.map(|note| ThreadEvent::Note { id: note.id, text: note.text.clone() }),
+        );
         if !events.is_empty() {
-            self.repository.append_events(&conversation.id, events).await?;
+            self.repository
+                .append_events(&conversation.id, events)
+                .await?;
         }
         let notes_logged = conversation.metrics.notes.written.max(notes_logged);
         views.insert(conversation.id, (context.messages.clone(), notes_logged));
@@ -83,16 +98,30 @@ mod tests {
 
     fn fixture() -> (Arc<ThreadEventRepositoryImpl>, Conversation) {
         let pool = Arc::new(DatabasePool::in_memory().unwrap());
-        (Arc::new(ThreadEventRepositoryImpl::new(pool)), Conversation::new(ConversationId::generate()))
+        (
+            Arc::new(ThreadEventRepositoryImpl::new(pool)),
+            Conversation::new(ConversationId::generate()),
+        )
     }
 
     fn with_messages(conversation: &Conversation, texts: &[&str]) -> Conversation {
-        let context = texts.iter().fold(Context::default(), |ctx, text| ctx.add_message(ContextMessage::user(*text, None)));
+        let context = texts.iter().fold(Context::default(), |ctx, text| {
+            ctx.add_message(ContextMessage::user(*text, None))
+        });
         conversation.clone().context(context)
     }
 
-    async fn kinds(repository: &ThreadEventRepositoryImpl, id: &ConversationId) -> Vec<&'static str> {
-        repository.list_events(id).await.unwrap().iter().map(|s| s.event.kind()).collect()
+    async fn kinds(
+        repository: &ThreadEventRepositoryImpl,
+        id: &ConversationId,
+    ) -> Vec<&'static str> {
+        repository
+            .list_events(id)
+            .await
+            .unwrap()
+            .iter()
+            .map(|s| s.event.kind())
+            .collect()
     }
 
     #[tokio::test]
@@ -100,12 +129,26 @@ mod tests {
         let (repository, conversation) = fixture();
         let writer = EventLogWriter::new(repository.clone());
 
-        for texts in [vec!["a"], vec!["a", "b"], vec!["a", "b"], vec!["summary of a, b"], vec!["summary of a, b", "c"]] {
-            writer.record(&with_messages(&conversation, &texts)).await.unwrap();
+        for texts in [
+            vec!["a"],
+            vec!["a", "b"],
+            vec!["a", "b"],
+            vec!["summary of a, b"],
+            vec!["summary of a, b", "c"],
+        ] {
+            writer
+                .record(&with_messages(&conversation, &texts))
+                .await
+                .unwrap();
         }
 
-        let events: Vec<ThreadEvent> =
-            repository.list_events(&conversation.id).await.unwrap().into_iter().map(|s| s.event).collect();
+        let events: Vec<ThreadEvent> = repository
+            .list_events(&conversation.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|s| s.event)
+            .collect();
         let actual = (
             kinds(&repository, &conversation.id).await,
             replay_view(&events),
@@ -113,7 +156,10 @@ mod tests {
         );
         let expected = (
             vec!["message", "message", "compaction", "message"],
-            with_messages(&conversation, &["summary of a, b", "c"]).context.unwrap().messages,
+            with_messages(&conversation, &["summary of a, b", "c"])
+                .context
+                .unwrap()
+                .messages,
             3,
         );
         assert_eq!(actual, expected);
@@ -122,21 +168,36 @@ mod tests {
     #[tokio::test]
     async fn test_a_resumed_conversation_continues_its_log_without_a_spurious_compaction() {
         let (repository, conversation) = fixture();
-        EventLogWriter::new(repository.clone()).record(&with_messages(&conversation, &["a", "b"])).await.unwrap();
+        EventLogWriter::new(repository.clone())
+            .record(&with_messages(&conversation, &["a", "b"]))
+            .await
+            .unwrap();
 
         // A new process: nothing cached.
-        EventLogWriter::new(repository.clone()).record(&with_messages(&conversation, &["a", "b", "c"])).await.unwrap();
+        EventLogWriter::new(repository.clone())
+            .record(&with_messages(&conversation, &["a", "b", "c"]))
+            .await
+            .unwrap();
 
-        assert_eq!(kinds(&repository, &conversation.id).await, vec!["message", "message", "message"]);
+        assert_eq!(
+            kinds(&repository, &conversation.id).await,
+            vec!["message", "message", "message"]
+        );
     }
 
     #[tokio::test]
     async fn test_a_conversation_from_before_the_log_is_seeded_on_its_first_save() {
         let (repository, conversation) = fixture();
 
-        EventLogWriter::new(repository.clone()).record(&with_messages(&conversation, &["old 1", "old 2"])).await.unwrap();
+        EventLogWriter::new(repository.clone())
+            .record(&with_messages(&conversation, &["old 1", "old 2"]))
+            .await
+            .unwrap();
 
-        assert_eq!(kinds(&repository, &conversation.id).await, vec!["message", "message"]);
+        assert_eq!(
+            kinds(&repository, &conversation.id).await,
+            vec!["message", "message"]
+        );
     }
 
     #[tokio::test]
@@ -144,14 +205,30 @@ mod tests {
         let (repository, conversation) = fixture();
         let mut noted = with_messages(&conversation, &["a"]);
         noted.metrics.notes.add("root cause: off-by-one").unwrap();
-        EventLogWriter::new(repository.clone()).record(&noted).await.unwrap();
-        noted.metrics.notes.add("tests: python3 -m unittest").unwrap();
+        EventLogWriter::new(repository.clone())
+            .record(&noted)
+            .await
+            .unwrap();
+        noted
+            .metrics
+            .notes
+            .add("tests: python3 -m unittest")
+            .unwrap();
 
         // A new process, which must not log note 1 again.
-        EventLogWriter::new(repository.clone()).record(&noted).await.unwrap();
+        EventLogWriter::new(repository.clone())
+            .record(&noted)
+            .await
+            .unwrap();
 
-        let actual: Vec<ThreadEvent> =
-            repository.list_events(&conversation.id).await.unwrap().into_iter().map(|s| s.event).skip(1).collect();
+        let actual: Vec<ThreadEvent> = repository
+            .list_events(&conversation.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|s| s.event)
+            .skip(1)
+            .collect();
         let expected = vec![
             ThreadEvent::Note { id: 1, text: "root cause: off-by-one".to_string() },
             ThreadEvent::Note { id: 2, text: "tests: python3 -m unittest".to_string() },
@@ -163,8 +240,14 @@ mod tests {
     async fn test_no_context_records_nothing() {
         let (repository, conversation) = fixture();
 
-        EventLogWriter::new(repository.clone()).record(&conversation).await.unwrap();
+        EventLogWriter::new(repository.clone())
+            .record(&conversation)
+            .await
+            .unwrap();
 
-        assert_eq!(kinds(&repository, &conversation.id).await, Vec::<&str>::new());
+        assert_eq!(
+            kinds(&repository, &conversation.id).await,
+            Vec::<&str>::new()
+        );
     }
 }

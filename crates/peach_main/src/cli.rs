@@ -2114,7 +2114,10 @@ mod harness_exec_cli_tests {
     #[test]
     fn test_exec_json_defaults_off() {
         let fixture = Cli::parse_from(["peach", "exec", "fix the bug"]);
-        let actual = matches!(fixture.subcommands, Some(TopLevelCommand::Exec { json: false, .. }));
+        let actual = matches!(
+            fixture.subcommands,
+            Some(TopLevelCommand::Exec { json: false, .. })
+        );
         assert!(actual);
     }
 

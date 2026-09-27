@@ -134,9 +134,9 @@ pub fn is_referenced_later(input_preview: &str, later_text: &str) -> bool {
 }
 
 fn is_path_like(token: &str) -> bool {
-    let has_extension = token
-        .rsplit_once('.')
-        .is_some_and(|(stem, ext)| !stem.is_empty() && !ext.is_empty() && ext.chars().all(|c| c.is_ascii_alphanumeric()));
+    let has_extension = token.rsplit_once('.').is_some_and(|(stem, ext)| {
+        !stem.is_empty() && !ext.is_empty() && ext.chars().all(|c| c.is_ascii_alphanumeric())
+    });
     token.contains('/') || has_extension
 }
 
@@ -180,7 +180,13 @@ pub struct ScoredCall {
 impl ScoredCall {
     /// Creates a new scored call with no probabilities recorded yet.
     pub fn new(call_id: impl Into<String>, decision: Decision) -> Self {
-        Self { call_id: call_id.into(), decision, keep_call: None, keep_result: None, pinned: false }
+        Self {
+            call_id: call_id.into(),
+            decision,
+            keep_call: None,
+            keep_result: None,
+            pinned: false,
+        }
     }
 
     /// Sets the call identifier.
@@ -260,7 +266,11 @@ pub struct ScorerConfig {
 
 impl Default for ScorerConfig {
     fn default() -> Self {
-        Self { threshold: 0.5, preserve_recent_messages: 6, truncate_head_chars: 300 }
+        Self {
+            threshold: 0.5,
+            preserve_recent_messages: 6,
+            truncate_head_chars: 300,
+        }
     }
 }
 
@@ -295,7 +305,12 @@ impl ScorerConfig {
 /// `Keep`, never `Drop`: a scorer that errors, times out, or omits an
 /// answer must never be the reason a tool result is silently deleted
 /// (R-CTX-5, `CLAUDE.md` principle 5, fail open).
-pub fn decide(keep_call: Option<f32>, keep_result: Option<f32>, pinned: bool, config: &ScorerConfig) -> Decision {
+pub fn decide(
+    keep_call: Option<f32>,
+    keep_result: Option<f32>,
+    pinned: bool,
+    config: &ScorerConfig,
+) -> Decision {
     if pinned {
         return Decision::Keep;
     }
@@ -308,7 +323,9 @@ pub fn decide(keep_call: Option<f32>, keep_result: Option<f32>, pinned: bool, co
 
     match keep_call {
         None => Decision::Keep,
-        Some(score) if score >= config.threshold => Decision::Truncate { head_chars: config.truncate_head_chars },
+        Some(score) if score >= config.threshold => {
+            Decision::Truncate { head_chars: config.truncate_head_chars }
+        }
         Some(_) => Decision::Drop,
     }
 }
@@ -411,7 +428,11 @@ mod tests {
     fn test_default_config_matches_the_ported_algorithm() {
         let actual = ScorerConfig::default();
 
-        let expected = ScorerConfig { threshold: 0.5, preserve_recent_messages: 6, truncate_head_chars: 300 };
+        let expected = ScorerConfig {
+            threshold: 0.5,
+            preserve_recent_messages: 6,
+            truncate_head_chars: 300,
+        };
         assert_eq!(actual, expected);
     }
 }

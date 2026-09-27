@@ -51,7 +51,11 @@ impl WriteOp {
 /// The text is written for the model: it says what was refused, why, and what
 /// to do instead, because a bare denial tends to produce retries of the same
 /// action.
-pub fn check_tool_path(protected: &ProtectedSet, op: WriteOp, path: &std::path::Path) -> Option<String> {
+pub fn check_tool_path(
+    protected: &ProtectedSet,
+    op: WriteOp,
+    path: &std::path::Path,
+) -> Option<String> {
     if !protected.is_protected(path) {
         return None;
     }
@@ -151,7 +155,11 @@ mod tests {
     fn test_writing_an_unprotected_path_is_allowed() {
         let fixture = fixture_protected();
 
-        let actual = check_tool_path(&fixture, WriteOp::Modify, &PathBuf::from("/repo/src/math.py"));
+        let actual = check_tool_path(
+            &fixture,
+            WriteOp::Modify,
+            &PathBuf::from("/repo/src/math.py"),
+        );
 
         assert_eq!(actual, None);
     }
@@ -182,7 +190,10 @@ mod tests {
 /// a symlink pointing outside the repo cannot be used to smuggle a test
 /// file's manifest entry to an unexpected location.
 fn walk_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
-    let walker = ignore::WalkBuilder::new(root).follow_links(false).hidden(false).build();
+    let walker = ignore::WalkBuilder::new(root)
+        .follow_links(false)
+        .hidden(false)
+        .build();
     walker
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_some_and(|t| t.is_file()))
@@ -192,8 +203,15 @@ fn walk_files(root: &std::path::Path) -> Vec<std::path::PathBuf> {
 
 /// `files` relative to `root`, without the excluded trees (dependencies,
 /// build output), whose `package.json` files are not the repository's own.
-fn relative_paths(root: &std::path::Path, files: &[std::path::PathBuf], exclude_globs: &[String]) -> Vec<String> {
-    let excluded: Vec<glob::Pattern> = exclude_globs.iter().filter_map(|g| glob::Pattern::new(g).ok()).collect();
+fn relative_paths(
+    root: &std::path::Path,
+    files: &[std::path::PathBuf],
+    exclude_globs: &[String],
+) -> Vec<String> {
+    let excluded: Vec<glob::Pattern> = exclude_globs
+        .iter()
+        .filter_map(|g| glob::Pattern::new(g).ok())
+        .collect();
     files
         .iter()
         .filter_map(|path| path.strip_prefix(root).ok())
@@ -235,12 +253,22 @@ pub fn verify_and_restore(
 ) -> IntegrityReport {
     let now = ProtectedSet::new(root, protect_globs, exclude_globs, walk_files(root));
     let report = manifest.verify(&now.protected_files());
-    let mut report = if report.is_clean() { report } else { manifest.restore(&report) };
+    let mut report = if report.is_clean() {
+        report
+    } else {
+        manifest.restore(&report)
+    };
     // D-054: test sections of mixed files are flagged, never restored.
     report.checked += manifest.test_sections.len();
-    report.violations.extend(mixed::changed(root, &manifest.test_sections).into_iter().map(|path| {
-        Violation { path, kind: ViolationKind::TestConfigChanged, restored: false }
-    }));
+    report.violations.extend(
+        mixed::changed(root, &manifest.test_sections)
+            .into_iter()
+            .map(|path| Violation {
+                path,
+                kind: ViolationKind::TestConfigChanged,
+                restored: false,
+            }),
+    );
     report
 }
 
@@ -279,11 +307,20 @@ pub fn telemetry_events(report: &IntegrityReport) -> Vec<crate::telemetry::Telem
             ViolationKind::TestConfigChanged => "test_config_changed",
         };
         let (event_kind, detail) = if violation.kind == ViolationKind::TestConfigChanged {
-            ("violation", "its test configuration changed during the run; flagged, not restored".to_string())
+            (
+                "violation",
+                "its test configuration changed during the run; flagged, not restored".to_string(),
+            )
         } else if violation.restored {
-            ("restored", format!("{kind} during the run; restored to its pre-run state"))
+            (
+                "restored",
+                format!("{kind} during the run; restored to its pre-run state"),
+            )
         } else {
-            ("violation", format!("{kind} during the run; could NOT be restored"))
+            (
+                "violation",
+                format!("{kind} during the run; could NOT be restored"),
+            )
         };
         TelemetryEvent::Integrity(Integrity {
             kind: event_kind.to_string(),
@@ -320,8 +357,16 @@ mod telemetry_event_tests {
     fn test_each_violation_is_its_own_event() {
         let fixture = IntegrityReport {
             violations: vec![
-                Violation { path: "tests/a.py".to_string(), kind: ViolationKind::Modified, restored: true },
-                Violation { path: "tests/b.py".to_string(), kind: ViolationKind::Deleted, restored: false },
+                Violation {
+                    path: "tests/a.py".to_string(),
+                    kind: ViolationKind::Modified,
+                    restored: true,
+                },
+                Violation {
+                    path: "tests/b.py".to_string(),
+                    kind: ViolationKind::Deleted,
+                    restored: false,
+                },
             ],
             checked: 2,
         };

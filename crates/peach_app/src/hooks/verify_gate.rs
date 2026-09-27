@@ -78,11 +78,14 @@ impl EventHandle<EventData<EndPayload>> for VerifyGateHandler {
         if !stopped_by_choice(conversation) {
             return Ok(());
         }
-        if let (Some(message), Some(context)) =
-            (peach_harness::verify::gate_message(), conversation.context.as_mut())
-        {
+        if let (Some(message), Some(context)) = (
+            peach_harness::verify::gate_message(),
+            conversation.context.as_mut(),
+        ) {
             let content = Element::new("system_reminder").text(message);
-            context.messages.push(ContextMessage::user(content, None).into());
+            context
+                .messages
+                .push(ContextMessage::user(content, None).into());
         }
         Ok(())
     }
@@ -111,7 +114,11 @@ mod tests {
         ));
         let user_last = fixture(ContextMessage::user("hi", None));
 
-        let actual = (stopped_by_choice(&done), stopped_by_choice(&mid_tool), stopped_by_choice(&user_last));
+        let actual = (
+            stopped_by_choice(&done),
+            stopped_by_choice(&mid_tool),
+            stopped_by_choice(&user_last),
+        );
 
         assert_eq!(actual, (true, false, false));
     }

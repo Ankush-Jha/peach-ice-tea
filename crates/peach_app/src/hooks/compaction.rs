@@ -2,7 +2,9 @@ use async_trait::async_trait;
 use peach_domain::{Agent, Conversation, Environment, EventData, EventHandle, ResponsePayload};
 use tracing::{debug, info};
 
-use crate::compaction_pipeline::{Pipeline, handoff, offload, recall, score, soft_enabled, soft_threshold, supersede};
+use crate::compaction_pipeline::{
+    Pipeline, handoff, offload, recall, score, soft_enabled, soft_threshold, supersede,
+};
 
 /// Hook handler that performs context compaction when needed
 ///
@@ -67,25 +69,33 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionHandler {
                 if score::enabled() {
                     pipeline = pipeline.score(self.agent.compact.retention_window);
                 }
-                // harness: R-CTX-2 S1 (T3.6) — off unless PEACH_HARNESS_OFFLOAD=1 (D-074).
+                // harness: R-CTX-2 S1 (T3.6) — off unless
+                // PEACH_HARNESS_OFFLOAD=1 (D-074).
                 if offload::enabled() {
                     pipeline = pipeline.offload(self.agent.compact.retention_window);
                 }
-                // harness: R-CTX-2 S0 (T3.5) — off unless PEACH_HARNESS_SUPERSEDE=1 (D-075).
+                // harness: R-CTX-2 S0 (T3.5) — off unless
+                // PEACH_HARNESS_SUPERSEDE=1 (D-075).
                 // Inserted last so it runs first.
                 if supersede::enabled() {
                     pipeline = pipeline.supersede(self.agent.compact.retention_window);
                 }
                 let outcome = pipeline
-                .handoff_note(note.flatten())
-                // harness: R-CTX-3 (T3.3) — off unless PEACH_HARNESS_RECALL_HANDLES=1 (D-066).
-                .recall_handles(recall::enabled())
-                .run(context.clone())?;
+                    .handoff_note(note.flatten())
+                    // harness: R-CTX-3 (T3.3) — off unless PEACH_HARNESS_RECALL_HANDLES=1 (D-066).
+                    .recall_handles(recall::enabled())
+                    .run(context.clone())?;
                 // Reading a handle back counts as `offload_read` (R-OUT-3).
                 for handle in &outcome.recall_handles {
-                    conversation.metrics.task.record_dump_file(handle.path.display().to_string());
+                    conversation
+                        .metrics
+                        .task
+                        .record_dump_file(handle.path.display().to_string());
                 }
-                debug!(stage = outcome.stage_reached, "Compaction pipeline finished");
+                debug!(
+                    stage = outcome.stage_reached,
+                    "Compaction pipeline finished"
+                );
                 let compacted = outcome.context;
                 // harness: R-EVAL-2 — record what this compaction reclaimed.
                 // The orchestrator's metrics sync deliberately preserves
@@ -102,9 +112,10 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionHandler {
                 && soft_enabled()
                 && *token_count >= soft_threshold(hard)
             {
-                // harness: R-CTX-7 (T3.11, D-076) — the soft trigger: reversible
-                // stages only, early, so the lossy summary (and the cache miss it
-                // causes) comes rarely. Off unless PEACH_HARNESS_SOFT_COMPACTION=1.
+                // harness: R-CTX-7 (T3.11, D-076) — the soft trigger:
+                // reversible stages only, early, so the lossy
+                // summary (and the cache miss it causes) comes
+                // rarely. Off unless PEACH_HARNESS_SOFT_COMPACTION=1.
                 let outcome = Pipeline::reversible(
                     self.agent.compact.retention_window,
                     soft_threshold(soft_threshold(hard)),
@@ -113,10 +124,17 @@ impl EventHandle<EventData<ResponsePayload>> for CompactionHandler {
                 if outcome.context != *context {
                     info!(agent_id = %self.agent.id, "Soft compaction");
                     for handle in &outcome.recall_handles {
-                        conversation.metrics.task.record_dump_file(handle.path.display().to_string());
+                        conversation
+                            .metrics
+                            .task
+                            .record_dump_file(handle.path.display().to_string());
                     }
                     let tokens_after = *outcome.context.token_count() as u64;
-                    conversation.metrics.task.compactions.record(*token_count as u64, tokens_after);
+                    conversation
+                        .metrics
+                        .task
+                        .compactions
+                        .record(*token_count as u64, tokens_after);
                     conversation.context = Some(outcome.context);
                 }
             } else {

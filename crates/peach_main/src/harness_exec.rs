@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use peach_domain::{ExecIntegrity, ExecIntegrityViolation, ExecReport};
 use peach_harness::evidence::{self, Evidence};
 use peach_harness::integrity::{self, IntegrityReport, Manifest, ViolationKind};
-use peach_harness::telemetry::{self, TelemetryEvent, event};
 use peach_harness::runtime;
+use peach_harness::telemetry::{self, TelemetryEvent, event};
 
 /// Harness state held for the length of one `exec` run.
 pub struct ExecHarness {
@@ -58,16 +58,21 @@ impl ExecHarness {
     /// * `repo_root` - Repository the task operates on.
     /// * `prompt` - The task exactly as given, before any harness notice.
     /// * `outputs` - Where evidence and telemetry go.
-    pub fn start(repo_root: PathBuf, prompt: &str, outputs: ExecOutputs<'_>) -> (Self, Option<String>) {
+    pub fn start(
+        repo_root: PathBuf,
+        prompt: &str,
+        outputs: ExecOutputs<'_>,
+    ) -> (Self, Option<String>) {
         let started_at = evidence::now();
         let mut evidence = outputs.evidence_dir.and_then(Evidence::create);
         if let Some(evidence) = evidence.as_mut() {
             evidence.write_text(evidence::PROMPT, prompt);
         }
-        let telemetry_path = outputs
-            .telemetry
-            .map(Path::to_path_buf)
-            .or_else(|| evidence.as_ref().map(|evidence| evidence.path(evidence::TELEMETRY)));
+        let telemetry_path = outputs.telemetry.map(Path::to_path_buf).or_else(|| {
+            evidence
+                .as_ref()
+                .map(|evidence| evidence.path(evidence::TELEMETRY))
+        });
         let start_commit = evidence::git_head(&repo_root);
         if let Some(path) = telemetry_path {
             telemetry::install(telemetry::Sink::jsonl(
@@ -77,10 +82,14 @@ impl ExecHarness {
             ));
         }
 
-        let protect_globs: Vec<String> =
-            integrity::DEFAULT_PROTECTED_GLOBS.iter().map(|s| s.to_string()).collect();
-        let exclude_globs: Vec<String> =
-            integrity::DEFAULT_EXCLUDE_GLOBS.iter().map(|s| s.to_string()).collect();
+        let protect_globs: Vec<String> = integrity::DEFAULT_PROTECTED_GLOBS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let exclude_globs: Vec<String> = integrity::DEFAULT_EXCLUDE_GLOBS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         // Outside the repository by construction (the system temp dir), so the
         // snapshot can never itself show up as a change to the repo or be
@@ -89,7 +98,10 @@ impl ExecHarness {
             .prefix("peach-ice-tea-integrity-")
             .tempdir()
             .inspect_err(|error| {
-                tracing::warn!(?error, "No integrity snapshot dir; violations will be reported but not restored")
+                tracing::warn!(
+                    ?error,
+                    "No integrity snapshot dir; violations will be reported but not restored"
+                )
             })
             .ok();
         let (protected, manifest) = integrity::discover_and_capture(
@@ -98,7 +110,10 @@ impl ExecHarness {
             &exclude_globs,
             snapshot.as_ref().map(tempfile::TempDir::path),
         );
-        let notice = match (integrity::model_notice(&protected), integrity::test_config_notice(&manifest)) {
+        let notice = match (
+            integrity::model_notice(&protected),
+            integrity::test_config_notice(&manifest),
+        ) {
             (Some(files), Some(config)) => Some(format!("{files}\n\n{config}")),
             (files, config) => files.or(config),
         };
@@ -295,7 +310,11 @@ pub async fn shutdown_signal() -> &'static str {
 /// per machine without needing a conversation id, which does not exist yet
 /// when the run starts.
 fn run_id() -> String {
-    format!("{}-{}", chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ"), std::process::id())
+    format!(
+        "{}-{}",
+        chrono::Utc::now().format("%Y%m%dT%H%M%S%.3fZ"),
+        std::process::id()
+    )
 }
 
 fn to_exec_integrity(report: &IntegrityReport) -> ExecIntegrity {

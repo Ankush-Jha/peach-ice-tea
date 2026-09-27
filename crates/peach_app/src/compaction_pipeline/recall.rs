@@ -49,7 +49,13 @@ pub fn write_handles(before: &[MessageEntry], after: &[MessageEntry]) -> Vec<Rec
             _ => None,
         })
         .filter_map(|result| {
-            let text: String = result.output.values.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("\n");
+            let text: String = result
+                .output
+                .values
+                .iter()
+                .filter_map(|v| v.as_str())
+                .collect::<Vec<_>>()
+                .join("\n");
             if text.is_empty() {
                 return None;
             }
@@ -91,8 +97,17 @@ pub fn recall_section(handles: &[RecallHandle]) -> Option<String> {
     let lines: Vec<String> = handles
         .iter()
         .map(|handle| {
-            let id = handle.call_id.as_deref().map(|id| format!(" {id}")).unwrap_or_default();
-            format!("- {}{id}: read {} ({} lines)", handle.tool, handle.path.display(), handle.lines)
+            let id = handle
+                .call_id
+                .as_deref()
+                .map(|id| format!(" {id}"))
+                .unwrap_or_default();
+            format!(
+                "- {}{id}: read {} ({} lines)",
+                handle.tool,
+                handle.path.display(),
+                handle.lines
+            )
         })
         .collect();
     Some(format!(
@@ -111,23 +126,49 @@ mod tests {
     use super::*;
 
     fn result(id: &str, text: &str) -> MessageEntry {
-        ContextMessage::tool_result(ToolResult::new(ToolName::new("shell")).call_id(ToolCallId::new(id)).success(text)).into()
+        ContextMessage::tool_result(
+            ToolResult::new(ToolName::new("shell"))
+                .call_id(ToolCallId::new(id))
+                .success(text),
+        )
+        .into()
     }
 
     #[test]
     fn test_only_results_that_left_the_view_get_handles_with_their_full_text() {
         let kept = result("c2", "still here");
-        let before = vec![ContextMessage::user("task", None).into(), result("c1", "line 1\nline 2\nline 3"), kept.clone()];
+        let before = vec![
+            ContextMessage::user("task", None).into(),
+            result("c1", "line 1\nline 2\nline 3"),
+            kept.clone(),
+        ];
         let after = vec![ContextMessage::user("summary", None).into(), kept];
 
         let handles = write_handles(&before, &after);
 
         let actual: Vec<(String, Option<String>, usize, String)> = handles
             .iter()
-            .map(|h| (h.tool.clone(), h.call_id.clone(), h.lines, std::fs::read_to_string(&h.path).unwrap()))
+            .map(|h| {
+                (
+                    h.tool.clone(),
+                    h.call_id.clone(),
+                    h.lines,
+                    std::fs::read_to_string(&h.path).unwrap(),
+                )
+            })
             .collect();
-        handles.iter().for_each(|h| drop(std::fs::remove_file(&h.path)));
-        assert_eq!(actual, vec![("shell".to_string(), Some("c1".to_string()), 3, "line 1\nline 2\nline 3".to_string())]);
+        handles
+            .iter()
+            .for_each(|h| drop(std::fs::remove_file(&h.path)));
+        assert_eq!(
+            actual,
+            vec![(
+                "shell".to_string(),
+                Some("c1".to_string()),
+                3,
+                "line 1\nline 2\nline 3".to_string()
+            )]
+        );
     }
 
     #[test]

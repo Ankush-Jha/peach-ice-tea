@@ -24,7 +24,9 @@ pub fn failover_reason(error: &anyhow::Error) -> Option<String> {
     if let Some(quota) = peach_domain::provider_quota::exhausted_quota(error) {
         return Some(format!("provider quota exhausted ({quota})"));
     }
-    let retries_exhausted = error.chain().any(|cause| matches!(cause.downcast_ref::<Error>(), Some(Error::Retryable(_))));
+    let retries_exhausted = error
+        .chain()
+        .any(|cause| matches!(cause.downcast_ref::<Error>(), Some(Error::Retryable(_))));
     retries_exhausted.then(|| format!("still failing after retries: {}", error.root_cause()))
 }
 
@@ -72,16 +74,24 @@ mod tests {
     fn test_the_list_skips_the_current_model_blanks_and_repeats() {
         let mut fixture = Failover::new(&ModelId::new("a"), " b, a,,c , b");
 
-        let actual = [fixture.next_model(), fixture.next_model(), fixture.next_model()];
+        let actual = [
+            fixture.next_model(),
+            fixture.next_model(),
+            fixture.next_model(),
+        ];
 
-        assert_eq!(actual, [Some(ModelId::new("b")), Some(ModelId::new("c")), None]);
+        assert_eq!(
+            actual,
+            [Some(ModelId::new("b")), Some(ModelId::new("c")), None]
+        );
     }
 
     #[test]
     fn test_only_unrecoverable_quotas_and_exhausted_retries_fail_over() {
         let quota = anyhow::anyhow!("Invalid Status Code: 402")
             .context(r#"402 Reason: {"error":{"metadata":{"limit_source":"openrouter_credits"}}}"#);
-        let retried: anyhow::Error = Error::Retryable(anyhow::anyhow!("Invalid Status Code: 503")).into();
+        let retried: anyhow::Error =
+            Error::Retryable(anyhow::anyhow!("Invalid Status Code: 503")).into();
         let bad_request = anyhow::anyhow!("Invalid Status Code: 400");
 
         let actual = [&quota, &retried, &bad_request].map(|e| failover_reason(e).is_some());

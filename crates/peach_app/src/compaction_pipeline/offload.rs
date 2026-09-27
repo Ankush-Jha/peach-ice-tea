@@ -8,7 +8,7 @@
 //! that is enough, S3's summary never runs. Behind `PEACH_HARNESS_OFFLOAD=1`,
 //! default off until an A/B (D-074).
 
-use peach_domain::{Context, ContextMessage, ToolOutput, ToolResult, OFFLOAD_STUB_MARKER};
+use peach_domain::{Context, ContextMessage, OFFLOAD_STUB_MARKER, ToolOutput, ToolResult};
 
 use super::recall::{RecallHandle, write_file};
 
@@ -37,12 +37,22 @@ pub fn offload(mut context: Context, retention_window: usize) -> (Context, Vec<R
     let eligible = context.messages.len().saturating_sub(retention_window);
     let mut handles = Vec::new();
     for entry in context.messages.iter_mut().take(eligible) {
-        let ContextMessage::Tool(result) = &mut entry.message else { continue };
-        let text: String = result.output.values.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("\n");
+        let ContextMessage::Tool(result) = &mut entry.message else {
+            continue;
+        };
+        let text: String = result
+            .output
+            .values
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         if text.chars().count() < OFFLOAD_MIN_CHARS || text.starts_with(OFFLOAD_STUB_MARKER) {
             continue;
         }
-        let Ok(path) = write_file(&text).inspect_err(|error| tracing::warn!(?error, "Could not offload a result")) else {
+        let Ok(path) = write_file(&text)
+            .inspect_err(|error| tracing::warn!(?error, "Could not offload a result"))
+        else {
             continue;
         };
         handles.push(RecallHandle {
@@ -58,7 +68,11 @@ pub fn offload(mut context: Context, retention_window: usize) -> (Context, Vec<R
 
 fn stub(result: &ToolResult, text: &str, path: &std::path::Path) -> ToolResult {
     let preview: String = text.chars().take(PREVIEW_CHARS).collect();
-    let status = if result.output.is_error { " (an error)" } else { "" };
+    let status = if result.output.is_error {
+        " (an error)"
+    } else {
+        ""
+    };
     let body = format!(
         "{OFFLOAD_STUB_MARKER} {} chars, {} lines of {} output{status}. First {PREVIEW_CHARS} chars:\n{preview}\n… \
          Full result: read {} (the complete output).]",
@@ -81,7 +95,11 @@ mod tests {
     use super::*;
 
     fn result(id: &str, text: String) -> ContextMessage {
-        ContextMessage::tool_result(ToolResult::new(ToolName::new("shell")).call_id(ToolCallId::new(id)).success(text))
+        ContextMessage::tool_result(
+            ToolResult::new(ToolName::new("shell"))
+                .call_id(ToolCallId::new(id))
+                .success(text),
+        )
     }
 
     #[test]
@@ -99,10 +117,20 @@ mod tests {
             ContextMessage::Tool(r) => r.output.values[0].as_str().unwrap().to_string(),
             _ => String::new(),
         };
-        assert!(text(1).starts_with(OFFLOAD_STUB_MARKER), "the old large result was not offloaded");
-        assert!(text(1).contains(&format!("read {} (the complete output)", handles[0].path.display())));
+        assert!(
+            text(1).starts_with(OFFLOAD_STUB_MARKER),
+            "the old large result was not offloaded"
+        );
+        assert!(text(1).contains(&format!(
+            "read {} (the complete output)",
+            handles[0].path.display()
+        )));
         assert_eq!(text(2), "ok");
-        assert_eq!(text(3), big, "a result inside the retention window was touched");
+        assert_eq!(
+            text(3),
+            big,
+            "a result inside the retention window was touched"
+        );
         assert_eq!(actual.messages[0], fixture.messages[0], "user text changed");
         assert_eq!(handles.len(), 1);
         assert_eq!(std::fs::read_to_string(&handles[0].path).unwrap(), big);
@@ -111,13 +139,17 @@ mod tests {
 
     #[test]
     fn test_offloading_twice_changes_nothing_the_second_time() {
-        let fixture = Context::default().add_message(result("a", "x".repeat(5_000))).add_message(ContextMessage::user("next", None));
+        let fixture = Context::default()
+            .add_message(result("a", "x".repeat(5_000)))
+            .add_message(ContextMessage::user("next", None));
         let (once, handles) = offload(fixture, 1);
 
         let (twice, again) = offload(once.clone(), 1);
 
         assert_eq!(twice, once);
         assert!(again.is_empty());
-        handles.iter().for_each(|h| drop(std::fs::remove_file(&h.path)));
+        handles
+            .iter()
+            .for_each(|h| drop(std::fs::remove_file(&h.path)));
     }
 }

@@ -34,7 +34,10 @@ pub fn compact(description: &str) -> String {
         // The closing tag's name may differ from the opening one's
         // (`<example_agent_descriptions>` … `</example_agent_description>`
         // is in the upstream text), so close on the first `</example`.
-        match after.find("</example").and_then(|close| after.get(close..)?.find('>').map(|end| close + end + 1)) {
+        match after
+            .find("</example")
+            .and_then(|close| after.get(close..)?.find('>').map(|end| close + end + 1))
+        {
             Some(end) => rest = after.get(end..).unwrap_or_default(),
             None => {
                 // Unclosed: keep the text rather than drop the remainder.
@@ -56,9 +59,14 @@ fn drop_empty_sections(text: &str) -> String {
     let mut out: Vec<&str> = Vec::with_capacity(lines.len());
     for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        let lead_in = is_heading(line) || (trimmed.ends_with(':') && trimmed.to_ascii_lowercase().contains("example"));
+        let lead_in = is_heading(line)
+            || (trimmed.ends_with(':') && trimmed.to_ascii_lowercase().contains("example"));
         if lead_in {
-            let next = lines.get(index + 1..).unwrap_or_default().iter().find(|next| !next.trim().is_empty());
+            let next = lines
+                .get(index + 1..)
+                .unwrap_or_default()
+                .iter()
+                .find(|next| !next.trim().is_empty());
             if next.is_none_or(|next| is_heading(next)) {
                 continue;
             }

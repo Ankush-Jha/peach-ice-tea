@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::evidence;
 use crate::identity::{HarnessIdentity, REPORT_SCHEMA_VERSION};
-use crate::telemetry::event::Envelope;
 use crate::telemetry::TelemetryEvent;
+use crate::telemetry::event::Envelope;
 
 /// The generated report file names.
 pub const REPORT_JSON: &str = "report.json";
@@ -227,24 +227,34 @@ pub fn build(dir: &Path) -> Report {
     let integrity = read_json(dir, evidence::INTEGRITY, &mut notes);
     let testing = read_json(dir, evidence::TESTS, &mut notes)
         .unwrap_or_else(|| serde_json::json!({"available": false}));
-    let (events, unparseable) = match crate::telemetry::sink::read_jsonl_lenient(&dir.join(evidence::TELEMETRY)) {
-        Ok(read) => read,
-        Err(_) => {
-            notes.push(format!("{}: not available, missing from the bundle", evidence::TELEMETRY));
-            (vec![], 0)
-        }
-    };
+    let (events, unparseable) =
+        match crate::telemetry::sink::read_jsonl_lenient(&dir.join(evidence::TELEMETRY)) {
+            Ok(read) => read,
+            Err(_) => {
+                notes.push(format!(
+                    "{}: not available, missing from the bundle",
+                    evidence::TELEMETRY
+                ));
+                (vec![], 0)
+            }
+        };
     let repository = match std::fs::read_to_string(dir.join(evidence::DIFF)) {
         Ok(diff) => Some(diff_stats(&diff)),
         Err(_) => {
-            notes.push(format!("{}: not available, missing from the bundle", evidence::DIFF));
+            notes.push(format!(
+                "{}: not available, missing from the bundle",
+                evidence::DIFF
+            ));
             None
         }
     };
 
     let metrics = exec.as_ref().and_then(|exec| exec.get("metrics")).cloned();
     let text = |key: &str| {
-        exec.as_ref().and_then(|exec| exec.get(key)).and_then(|v| v.as_str()).map(str::to_string)
+        exec.as_ref()
+            .and_then(|exec| exec.get(key))
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
     };
 
     let tokens = metrics.as_ref().map(|m| {
@@ -280,7 +290,8 @@ pub fn build(dir: &Path) -> Report {
         prompt_composition: BTreeMap::new(),
         cache_around_compactions: vec![],
     };
-    // R-CTX-8: the last call's cache rate, and compactions awaiting their next call.
+    // R-CTX-8: the last call's cache rate, and compactions awaiting their next
+    // call.
     let mut last_cache_rate: Option<f64> = None;
     let mut awaiting_next_call: Vec<usize> = vec![];
     let mut agents: Vec<String> = vec![];
@@ -316,12 +327,16 @@ pub fn build(dir: &Path) -> Report {
                 model_inputs.extend(call.input_tokens);
                 contexts.extend(call.context_tokens_estimated);
                 durations.push(call.duration_ms);
-                let reason = call.finish_reason.clone().unwrap_or_else(|| "unreported".to_string());
+                let reason = call
+                    .finish_reason
+                    .clone()
+                    .unwrap_or_else(|| "unreported".to_string());
                 *finish_reasons.entry(reason.clone()).or_default() += 1;
                 format!(
                     "model call: {} in / {} out, {} tool call(s), finish {reason}",
                     call.input_tokens.map_or("?".to_string(), |t| t.to_string()),
-                    call.output_tokens.map_or("?".to_string(), |t| t.to_string()),
+                    call.output_tokens
+                        .map_or("?".to_string(), |t| t.to_string()),
                     call.tool_call_ids.len()
                 )
             }
@@ -338,23 +353,38 @@ pub fn build(dir: &Path) -> Report {
                     row.errors += 1;
                     recovery.tool_errors += 1;
                 }
-                format!("tool {}: {}", call.name, if call.success { "ok" } else { "error" })
+                format!(
+                    "tool {}: {}",
+                    call.name,
+                    if call.success { "ok" } else { "error" }
+                )
             }
             TelemetryEvent::Retry(retry) => {
                 retry_events += 1;
-                *recovery.retries_by_reason.entry(retry_class(&retry.reason)).or_default() += 1;
+                *recovery
+                    .retries_by_reason
+                    .entry(retry_class(&retry.reason))
+                    .or_default() += 1;
                 if retry.usage_reported == Some(false) {
                     recovery.unmetered_empty_completions += 1;
                 }
-                format!("retry {} of {}: {}", retry.attempt, retry.operation, retry_class(&retry.reason))
+                format!(
+                    "retry {} of {}: {}",
+                    retry.attempt,
+                    retry.operation,
+                    retry_class(&retry.reason)
+                )
             }
             TelemetryEvent::ContextCompaction(compaction) => {
                 awaiting_next_call.push(context.cache_around_compactions.len());
-                context.cache_around_compactions.push((last_cache_rate, None));
-                context.compactions += 1;
                 context
-                    .compaction_messages
-                    .push((compaction.messages_before as u64, compaction.messages_after as u64));
+                    .cache_around_compactions
+                    .push((last_cache_rate, None));
+                context.compactions += 1;
+                context.compaction_messages.push((
+                    compaction.messages_before as u64,
+                    compaction.messages_after as u64,
+                ));
                 context.tokens_reclaimed_estimated += compaction
                     .tokens_before_estimated
                     .unwrap_or(0)
@@ -369,7 +399,10 @@ pub fn build(dir: &Path) -> Report {
                     recovery.refused_integrity_actions += 1;
                 }
                 match &integrity.path {
-                    Some(path) => format!("integrity {} `{path}`: {}", integrity.kind, integrity.detail),
+                    Some(path) => format!(
+                        "integrity {} `{path}`: {}",
+                        integrity.kind, integrity.detail
+                    ),
                     None => format!("integrity {}: {}", integrity.kind, integrity.detail),
                 }
             }
@@ -399,10 +432,16 @@ pub fn build(dir: &Path) -> Report {
                 "prompt composition recorded".to_string()
             }
         };
-        timeline.push(TimelineEntry { timestamp: timestamp.clone(), agent: agent_id.clone(), event: summary });
+        timeline.push(TimelineEntry {
+            timestamp: timestamp.clone(),
+            agent: agent_id.clone(),
+            event: summary,
+        });
     }
 
-    let retried_attempts = metrics.as_ref().and_then(|m| number(m, "retried_llm_calls"));
+    let retried_attempts = metrics
+        .as_ref()
+        .and_then(|m| number(m, "retried_llm_calls"));
     if retried_attempts.is_some_and(|attempts| attempts != retry_events) && !events.is_empty() {
         notes.push(format!(
             "retry count differs: {retry_events} retry event(s) in telemetry, {} in exec metrics; \
@@ -416,7 +455,10 @@ pub fn build(dir: &Path) -> Report {
         harness: HarnessIdentity::current(),
         outcome: Outcome {
             outcome: text("outcome"),
-            exit_code: exec.as_ref().and_then(|e| e.get("exit_code")).and_then(|v| v.as_i64()),
+            exit_code: exec
+                .as_ref()
+                .and_then(|e| e.get("exit_code"))
+                .and_then(|v| v.as_i64()),
             error: text("error"),
             model: text("model"),
         },
@@ -457,9 +499,16 @@ fn retry_class(reason: &str) -> String {
         return "empty_completion".to_string();
     }
     let lower = reason.to_ascii_lowercase();
-    if ["connection", "refused", "timed out", "timeout", "dns", "reset by peer"]
-        .iter()
-        .any(|needle| lower.contains(needle))
+    if [
+        "connection",
+        "refused",
+        "timed out",
+        "timeout",
+        "dns",
+        "reset by peer",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
     {
         return "transport".to_string();
     }
@@ -468,7 +517,11 @@ fn retry_class(reason: &str) -> String {
         .find(|part| part.len() == 3 && (part.starts_with('4') || part.starts_with('5')))
         .unwrap_or_default()
         .to_string();
-    if digits.is_empty() { "other".to_string() } else { format!("http_{digits}") }
+    if digits.is_empty() {
+        "other".to_string()
+    } else {
+        format!("http_{digits}")
+    }
 }
 
 /// Per-file added/removed line counts from a unified diff.
@@ -501,15 +554,28 @@ fn or_na<T: ToString>(value: Option<T>) -> String {
 pub fn render_md(report: &Report) -> String {
     let mut md = String::new();
     let o = &report.outcome;
-    let _ = writeln!(md, "# Run report — {} {}\n", report.harness.name, report.harness.version);
-    let _ = writeln!(md, "| Outcome | Exit | Model | Wall time |\n|---|---|---|---|");
+    let _ = writeln!(
+        md,
+        "# Run report — {} {}\n",
+        report.harness.name, report.harness.version
+    );
+    let _ = writeln!(
+        md,
+        "| Outcome | Exit | Model | Wall time |\n|---|---|---|---|"
+    );
     let _ = writeln!(
         md,
         "| {} | {} | {} | {} |\n",
         or_na(o.outcome.clone()),
         or_na(o.exit_code),
         or_na(o.model.clone()),
-        report.execution.wall_ms.map_or("not available".to_string(), |ms| format!("{:.1} s", ms as f64 / 1000.0))
+        report
+            .execution
+            .wall_ms
+            .map_or("not available".to_string(), |ms| format!(
+                "{:.1} s",
+                ms as f64 / 1000.0
+            ))
     );
     if let Some(error) = &o.error {
         let _ = writeln!(md, "Error: `{error}`\n");
@@ -518,7 +584,10 @@ pub fn render_md(report: &Report) -> String {
     let _ = writeln!(md, "## Tokens (provider-reported)\n");
     match &report.tokens {
         Some(t) => {
-            let _ = writeln!(md, "| Input | Cached input | Output | Reasoning | Cache hit rate |\n|---|---|---|---|---|");
+            let _ = writeln!(
+                md,
+                "| Input | Cached input | Output | Reasoning | Cache hit rate |\n|---|---|---|---|---|"
+            );
             let _ = writeln!(
                 md,
                 "| {} | {} | {} | {} | {} |\n",
@@ -526,7 +595,8 @@ pub fn render_md(report: &Report) -> String {
                 t.cached_input,
                 t.output,
                 t.reasoning,
-                t.cache_hit_rate.map_or("n/a".to_string(), |r| format!("{:.1}%", r * 100.0))
+                t.cache_hit_rate
+                    .map_or("n/a".to_string(), |r| format!("{:.1}%", r * 100.0))
             );
         }
         None => {
@@ -535,9 +605,16 @@ pub fn render_md(report: &Report) -> String {
     }
 
     let m = &report.model_calls;
-    let stats = |s: &Option<Stats>| s.map_or("not available".to_string(), |s| format!("{} / {} / {}", s.min, s.mean, s.max));
+    let stats = |s: &Option<Stats>| {
+        s.map_or("not available".to_string(), |s| {
+            format!("{} / {} / {}", s.min, s.mean, s.max)
+        })
+    };
     let _ = writeln!(md, "## Model calls\n");
-    let _ = writeln!(md, "| Calls | Failed | Retried attempts (metrics) | Retry events (telemetry) | Input tok/call (min/mean/max) | Context tok est. (min/mean/max) | Duration ms (min/mean/max) |\n|---|---|---|---|---|---|---|");
+    let _ = writeln!(
+        md,
+        "| Calls | Failed | Retried attempts (metrics) | Retry events (telemetry) | Input tok/call (min/mean/max) | Context tok est. (min/mean/max) | Duration ms (min/mean/max) |\n|---|---|---|---|---|---|---|"
+    );
     let _ = writeln!(
         md,
         "| {} | {} | {} | {} | {} | {} | {} |\n",
@@ -562,33 +639,61 @@ pub fn render_md(report: &Report) -> String {
         } else {
             format!(
                 " · messages: {}",
-                c.compaction_messages.iter().map(|(b, a)| format!("{b}→{a}")).collect::<Vec<_>>().join(", ")
+                c.compaction_messages
+                    .iter()
+                    .map(|(b, a)| format!("{b}→{a}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )
         }
     );
     if !c.cache_around_compactions.is_empty() {
-        let pct = |rate: &Option<f64>| rate.map_or("n/a".to_string(), |r| format!("{:.0}%", r * 100.0));
-        let pairs: Vec<String> =
-            c.cache_around_compactions.iter().map(|(before, after)| format!("{}→{}", pct(before), pct(after))).collect();
-        let _ = writeln!(md, "Cache hit rate around each compaction (call before → call after): {}\n", pairs.join(", "));
+        let pct =
+            |rate: &Option<f64>| rate.map_or("n/a".to_string(), |r| format!("{:.0}%", r * 100.0));
+        let pairs: Vec<String> = c
+            .cache_around_compactions
+            .iter()
+            .map(|(before, after)| format!("{}→{}", pct(before), pct(after)))
+            .collect();
+        let _ = writeln!(
+            md,
+            "Cache hit rate around each compaction (call before → call after): {}\n",
+            pairs.join(", ")
+        );
     }
     if !c.prompt_composition.is_empty() {
         let total: u64 = c.prompt_composition.values().sum();
         let parts: Vec<String> = c
             .prompt_composition
             .iter()
-            .map(|(source, tokens)| format!("{source} {tokens} ({:.0}%)", *tokens as f64 * 100.0 / total.max(1) as f64))
+            .map(|(source, tokens)| {
+                format!(
+                    "{source} {tokens} ({:.0}%)",
+                    *tokens as f64 * 100.0 / total.max(1) as f64
+                )
+            })
             .collect();
-        let _ = writeln!(md, "First request, estimated tokens by source: {}\n", parts.join(" · "));
+        let _ = writeln!(
+            md,
+            "First request, estimated tokens by source: {}\n",
+            parts.join(" · ")
+        );
     }
 
     let _ = writeln!(md, "## Tools\n");
     if report.tools.is_empty() {
         let _ = writeln!(md, "No tool calls recorded.\n");
     } else {
-        let _ = writeln!(md, "| Tool | Calls | Errors | Total ms |\n|---|---|---|---|");
+        let _ = writeln!(
+            md,
+            "| Tool | Calls | Errors | Total ms |\n|---|---|---|---|"
+        );
         for tool in &report.tools {
-            let _ = writeln!(md, "| {} | {} | {} | {} |", tool.name, tool.calls, tool.errors, tool.total_duration_ms);
+            let _ = writeln!(
+                md,
+                "| {} | {} | {} | {} |",
+                tool.name, tool.calls, tool.errors, tool.total_duration_ms
+            );
         }
         let _ = writeln!(md);
     }
@@ -598,12 +703,19 @@ pub fn render_md(report: &Report) -> String {
     let retries = if r.retries_by_reason.is_empty() {
         "none".to_string()
     } else {
-        r.retries_by_reason.iter().map(|(k, v)| format!("{k} ×{v}")).collect::<Vec<_>>().join(", ")
+        r.retries_by_reason
+            .iter()
+            .map(|(k, v)| format!("{k} ×{v}"))
+            .collect::<Vec<_>>()
+            .join(", ")
     };
     let _ = writeln!(
         md,
         "Retries: {retries} · unmetered empty completions: {} · tool errors: {} · refused test edits: {} · suppressed prompts: {}\n",
-        r.unmetered_empty_completions, r.tool_errors, r.refused_integrity_actions, r.suppressed_prompts
+        r.unmetered_empty_completions,
+        r.tool_errors,
+        r.refused_integrity_actions,
+        r.suppressed_prompts
     );
     if !r.recoveries_by_attribution.is_empty() {
         let by = r
@@ -622,7 +734,10 @@ pub fn render_md(report: &Report) -> String {
         );
     }
 
-    let _ = writeln!(md, "## Testing (the harness's own run after the agent stopped)\n");
+    let _ = writeln!(
+        md,
+        "## Testing (the harness's own run after the agent stopped)\n"
+    );
     let _ = writeln!(md, "{}", render_testing(&report.testing));
 
     let _ = writeln!(md, "## Repository changes\n");
@@ -631,10 +746,20 @@ pub fn render_md(report: &Report) -> String {
             let _ = writeln!(md, "No changes.\n");
         }
         Some(repo) => {
-            let _ = writeln!(md, "{} file(s), +{} −{}\n", repo.files.len(), repo.lines_added, repo.lines_removed);
+            let _ = writeln!(
+                md,
+                "{} file(s), +{} −{}\n",
+                repo.files.len(),
+                repo.lines_added,
+                repo.lines_removed
+            );
             let _ = writeln!(md, "| File | + | − |\n|---|---|---|");
             for file in &repo.files {
-                let _ = writeln!(md, "| `{}` | {} | {} |", file.path, file.added, file.removed);
+                let _ = writeln!(
+                    md,
+                    "| `{}` | {} | {} |",
+                    file.path, file.added, file.removed
+                );
             }
             let _ = writeln!(md);
         }
@@ -645,19 +770,34 @@ pub fn render_md(report: &Report) -> String {
     let _ = writeln!(md, "## Test integrity\n");
     match &report.integrity {
         Some(integrity) => {
-            let violations = integrity.get("violations").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-            let checked = integrity.get("checked").and_then(|v| v.as_u64()).unwrap_or(0);
+            let violations = integrity
+                .get("violations")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let checked = integrity
+                .get("checked")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
             if violations.is_empty() {
                 let _ = writeln!(md, "{checked} protected file(s) checked; all unchanged.\n");
             } else {
-                let _ = writeln!(md, "{checked} protected file(s) checked; {} violation(s):\n", violations.len());
+                let _ = writeln!(
+                    md,
+                    "{checked} protected file(s) checked; {} violation(s):\n",
+                    violations.len()
+                );
                 for v in violations {
                     let _ = writeln!(
                         md,
                         "- `{}` {}, {}",
                         v.get("path").and_then(|x| x.as_str()).unwrap_or("?"),
                         v.get("kind").and_then(|x| x.as_str()).unwrap_or("?"),
-                        if v.get("restored") == Some(&serde_json::Value::Bool(true)) { "restored" } else { "NOT restored" }
+                        if v.get("restored") == Some(&serde_json::Value::Bool(true)) {
+                            "restored"
+                        } else {
+                            "NOT restored"
+                        }
                     );
                 }
                 let _ = writeln!(md);
@@ -674,7 +814,10 @@ pub fn render_md(report: &Report) -> String {
             md,
             "- `{}`{} {}",
             entry.timestamp,
-            entry.agent.as_ref().map_or(String::new(), |a| format!(" [{a}]")),
+            entry
+                .agent
+                .as_ref()
+                .map_or(String::new(), |a| format!(" [{a}]")),
             entry.event
         );
     }
@@ -701,13 +844,20 @@ fn render_testing(testing: &serde_json::Value) -> String {
         other => other.to_string(),
     };
     let mut md = String::new();
-    let _ = writeln!(md, "| Result | Passed | Failed | Skipped | Exit | Duration ms | Command | Why this command |");
+    let _ = writeln!(
+        md,
+        "| Result | Passed | Failed | Skipped | Exit | Duration ms | Command | Why this command |"
+    );
     let _ = writeln!(md, "|---|---|---|---|---|---|---|---|");
     let _ = writeln!(
         md,
         "| {}{} | {} | {} | {} | {} | {} | `{}` | {} |\n",
         field("class"),
-        if testing["timed_out"] == true { " (timed out)" } else { "" },
+        if testing["timed_out"] == true {
+            " (timed out)"
+        } else {
+            ""
+        },
         field("passed"),
         field("failed"),
         field("skipped"),
@@ -716,10 +866,21 @@ fn render_testing(testing: &serde_json::Value) -> String {
         field("command"),
         field("source"),
     );
-    let tail: Vec<&str> = testing["output_tail"].as_str().unwrap_or_default().lines().collect();
+    let tail: Vec<&str> = testing["output_tail"]
+        .as_str()
+        .unwrap_or_default()
+        .lines()
+        .collect();
     if !tail.is_empty() {
-        let shown = tail.get(tail.len().saturating_sub(12)..).unwrap_or_default();
-        let _ = writeln!(md, "Last {} line(s) of output:\n\n```\n{}\n```\n", shown.len(), shown.join("\n"));
+        let shown = tail
+            .get(tail.len().saturating_sub(12)..)
+            .unwrap_or_default();
+        let _ = writeln!(
+            md,
+            "Last {} line(s) of output:\n\n```\n{}\n```\n",
+            shown.len(),
+            shown.join("\n")
+        );
     }
     md
 }
@@ -731,7 +892,10 @@ fn render_testing(testing: &serde_json::Value) -> String {
 /// Returns an error when either file cannot be written.
 pub fn generate(dir: &Path) -> anyhow::Result<Report> {
     let report = build(dir);
-    std::fs::write(dir.join(REPORT_JSON), serde_json::to_string_pretty(&report)?)?;
+    std::fs::write(
+        dir.join(REPORT_JSON),
+        serde_json::to_string_pretty(&report)?,
+    )?;
     std::fs::write(dir.join(REPORT_MD), render_md(&report))?;
     Ok(report)
 }
@@ -765,7 +929,11 @@ mod tests {
         json["harness"] = serde_json::json!("<identity>");
         insta::assert_json_snapshot!("report_json", json);
         let mut normalized = actual.clone();
-        normalized.harness = HarnessIdentity { name: "peach-ice-tea".into(), version: "0".into(), build: None };
+        normalized.harness = HarnessIdentity {
+            name: "peach-ice-tea".into(),
+            version: "0".into(),
+            build: None,
+        };
         insta::assert_snapshot!("report_md", render_md(&normalized));
     }
 
@@ -801,7 +969,13 @@ mod tests {
 
         let actual = build(fixture.path());
 
-        assert_eq!((actual.model_calls.retried_attempts, actual.model_calls.retry_events), (Some(0), 2));
+        assert_eq!(
+            (
+                actual.model_calls.retried_attempts,
+                actual.model_calls.retry_events
+            ),
+            (Some(0), 2)
+        );
         assert_eq!(
             actual.notes,
             vec![
@@ -822,15 +996,22 @@ mod tests {
 
         let actual = render_testing(&fixture);
 
-        assert!(actual.contains("| test_assertion | 3 | 1 | 0 | 1 | 110 | `python3 -m unittest` | explicit |"));
-        assert!(actual.contains("Last 12 line(s)") && actual.contains("line 30") && !actual.contains("line 18\n"));
+        assert!(actual.contains(
+            "| test_assertion | 3 | 1 | 0 | 1 | 110 | `python3 -m unittest` | explicit |"
+        ));
+        assert!(
+            actual.contains("Last 12 line(s)")
+                && actual.contains("line 30")
+                && !actual.contains("line 18\n")
+        );
     }
 
     #[test]
     fn test_recoveries_are_tallied_by_whose_failure_they_answered() {
         let fixture = fixture_bundle();
         let recovery = |action: &str, attribution: Option<&str>| {
-            let mut event = serde_json::json!({"type": "recovery", "action": action, "trigger": "t"});
+            let mut event =
+                serde_json::json!({"type": "recovery", "action": action, "trigger": "t"});
             if let Some(attribution) = attribution {
                 event["attribution"] = attribution.into();
             }
@@ -849,7 +1030,9 @@ mod tests {
         .join("\n");
         std::fs::write(fixture.path().join(evidence::TELEMETRY), telemetry).unwrap();
 
-        let actual = build(fixture.path()).error_recovery.recoveries_by_attribution;
+        let actual = build(fixture.path())
+            .error_recovery
+            .recoveries_by_attribution;
 
         let expected = BTreeMap::from([("harness".to_string(), 1), ("model".to_string(), 2)]);
         assert_eq!(actual, expected);
@@ -868,7 +1051,16 @@ mod tests {
         .map(|r| retry_class(r))
         .collect();
 
-        assert_eq!(actual, vec!["empty_completion", "http_429", "http_503", "transport", "other"]);
+        assert_eq!(
+            actual,
+            vec![
+                "empty_completion",
+                "http_429",
+                "http_503",
+                "transport",
+                "other"
+            ]
+        );
     }
 
     #[test]

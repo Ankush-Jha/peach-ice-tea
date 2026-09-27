@@ -5,8 +5,8 @@
 //! (`DECISIONS.md` D-004). The crate deliberately does not depend on
 //! `peach_app`, to keep the dependency graph acyclic.
 
-pub mod identity;
 pub mod evidence;
+pub mod identity;
 pub mod integrity;
 pub mod redact;
 pub mod report;

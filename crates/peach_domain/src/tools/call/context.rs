@@ -94,7 +94,10 @@ impl ToolCallContext {
     /// # Errors
     /// Returns an error if the metrics lock cannot be acquired or the note is
     /// blank.
-    pub fn append_note(&self, text: &str) -> anyhow::Result<(ScratchNote, Option<ScratchNote>, usize)> {
+    pub fn append_note(
+        &self,
+        text: &str,
+    ) -> anyhow::Result<(ScratchNote, Option<ScratchNote>, usize)> {
         self.try_with_metrics(|metrics| {
             let (note, evicted) = metrics.notes.add(text)?;
             Ok((note, evicted, metrics.notes.items.len()))

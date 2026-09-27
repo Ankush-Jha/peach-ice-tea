@@ -9,29 +9,28 @@
 //! scorer call with no timeout of its own.
 //!
 //! Several complementary strategies are used:
-//! - **Key-shaped matches**: an identifier that looks like a secret-bearing
-//!   key (`api_key`, `token`, `password`, ...) immediately followed by a
-//!   separator (`=`, `:`, `": "`) redacts the value that follows. This is
-//!   deliberately biased toward over-redaction for the sake of recall: a
-//!   generic word like `token` or `secret` used as an ordinary variable or
-//!   config-key name can get its value redacted even though it isn't a
-//!   secret (`token = generate_uuid()`, `credential_store = cache`) —
-//!   leaking a real secret is worse than an unnecessary `[REDACTED]`. Two
-//!   narrower exceptions exist specifically to avoid *corrupting* source
-//!   code rather than just over-redacting it: a lone identifier is never
-//!   treated as a key when it is a Rust/TS-style type annotation (`name:
-//!   Type`, so `pub token: String` is left alone) or reached via `::` (a
-//!   path/type reference, not an assignment, so `Type::method(...)` after
-//!   `=` is never swallowed as a "value").
+//! - **Key-shaped matches**: an identifier that looks like a secret-bearing key
+//!   (`api_key`, `token`, `password`, ...) immediately followed by a separator
+//!   (`=`, `:`, `": "`) redacts the value that follows. This is deliberately
+//!   biased toward over-redaction for the sake of recall: a generic word like
+//!   `token` or `secret` used as an ordinary variable or config-key name can
+//!   get its value redacted even though it isn't a secret (`token =
+//!   generate_uuid()`, `credential_store = cache`) — leaking a real secret is
+//!   worse than an unnecessary `[REDACTED]`. Two narrower exceptions exist
+//!   specifically to avoid *corrupting* source code rather than just
+//!   over-redacting it: a lone identifier is never treated as a key when it is
+//!   a Rust/TS-style type annotation (`name: Type`, so `pub token: String` is
+//!   left alone) or reached via `::` (a path/type reference, not an assignment,
+//!   so `Type::method(...)` after `=` is never swallowed as a "value").
 //! - **Value-shaped matches**: well-known credential formats (AWS, Google,
-//!   OpenAI-style, GitHub, JWT, bearer tokens, PEM/OpenSSH private key
-//!   blocks, Slack webhook URLs) are recognisable from their own shape and
-//!   are redacted wherever they appear, even with no key name nearby. Two of
-//!   these — the OpenAI-style and JWT shapes — use a greedy scan whose
-//!   alphabet includes their own prefix's characters, which would otherwise
-//!   let a repeated prefix (`"sk-".repeat(n)`, `"-eyJ".repeat(n)`) cause
-//!   quadratic rescans; both track a "dead zone" so a rejected run is never
-//!   rescanned from a later starting point inside it.
+//!   OpenAI-style, GitHub, JWT, bearer tokens, PEM/OpenSSH private key blocks,
+//!   Slack webhook URLs) are recognisable from their own shape and are redacted
+//!   wherever they appear, even with no key name nearby. Two of these — the
+//!   OpenAI-style and JWT shapes — use a greedy scan whose alphabet includes
+//!   their own prefix's characters, which would otherwise let a repeated prefix
+//!   (`"sk-".repeat(n)`, `"-eyJ".repeat(n)`) cause quadratic rescans; both
+//!   track a "dead zone" so a rejected run is never rescanned from a later
+//!   starting point inside it.
 //! - **Positional matches**: connection-string credentials
 //!   (`scheme://user:pass@host`) have no key name and no fixed shape beyond
 //!   their position between `://` and `@`.
@@ -144,7 +143,9 @@ pub fn redact_json_strings(value: &mut serde_json::Value) {
 
 fn is_sensitive_key(key: &str) -> bool {
     let normalized = key.to_ascii_lowercase().replace('-', "_");
-    SENSITIVE_KEY_SUBSTRINGS.iter().any(|needle| normalized.contains(needle))
+    SENSITIVE_KEY_SUBSTRINGS
+        .iter()
+        .any(|needle| normalized.contains(needle))
 }
 
 // Bounds-checked accessors (CI's `indexing_slicing` / `string_slice` lints).
@@ -243,9 +244,14 @@ fn find_key_value_spans(input: &str) -> Vec<(usize, usize)> {
                 continue;
             }
 
-            if let Some(next) =
-                try_redact_after_separator(input, bytes, last_word, last_word_is_type_annotation, i + 1, &mut spans)
-            {
+            if let Some(next) = try_redact_after_separator(
+                input,
+                bytes,
+                last_word,
+                last_word_is_type_annotation,
+                i + 1,
+                &mut spans,
+            ) {
                 last_word = None;
                 last_word_is_type_annotation = false;
                 pending_after_single_colon = false;
@@ -261,9 +267,14 @@ fn find_key_value_spans(input: &str) -> Vec<(usize, usize)> {
         }
 
         if byte == b'=' {
-            if let Some(next) =
-                try_redact_after_separator(input, bytes, last_word, last_word_is_type_annotation, i + 1, &mut spans)
-            {
+            if let Some(next) = try_redact_after_separator(
+                input,
+                bytes,
+                last_word,
+                last_word_is_type_annotation,
+                i + 1,
+                &mut spans,
+            ) {
                 last_word = None;
                 last_word_is_type_annotation = false;
                 pending_after_single_colon = false;
@@ -320,7 +331,8 @@ fn try_redact_after_separator(
         return None;
     }
 
-    let (value_start, value_end, next, was_quoted, crossed_newline) = parse_value(bytes, scan_from)?;
+    let (value_start, value_end, next, was_quoted, crossed_newline) =
+        parse_value(bytes, scan_from)?;
     // An unquoted token that is nothing but a capitalised identifier reads
     // as a bare type or path reference (`String`, `SecretKey`, `Vec`)
     // rather than a secret value, and an unquoted token immediately
@@ -329,7 +341,8 @@ fn try_redact_after_separator(
     // digits/symbols that a plain identifier doesn't. Leave both alone
     // rather than guess wrong on ordinary source (`RESEARCH.md` S5's
     // git-diff lesson about over-aggressive compression).
-    let followed_by_path_separator = bytes.get(value_end) == Some(&b':') && bytes.get(value_end + 1) == Some(&b':');
+    let followed_by_path_separator =
+        bytes.get(value_end) == Some(&b':') && bytes.get(value_end + 1) == Some(&b':');
     // The type-reference heuristic reads code shape (`let k: SecretKey = ...`).
     // A value that began on a later line is config shape (`password=\nValue`),
     // where a bare capitalised identifier is an ordinary secret, not a type.
@@ -343,7 +356,8 @@ fn try_redact_after_separator(
 }
 
 fn is_bare_type_like(token: &[u8]) -> bool {
-    matches!(token.first(), Some(b) if b.is_ascii_uppercase()) && token.iter().all(|&b| is_ident_byte(b))
+    matches!(token.first(), Some(b) if b.is_ascii_uppercase())
+        && token.iter().all(|&b| is_ident_byte(b))
 }
 
 fn skip_inline_whitespace(bytes: &[u8], mut i: usize) -> usize {
@@ -411,7 +425,9 @@ fn parse_value(bytes: &[u8], mut i: usize) -> Option<(usize, usize, usize, bool,
     let start = i;
     while i < len {
         let byte = at(bytes, i);
-        if byte.is_ascii_whitespace() || matches!(byte, b'&' | b';' | b',' | b'}' | b')' | b']' | b':' | b'(') {
+        if byte.is_ascii_whitespace()
+            || matches!(byte, b'&' | b';' | b',' | b'}' | b')' | b']' | b':' | b'(')
+        {
             break;
         }
         i += 1;
@@ -451,7 +467,13 @@ fn find_value_shape_spans(input: &str, spans: &mut Vec<(usize, usize)>) {
 
     while i < len {
         let matched = match_aws_key(bytes, i)
-            .or_else(|| if i >= openai_dead_zone_end { match_openai_key(bytes, i) } else { None })
+            .or_else(|| {
+                if i >= openai_dead_zone_end {
+                    match_openai_key(bytes, i)
+                } else {
+                    None
+                }
+            })
             .or_else(|| match_google_key(bytes, i))
             .or_else(|| match_github_token(bytes, i))
             .or_else(|| match_bearer_token(bytes, i))
@@ -515,7 +537,10 @@ fn match_aws_key(bytes: &[u8], i: usize) -> Option<usize> {
     if end > bytes.len() {
         return None;
     }
-    if span(bytes, start, end).iter().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit()) {
+    if span(bytes, start, end)
+        .iter()
+        .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+    {
         Some(end)
     } else {
         None
@@ -655,8 +680,9 @@ fn match_bearer_token(bytes: &[u8], i: usize) -> Option<usize> {
         return None;
     }
     let token = span(bytes, token_start, j);
-    let looks_like_a_token =
-        token.iter().any(|b| b.is_ascii_digit() || matches!(b, b'-' | b'_' | b'.' | b'+' | b'/' | b'='));
+    let looks_like_a_token = token
+        .iter()
+        .any(|b| b.is_ascii_digit() || matches!(b, b'-' | b'_' | b'.' | b'+' | b'/' | b'='));
     if !looks_like_a_token {
         return None;
     }
@@ -677,19 +703,33 @@ fn match_slack_webhook(bytes: &[u8], i: usize) -> Option<(usize, usize)> {
     while j < bytes.len() && (at(bytes, j).is_ascii_alphanumeric() || at(bytes, j) == b'/') {
         j += 1;
     }
-    if j - path_start < 10 { None } else { Some((path_start, j)) }
+    if j - path_start < 10 {
+        None
+    } else {
+        Some((path_start, j))
+    }
 }
 
 /// Bounded forward search for `needle` starting at `start`, scanning at
 /// most `max_scan` bytes of haystack (plus the needle's own length) so a
 /// caller can bound the cost of a search that might otherwise never find
 /// its target in adversarial input.
-fn find_subsequence_bounded(bytes: &[u8], start: usize, needle: &[u8], max_scan: usize) -> Option<usize> {
+fn find_subsequence_bounded(
+    bytes: &[u8],
+    start: usize,
+    needle: &[u8],
+    max_scan: usize,
+) -> Option<usize> {
     if needle.is_empty() || start >= bytes.len() {
         return None;
     }
-    let search_end = bytes.len().min(start.saturating_add(max_scan).saturating_add(needle.len()));
-    span(bytes, start, search_end).windows(needle.len()).position(|window| window == needle).map(|pos| start + pos)
+    let search_end = bytes
+        .len()
+        .min(start.saturating_add(max_scan).saturating_add(needle.len()));
+    span(bytes, start, search_end)
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .map(|pos| start + pos)
 }
 
 /// Unbounded forward search for `needle` starting at `start`. Safe to call
@@ -707,7 +747,9 @@ fn contains_ascii_ignore_case(haystack: &[u8], needle: &[u8]) -> bool {
     if haystack.len() < needle.len() {
         return false;
     }
-    haystack.windows(needle.len()).any(|window| window.eq_ignore_ascii_case(needle))
+    haystack
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle))
 }
 
 /// Maximum distance searched, from the end of a `-----BEGIN ...-----` line,
@@ -737,7 +779,9 @@ fn find_pem_private_key_spans(input: &str, spans: &mut Vec<(usize, usize)>) {
 
     while let Some(begin_pos) = find_subsequence(bytes, i, BEGIN) {
         let label_start = begin_pos + BEGIN.len();
-        let Some(label_dashes) = find_subsequence_bounded(bytes, label_start, DASHES, PEM_LABEL_SEARCH_CAP) else {
+        let Some(label_dashes) =
+            find_subsequence_bounded(bytes, label_start, DASHES, PEM_LABEL_SEARCH_CAP)
+        else {
             i = label_start;
             continue;
         };
@@ -784,7 +828,9 @@ fn find_connection_string_spans(input: &str, spans: &mut Vec<(usize, usize)>) {
 
     while let Some(marker_pos) = find_subsequence(bytes, i, MARKER) {
         let userinfo_start = marker_pos + MARKER.len();
-        let cap_end = bytes.len().min(userinfo_start + CONNECTION_STRING_AUTHORITY_SEARCH_CAP);
+        let cap_end = bytes
+            .len()
+            .min(userinfo_start + CONNECTION_STRING_AUTHORITY_SEARCH_CAP);
 
         let mut at_pos = None;
         let mut k = userinfo_start;
@@ -936,7 +982,10 @@ mod tests {
 
         let actual = redact(fixture);
 
-        assert_eq!(actual, r#"{"api_key": "[REDACTED]", "region": "us-east-1"}"#);
+        assert_eq!(
+            actual,
+            r#"{"api_key": "[REDACTED]", "region": "us-east-1"}"#
+        );
     }
 
     #[test]
@@ -981,7 +1030,10 @@ mod tests {
 
         let actual = redact(fixture);
 
-        assert_eq!(actual, "secret=[REDACTED] token=[REDACTED] credential=[REDACTED]");
+        assert_eq!(
+            actual,
+            "secret=[REDACTED] token=[REDACTED] credential=[REDACTED]"
+        );
     }
 
     #[test]
@@ -1049,7 +1101,8 @@ mod tests {
 
     #[test]
     fn test_slack_webhook_url_is_redacted() {
-        let fixture = "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX";
+        let fixture =
+            "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX";
 
         let actual = redact(fixture);
 
@@ -1134,7 +1187,10 @@ mod tests {
 
         let actual = redact(fixture);
 
-        assert_eq!(actual, "token=[REDACTED]\npassword=[REDACTED]\nnormal_field=keep-me");
+        assert_eq!(
+            actual,
+            "token=[REDACTED]\npassword=[REDACTED]\nnormal_field=keep-me"
+        );
     }
 
     #[test]
@@ -1188,7 +1244,10 @@ mod tests {
         let elapsed = started.elapsed();
 
         assert_eq!(actual, fixture);
-        assert!(elapsed.as_secs() < 2, "redact took {elapsed:?} on pathological JWT-shaped input");
+        assert!(
+            elapsed.as_secs() < 2,
+            "redact took {elapsed:?} on pathological JWT-shaped input"
+        );
     }
 
     #[test]
@@ -1200,6 +1259,9 @@ mod tests {
         let elapsed = started.elapsed();
 
         assert_eq!(actual, fixture);
-        assert!(elapsed.as_secs() < 2, "redact took {elapsed:?} on pathological OpenAI-key-shaped input");
+        assert!(
+            elapsed.as_secs() < 2,
+            "redact took {elapsed:?} on pathological OpenAI-key-shaped input"
+        );
     }
 }

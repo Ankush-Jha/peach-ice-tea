@@ -12,7 +12,9 @@
 
 use peach_domain::{Context, ContextMessage, OFFLOAD_STUB_MARKER, Role, ToolOutput, ToolResult};
 use peach_harness::scorer::heuristic::HeuristicScorer;
-use peach_harness::scorer::plan::{Decision, ResultStatus, ScorerConfig, ToolCallSummary, is_referenced_later};
+use peach_harness::scorer::plan::{
+    Decision, ResultStatus, ScorerConfig, ToolCallSummary, is_referenced_later,
+};
 
 use super::recall::{RecallHandle, write_file};
 
@@ -28,7 +30,13 @@ const PREVIEW_CHARS: usize = 200;
 
 /// Text of a tool result, joined.
 fn result_text(result: &ToolResult) -> String {
-    result.output.values.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join("\n")
+    result
+        .output
+        .values
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Summaries of every scorable result, with a synthetic id per position:
@@ -36,37 +44,65 @@ fn result_text(result: &ToolResult) -> String {
 fn summaries(context: &Context) -> Vec<ToolCallSummary> {
     let mut summaries = Vec::new();
     for (index, entry) in context.messages.iter().enumerate() {
-        let ContextMessage::Tool(result) = &entry.message else { continue };
+        let ContextMessage::Tool(result) = &entry.message else {
+            continue;
+        };
         let text = result_text(result);
         if text.starts_with(OFFLOAD_STUB_MARKER) {
             continue;
         }
         // The most recent call before this result with its id, for the input.
         let input = result.call_id.as_ref().and_then(|id| {
-            context.messages[..index].iter().rev().find_map(|earlier| match &earlier.message {
-                ContextMessage::Text(text) => text
-                    .tool_calls
-                    .iter()
-                    .flatten()
-                    .find(|call| call.call_id.as_ref() == Some(id))
-                    .map(|call| call.arguments.clone().into_string()),
-                _ => None,
-            })
+            context
+                .messages
+                .get(..index)
+                .unwrap_or_default()
+                .iter()
+                .rev()
+                .find_map(|earlier| match &earlier.message {
+                    ContextMessage::Text(text) => text
+                        .tool_calls
+                        .iter()
+                        .flatten()
+                        .find(|call| call.call_id.as_ref() == Some(id))
+                        .map(|call| call.arguments.clone().into_string()),
+                    _ => None,
+                })
         });
-        let preview: String = input.unwrap_or_default().chars().take(PREVIEW_CHARS).collect();
-        let later: String = context.messages[index + 1..]
+        let preview: String = input
+            .unwrap_or_default()
+            .chars()
+            .take(PREVIEW_CHARS)
+            .collect();
+        let later: String = context
+            .messages
+            .get(index + 1..)
+            .unwrap_or_default()
             .iter()
             .filter_map(|later| match &later.message {
-                ContextMessage::Text(text) if matches!(text.role, Role::User | Role::Assistant) => Some(text.content.as_str()),
+                ContextMessage::Text(text) if matches!(text.role, Role::User | Role::Assistant) => {
+                    Some(text.content.as_str())
+                }
                 _ => None,
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let status = if result.output.is_error { ResultStatus::Error } else { ResultStatus::Ok };
+        let status = if result.output.is_error {
+            ResultStatus::Error
+        } else {
+            ResultStatus::Ok
+        };
         let referenced = is_referenced_later(&preview, &later);
         summaries.push(
-            ToolCallSummary::new(format!("m{index}"), result.name.to_string(), preview, status, text.chars().count(), index)
-                .referenced_later(referenced),
+            ToolCallSummary::new(
+                format!("m{index}"),
+                result.name.to_string(),
+                preview,
+                status,
+                text.chars().count(),
+                index,
+            )
+            .referenced_later(referenced),
         );
     }
     summaries
@@ -89,7 +125,10 @@ pub fn score(mut context: Context, retention_window: usize) -> (Context, Vec<Rec
             _ => None,
         })
         .unwrap_or_default();
-    let config = ScorerConfig { preserve_recent_messages: retention_window, ..ScorerConfig::default() };
+    let config = ScorerConfig {
+        preserve_recent_messages: retention_window,
+        ..ScorerConfig::default()
+    };
     // harness: R-CTX-4 (D-098) — an external scorer (e.g. a Jev adapter)
     // when one is configured, the built-in heuristic otherwise.
     let external = peach_harness::scorer::external::ExternalScorer::from_env();
@@ -102,20 +141,31 @@ pub fn score(mut context: Context, retention_window: usize) -> (Context, Vec<Rec
 
     let mut handles = Vec::new();
     for scored in plan.scored {
-        let Some(index) = scored.call_id.strip_prefix('m').and_then(|i| i.parse::<usize>().ok()) else { continue };
+        let Some(index) = scored
+            .call_id
+            .strip_prefix('m')
+            .and_then(|i| i.parse::<usize>().ok())
+        else {
+            continue;
+        };
         let head_chars = match scored.decision {
             Decision::Keep => continue,
             Decision::Truncate { head_chars } => head_chars,
             Decision::Drop => 0,
         };
-        let Some(ContextMessage::Tool(result)) = context.messages.get_mut(index).map(|entry| &mut entry.message) else {
+        let Some(ContextMessage::Tool(result)) = context
+            .messages
+            .get_mut(index)
+            .map(|entry| &mut entry.message)
+        else {
             continue;
         };
         let text = result_text(result);
         if text.chars().count() <= head_chars {
             continue;
         }
-        let Ok(path) = write_file(&text).inspect_err(|error| tracing::warn!(?error, "Could not keep a scored result"))
+        let Ok(path) = write_file(&text)
+            .inspect_err(|error| tracing::warn!(?error, "Could not keep a scored result"))
         else {
             continue;
         };
@@ -165,7 +215,11 @@ mod tests {
     }
 
     fn result(id: &str, tool: &str, text: String) -> ContextMessage {
-        ContextMessage::tool_result(ToolResult::new(ToolName::new(tool)).call_id(ToolCallId::new(id)).success(text))
+        ContextMessage::tool_result(
+            ToolResult::new(ToolName::new(tool))
+                .call_id(ToolCallId::new(id))
+                .success(text),
+        )
     }
 
     fn text_of(context: &Context, i: usize) -> String {
@@ -184,17 +238,31 @@ mod tests {
             .add_message(result("a", "read", big.clone()))
             .add_message(call("b", "read", r#"{"file_path":"/p/stats.py"}"#))
             .add_message(result("b", "read", big.clone()))
-            .add_message(ContextMessage::assistant("The bug is in stats.py.", None, None, None))
+            .add_message(ContextMessage::assistant(
+                "The bug is in stats.py.",
+                None,
+                None,
+                None,
+            ))
             .add_message(ContextMessage::user("go on", None))
             .add_message(ContextMessage::assistant("ok", None, None, None));
 
         let (actual, handles) = score(fixture, 2);
 
-        assert!(text_of(&actual, 2).starts_with(OFFLOAD_STUB_MARKER), "the unused read was not cut");
-        assert_eq!(text_of(&actual, 4), big, "the read the conversation refers to was cut");
+        assert!(
+            text_of(&actual, 2).starts_with(OFFLOAD_STUB_MARKER),
+            "the unused read was not cut"
+        );
+        assert_eq!(
+            text_of(&actual, 4),
+            big,
+            "the read the conversation refers to was cut"
+        );
         assert_eq!(handles.len(), 1);
         assert_eq!(std::fs::read_to_string(&handles[0].path).unwrap(), big);
-        handles.iter().for_each(|h| drop(std::fs::remove_file(&h.path)));
+        handles
+            .iter()
+            .for_each(|h| drop(std::fs::remove_file(&h.path)));
     }
 
     #[test]
@@ -211,6 +279,8 @@ mod tests {
 
         assert_eq!(twice, once);
         assert!(again.is_empty());
-        handles.iter().for_each(|h| drop(std::fs::remove_file(&h.path)));
+        handles
+            .iter()
+            .for_each(|h| drop(std::fs::remove_file(&h.path)));
     }
 }

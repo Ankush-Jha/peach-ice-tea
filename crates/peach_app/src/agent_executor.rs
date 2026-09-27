@@ -189,7 +189,8 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> AgentEx
     /// (`roles.<agent>`). When that model fails, the parent otherwise sees a
     /// generic tool error that tells it to correct its call, and it retries a
     /// delegation that cannot succeed. Name the model, say it is a provider
-    /// failure, and tell the parent to carry on itself (fail open, principle 5).
+    /// failure, and tell the parent to carry on itself (fail open, principle
+    /// 5).
     async fn subagent_model_failed(
         &self,
         agent_id: &AgentId,

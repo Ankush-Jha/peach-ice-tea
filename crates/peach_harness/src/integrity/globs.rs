@@ -82,7 +82,12 @@ impl ProtectedSet {
     /// Unparseable patterns are skipped with a warning rather than failing:
     /// losing one pattern is better than losing the whole guard (`CLAUDE.md`
     /// principle 5).
-    pub fn new(root: impl Into<PathBuf>, protect: &[String], exclude: &[String], files: Vec<PathBuf>) -> Self {
+    pub fn new(
+        root: impl Into<PathBuf>,
+        protect: &[String],
+        exclude: &[String],
+        files: Vec<PathBuf>,
+    ) -> Self {
         let compile = |patterns: &[String]| -> Vec<Pattern> {
             patterns
                 .iter()
@@ -114,7 +119,12 @@ impl ProtectedSet {
     /// everything else is allowed.
     pub fn for_test(root: impl Into<PathBuf>, files: Vec<PathBuf>) -> Self {
         let root = root.into();
-        let mut set = Self { root, files: BTreeSet::new(), protect: vec![], exclude: vec![] };
+        let mut set = Self {
+            root,
+            files: BTreeSet::new(),
+            protect: vec![],
+            exclude: vec![],
+        };
         set.files = files.iter().map(|path| set.display_path(path)).collect();
         set
     }
@@ -134,7 +144,10 @@ impl ProtectedSet {
             .map(Path::to_path_buf)
             .or_else(|| {
                 let root = self.root.canonicalize().ok()?;
-                canonicalize_lenient(path)?.strip_prefix(root).ok().map(Path::to_path_buf)
+                canonicalize_lenient(path)?
+                    .strip_prefix(root)
+                    .ok()
+                    .map(Path::to_path_buf)
             });
         relative
             .as_deref()
@@ -190,9 +203,20 @@ mod tests {
         std::fs::write(real.join("tests/test_x.py"), "").unwrap();
         let alias = dir.path().join("alias");
         std::os::unix::fs::symlink(&real, &alias).unwrap();
-        let protect: Vec<String> = DEFAULT_PROTECTED_GLOBS.iter().map(|s| s.to_string()).collect();
-        let exclude: Vec<String> = DEFAULT_EXCLUDE_GLOBS.iter().map(|s| s.to_string()).collect();
-        let fixture = ProtectedSet::new(&alias, &protect, &exclude, vec![alias.join("tests/test_x.py")]);
+        let protect: Vec<String> = DEFAULT_PROTECTED_GLOBS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let exclude: Vec<String> = DEFAULT_EXCLUDE_GLOBS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let fixture = ProtectedSet::new(
+            &alias,
+            &protect,
+            &exclude,
+            vec![alias.join("tests/test_x.py")],
+        );
 
         let existing = real.join("tests/test_x.py");
         let not_yet_created = real.join("tests/test_new.py");
@@ -213,13 +237,22 @@ mod tests {
     }
 
     fn fixture_set(files: &[&str]) -> ProtectedSet {
-        let protect: Vec<String> = DEFAULT_PROTECTED_GLOBS.iter().map(|s| s.to_string()).collect();
-        let exclude: Vec<String> = DEFAULT_EXCLUDE_GLOBS.iter().map(|s| s.to_string()).collect();
+        let protect: Vec<String> = DEFAULT_PROTECTED_GLOBS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let exclude: Vec<String> = DEFAULT_EXCLUDE_GLOBS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         ProtectedSet::new(
             "/repo",
             &protect,
             &exclude,
-            files.iter().map(|f| PathBuf::from("/repo").join(f)).collect(),
+            files
+                .iter()
+                .map(|f| PathBuf::from("/repo").join(f))
+                .collect(),
         )
     }
 

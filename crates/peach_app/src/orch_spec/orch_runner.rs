@@ -197,8 +197,12 @@ impl AgentService for Runner {
         let started = std::time::Instant::now();
         let found = {
             let mut guard = self.test_tool_calls.lock().await;
-            let index = guard.iter().position(|(call, _)| call.call_id == test_call.call_id);
-            index.and_then(|index| guard.remove(index)).map(|(_, result)| result)
+            let index = guard
+                .iter()
+                .position(|(call, _)| call.call_id == test_call.call_id);
+            index
+                .and_then(|index| guard.remove(index))
+                .map(|(_, result)| result)
         };
         let Some(result) = found else {
             panic!("No mock tool call not found: {name}")
@@ -206,10 +210,11 @@ impl AgentService for Runner {
         if !self.tool_delay.is_zero() {
             tokio::time::sleep(self.tool_delay).await;
         }
-        self.tool_spans
-            .lock()
-            .unwrap()
-            .push((name.to_string(), started, std::time::Instant::now()));
+        self.tool_spans.lock().unwrap().push((
+            name.to_string(),
+            started,
+            std::time::Instant::now(),
+        ));
         result
     }
 

@@ -285,8 +285,11 @@ impl ResultStreamExt<anyhow::Error> for crate::BoxStream<ChatCompletionMessage, 
             && content.trim().is_empty()
             && tool_calls.is_empty()
             && is_degenerate_reasoning(
-                std::iter::once(reasoning.as_str())
-                    .chain(total_reasoning_details.iter().filter_map(|d| d.text.as_deref())),
+                std::iter::once(reasoning.as_str()).chain(
+                    total_reasoning_details
+                        .iter()
+                        .filter_map(|d| d.text.as_deref()),
+                ),
             );
 
         // Check for empty completion - map to retryable error for retry
@@ -325,7 +328,9 @@ fn is_degenerate_reasoning<'a>(parts: impl Iterator<Item = &'a str>) -> bool {
     let text: String = parts.collect::<String>().split_whitespace().collect();
     let mut chars = text.chars();
     match chars.next() {
-        Some(first) => text.chars().count() >= 8 && !first.is_alphanumeric() && chars.all(|c| c == first),
+        Some(first) => {
+            text.chars().count() >= 8 && !first.is_alphanumeric() && chars.all(|c| c == first)
+        }
         None => false,
     }
 }
@@ -371,9 +376,9 @@ mod tests {
             thought_signature: None,
             usage: Usage {
                 reasoning_tokens: Default::default(),
-                prompt_tokens: TokenCount::Actual(10),    // From final chunk
+                prompt_tokens: TokenCount::Actual(10), // From final chunk
                 completion_tokens: TokenCount::Actual(5), // From final chunk
-                total_tokens: TokenCount::Actual(15),     // From final chunk
+                total_tokens: TokenCount::Actual(15),  // From final chunk
                 cached_tokens: TokenCount::Actual(0),
                 cost: None,
             },
@@ -1333,7 +1338,10 @@ mod tests {
             (vec![""], false),
         ];
 
-        let actual: Vec<bool> = cases.iter().map(|(parts, _)| is_degenerate_reasoning(parts.iter().copied())).collect();
+        let actual: Vec<bool> = cases
+            .iter()
+            .map(|(parts, _)| is_degenerate_reasoning(parts.iter().copied()))
+            .collect();
 
         let expected: Vec<bool> = cases.iter().map(|(_, e)| *e).collect();
         assert_eq!(actual, expected);
@@ -1344,7 +1352,8 @@ mod tests {
         let messages = vec![Ok(ChatCompletionMessage::default()
             .reasoning(Content::part("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"))
             .finish_reason(FinishReason::Stop))];
-        let fixture: BoxStream<ChatCompletionMessage, anyhow::Error> = Box::pin(tokio_stream::iter(messages));
+        let fixture: BoxStream<ChatCompletionMessage, anyhow::Error> =
+            Box::pin(tokio_stream::iter(messages));
 
         let actual = fixture.into_full(false).await.unwrap_err();
 
@@ -1356,7 +1365,8 @@ mod tests {
         let messages = vec![Ok(ChatCompletionMessage::default()
             .reasoning(Content::part("Nothing left to do."))
             .finish_reason(FinishReason::Stop))];
-        let fixture: BoxStream<ChatCompletionMessage, anyhow::Error> = Box::pin(tokio_stream::iter(messages));
+        let fixture: BoxStream<ChatCompletionMessage, anyhow::Error> =
+            Box::pin(tokio_stream::iter(messages));
 
         let actual = fixture.into_full(false).await;
 

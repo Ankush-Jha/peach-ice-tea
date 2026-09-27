@@ -10,8 +10,9 @@ use crate::apply_tunable_parameters::ApplyTunableParameters;
 use crate::changed_files::ChangedFiles;
 use crate::dto::ToolsOverview;
 use crate::hooks::{
-    CompactionHandler, DoomLoopDetector, NotesHandler, PendingTodosHandler, TelemetryHandler,
-    TitleGenerationHandler, TracingHandler, VerifyGateHandler, RuntimeVerifyGateHandler,
+    CompactionHandler, DoomLoopDetector, NotesHandler, PendingTodosHandler,
+    RuntimeVerifyGateHandler, TelemetryHandler, TitleGenerationHandler, TracingHandler,
+    VerifyGateHandler,
 };
 use crate::init_conversation_metrics::InitConversationMetrics;
 use crate::orch::Orchestrator;
@@ -114,7 +115,8 @@ impl<S: Services + EnvironmentInfra<Config = peach_config::PeachConfig>> PeachAp
             tool_definitions
                 .into_iter()
                 .map(|mut definition| {
-                    definition.description = peach_harness::tool_docs::compact(&definition.description);
+                    definition.description =
+                        peach_harness::tool_docs::compact(&definition.description);
                     definition
                 })
                 .collect()

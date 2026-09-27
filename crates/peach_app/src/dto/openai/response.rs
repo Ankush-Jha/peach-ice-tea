@@ -273,7 +273,9 @@ pub struct FunctionCall {
 /// `prompt_cache_hit_tokens` (top-level or inside the details block).
 fn cached_tokens(usage: &ResponseUsage) -> TokenCount {
     let details = usage.prompt_tokens_details.as_ref();
-    let openai = details.map(|d| d.cached_tokens).filter(|&tokens| tokens > 0);
+    let openai = details
+        .map(|d| d.cached_tokens)
+        .filter(|&tokens| tokens > 0);
     let deepseek = details
         .and_then(|d| d.prompt_cache_hit_tokens)
         .or(usage.prompt_cache_hit_tokens);

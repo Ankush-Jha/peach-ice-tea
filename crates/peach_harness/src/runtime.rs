@@ -65,7 +65,13 @@ pub struct IntegrityHandle {
 impl HarnessRuntime {
     /// Builds a runtime for a run.
     pub fn new(repo_root: impl Into<PathBuf>) -> Self {
-        Self { non_interactive: false, repo_root: repo_root.into(), protected: None, test_command: None, integrity: None }
+        Self {
+            non_interactive: false,
+            repo_root: repo_root.into(),
+            protected: None,
+            test_command: None,
+            integrity: None,
+        }
     }
 
     /// Marks the run as unattended, so nothing may prompt for input.
@@ -317,7 +323,10 @@ mod tests {
         // This process installs no runtime, so every accessor must be inert.
         assert_eq!(check_shell("rm tests/test_math.py"), None);
         assert_eq!(
-            check_write(crate::integrity::WriteOp::Modify, Path::new("/repo/tests/test_math.py")),
+            check_write(
+                crate::integrity::WriteOp::Modify,
+                Path::new("/repo/tests/test_math.py")
+            ),
             None
         );
         assert!(!is_non_interactive());

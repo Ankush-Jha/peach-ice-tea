@@ -39,8 +39,13 @@ pub fn detect(root: &Path, explicit: Option<&str>) -> Option<TestCommand> {
         return Some(TestCommand::new("cargo test", "Cargo.toml"));
     }
     if exists("package.json") {
-        let package: serde_json::Value = serde_json::from_str(&read("package.json")).unwrap_or_default();
-        let script = package.get("scripts").and_then(|s| s.get("test")).and_then(|t| t.as_str()).unwrap_or_default();
+        let package: serde_json::Value =
+            serde_json::from_str(&read("package.json")).unwrap_or_default();
+        let script = package
+            .get("scripts")
+            .and_then(|s| s.get("test"))
+            .and_then(|t| t.as_str())
+            .unwrap_or_default();
         // `npm init`'s placeholder fails on purpose; it is not a test suite.
         if !script.is_empty() && !script.contains("no test specified") {
             let runner = if exists("pnpm-lock.yaml") {
@@ -52,7 +57,9 @@ pub fn detect(root: &Path, explicit: Option<&str>) -> Option<TestCommand> {
             };
             return Some(TestCommand::new(runner, "package.json scripts.test"));
         }
-        if has_file_matching(root, |name| name.ends_with(".test.js") || name.ends_with(".test.mjs")) {
+        if has_file_matching(root, |name| {
+            name.ends_with(".test.js") || name.ends_with(".test.mjs")
+        }) {
             return Some(TestCommand::new("node --test", "*.test.js files"));
         }
     }
@@ -60,9 +67,21 @@ pub fn detect(root: &Path, explicit: Option<&str>) -> Option<TestCommand> {
         .into_iter()
         .find(|name| exists(name))
         .map(str::to_string)
-        .or_else(|| read("pyproject.toml").contains("[tool.pytest").then(|| "pyproject.toml".to_string()))
-        .or_else(|| read("setup.cfg").contains("[tool:pytest]").then(|| "setup.cfg".to_string()))
-        .or_else(|| read("tox.ini").contains("[pytest]").then(|| "tox.ini".to_string()));
+        .or_else(|| {
+            read("pyproject.toml")
+                .contains("[tool.pytest")
+                .then(|| "pyproject.toml".to_string())
+        })
+        .or_else(|| {
+            read("setup.cfg")
+                .contains("[tool:pytest]")
+                .then(|| "setup.cfg".to_string())
+        })
+        .or_else(|| {
+            read("tox.ini")
+                .contains("[pytest]")
+                .then(|| "tox.ini".to_string())
+        });
     if let Some(marker) = pytest_marker {
         return Some(TestCommand::new("python3 -m pytest -q", marker));
     }
@@ -75,12 +94,18 @@ pub fn detect(root: &Path, explicit: Option<&str>) -> Option<TestCommand> {
         ));
     }
     if has_file_matching(root, is_python_test) {
-        return Some(TestCommand::new("python3 -m unittest discover -v", "test_*.py"));
+        return Some(TestCommand::new(
+            "python3 -m unittest discover -v",
+            "test_*.py",
+        ));
     }
     if exists("go.mod") {
         return Some(TestCommand::new("go test ./...", "go.mod"));
     }
-    if read("Makefile").lines().any(|line| line.starts_with("test:")) {
+    if read("Makefile")
+        .lines()
+        .any(|line| line.starts_with("test:"))
+    {
         return Some(TestCommand::new("make test", "Makefile test target"));
     }
     if exists("pom.xml") {
@@ -156,8 +181,12 @@ pub fn is_test_command(command: &str, detected: Option<&TestCommand>) -> bool {
         if run.is_empty() {
             return false;
         }
-        detected.as_deref().is_some_and(|test| run.starts_with(test))
-            || RUNNERS.iter().any(|runner| run == *runner || run.starts_with(&format!("{runner} ")))
+        detected
+            .as_deref()
+            .is_some_and(|test| run.starts_with(test))
+            || RUNNERS
+                .iter()
+                .any(|runner| run == *runner || run.starts_with(&format!("{runner} ")))
     })
 }
 
@@ -168,7 +197,9 @@ fn normalise(command: &str) -> String {
 /// The program a command segment runs, with leading `VAR=value`
 /// assignments and wrappers (`timeout 60`, `npx`, `uv run`, ...) removed.
 fn invoked(segment: &str) -> String {
-    const WRAPPERS: &[&str] = &["timeout", "npx", "uv", "poetry", "pipenv", "run", "exec", "env", "command"];
+    const WRAPPERS: &[&str] = &[
+        "timeout", "npx", "uv", "poetry", "pipenv", "run", "exec", "env", "command",
+    ];
     let tokens: Vec<&str> = segment.split_whitespace().collect();
     let start = tokens
         .iter()
@@ -206,9 +237,21 @@ mod tests {
     fn test_detection_table() {
         let actual = vec![
             detected(&[("Cargo.toml", "[package]")]),
-            detected(&[("package.json", r#"{"scripts":{"test":"jest"}}"#), ("yarn.lock", "")]),
-            detected(&[("package.json", r#"{"scripts":{"test":"echo \"Error: no test specified\" && exit 1"}}"#), ("lib.test.js", "")]),
-            detected(&[("pyproject.toml", "[tool.pytest.ini_options]"), ("tests/test_a.py", "")]),
+            detected(&[
+                ("package.json", r#"{"scripts":{"test":"jest"}}"#),
+                ("yarn.lock", ""),
+            ]),
+            detected(&[
+                (
+                    "package.json",
+                    r#"{"scripts":{"test":"echo \"Error: no test specified\" && exit 1"}}"#,
+                ),
+                ("lib.test.js", ""),
+            ]),
+            detected(&[
+                ("pyproject.toml", "[tool.pytest.ini_options]"),
+                ("tests/test_a.py", ""),
+            ]),
             detected(&[("tests/__init__.py", ""), ("tests/test_stats.py", "")]),
             detected(&[("test_x.py", "")]),
             detected(&[("go.mod", "module x")]),
@@ -240,7 +283,8 @@ mod tests {
 
     #[test]
     fn test_test_commands_are_recognised_and_others_are_not() {
-        let detected = TestCommand::new("python3 -m unittest discover -s tests -t . -v", "explicit");
+        let detected =
+            TestCommand::new("python3 -m unittest discover -s tests -t . -v", "explicit");
         let yes = [
             "python3 -m unittest discover -s tests -t . -v",
             "cd repo && python -m pytest -x tests/test_a.py",
@@ -248,7 +292,12 @@ mod tests {
             "npm test 2>&1 | tail -20",
         ];
         let wrapped = ["timeout 60 npx jest", "CI=1 uv run pytest -q"];
-        let no = ["cat tests/test_a.py", "grep -r pytest .", "python3 stats.py", "echo run the tests"];
+        let no = [
+            "cat tests/test_a.py",
+            "grep -r pytest .",
+            "python3 stats.py",
+            "echo run the tests",
+        ];
 
         let actual: Vec<bool> = yes
             .iter()
@@ -257,6 +306,11 @@ mod tests {
             .map(|c| is_test_command(c, Some(&detected)))
             .collect();
 
-        assert_eq!(actual, vec![true, true, true, true, true, true, false, false, false, false]);
+        assert_eq!(
+            actual,
+            vec![
+                true, true, true, true, true, true, false, false, false, false
+            ]
+        );
     }
 }

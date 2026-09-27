@@ -519,7 +519,11 @@ impl ToolDefinition {
     /// Sets or clears this tool's cache breakpoint (harness, D-084). One
     /// breakpoint on the last tool caches the whole tool array.
     pub fn set_cached(&mut self, cached: bool) {
-        self.cache_control = if cached { Some(CacheControl::Ephemeral) } else { None };
+        self.cache_control = if cached {
+            Some(CacheControl::Ephemeral)
+        } else {
+            None
+        };
     }
 
     /// Whether this tool carries a cache breakpoint.

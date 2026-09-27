@@ -40,7 +40,12 @@ enum Turn {
     /// tool call (or text, when the name is empty), with DeepSeek-shaped
     /// usage (`prompt_cache_hit_tokens`, reasoning in
     /// `completion_tokens_details`).
-    DeepSeek { reasoning: &'static str, tool: &'static str, arguments: serde_json::Value, text: &'static str },
+    DeepSeek {
+        reasoning: &'static str,
+        tool: &'static str,
+        arguments: serde_json::Value,
+        text: &'static str,
+    },
     /// A turn built from the body of the request it answers, for calls whose
     /// arguments only exist at run time (e.g. a dump file's path).
     FromRequest(fn(&str) -> Turn),
@@ -88,12 +93,16 @@ impl ScriptedModel {
                     Turn::Text("Scripted title")
                 };
                 let response = match turn {
-                    Turn::Status(code) => tiny_http::Response::from_string("{}")
-                        .with_status_code(code),
-                    Turn::StatusBody(code, body) => tiny_http::Response::from_string(body)
-                        .with_status_code(code),
+                    Turn::Status(code) => {
+                        tiny_http::Response::from_string("{}").with_status_code(code)
+                    }
+                    Turn::StatusBody(code, body) => {
+                        tiny_http::Response::from_string(body).with_status_code(code)
+                    }
                     turn => tiny_http::Response::from_string(sse(turn)).with_header(
-                        "Content-Type: text/event-stream".parse::<tiny_http::Header>().unwrap(),
+                        "Content-Type: text/event-stream"
+                            .parse::<tiny_http::Header>()
+                            .unwrap(),
                     ),
                 };
                 let _ = request.respond(response);
@@ -109,14 +118,15 @@ impl ScriptedModel {
 
 fn sse(turn: Turn) -> String {
     if let Turn::DeepSeek { reasoning, tool, arguments, text } = turn {
-        let chunk = |delta: serde_json::Value, finish: Option<&str>, usage: Option<serde_json::Value>| {
-            serde_json::json!({
-                "id": "chatcmpl-ds", "object": "chat.completion.chunk", "created": 0,
-                "model": "deepseek-v4-flash",
-                "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
-                "usage": usage,
-            })
-        };
+        let chunk =
+            |delta: serde_json::Value, finish: Option<&str>, usage: Option<serde_json::Value>| {
+                serde_json::json!({
+                    "id": "chatcmpl-ds", "object": "chat.completion.chunk", "created": 0,
+                    "model": "deepseek-v4-flash",
+                    "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+                    "usage": usage,
+                })
+            };
         let (answer, finish) = if tool.is_empty() {
             (serde_json::json!({"content": text}), "stop")
         } else {
@@ -133,7 +143,11 @@ fn sse(turn: Turn) -> String {
             "completion_tokens_details": {"reasoning_tokens": 25},
         });
         return [
-            chunk(serde_json::json!({"role": "assistant", "reasoning_content": reasoning}), None, None),
+            chunk(
+                serde_json::json!({"role": "assistant", "reasoning_content": reasoning}),
+                None,
+                None,
+            ),
             chunk(answer, None, None),
             chunk(serde_json::json!({}), Some(finish), Some(usage)),
         ]
@@ -170,7 +184,10 @@ fn sse(turn: Turn) -> String {
             }).collect::<Vec<_>>()}),
             "tool_calls",
         ),
-        Turn::Text(text) => (serde_json::json!({"role": "assistant", "content": text}), "stop"),
+        Turn::Text(text) => (
+            serde_json::json!({"role": "assistant", "content": text}),
+            "stop",
+        ),
         Turn::Status(_)
         | Turn::StatusBody(..)
         | Turn::Empty(_)
@@ -267,7 +284,10 @@ fn run_exec_configured(
     extra_args: &[&str],
     extra_toml: &str,
 ) -> Run {
-    run_exec_keeping_config(project, model, agent_md, extra_env, task, extra_args, extra_toml).0
+    run_exec_keeping_config(
+        project, model, agent_md, extra_env, task, extra_args, extra_toml,
+    )
+    .0
 }
 
 /// [`run_exec_configured`], also returning the run's `PEACH_CONFIG` dir (and
@@ -286,13 +306,20 @@ fn run_exec_keeping_config(
 ) -> (Run, tempfile::TempDir) {
     let config = tempfile::tempdir().unwrap();
     let telemetry = config.path().join("telemetry.jsonl");
-    std::fs::write(config.path().join(".peach.toml"), scripted_config_toml(model, extra_toml))
+    std::fs::write(
+        config.path().join(".peach.toml"),
+        scripted_config_toml(model, extra_toml),
+    )
     .unwrap();
 
     let mut command = Command::new(env!("CARGO_BIN_EXE_peach"));
     if let Some((id, markdown)) = agent_md {
         std::fs::create_dir_all(config.path().join("agents")).unwrap();
-        std::fs::write(config.path().join("agents").join(format!("{id}.md")), markdown).unwrap();
+        std::fs::write(
+            config.path().join("agents").join(format!("{id}.md")),
+            markdown,
+        )
+        .unwrap();
         command.args(["--agent", id]);
     }
     // The runtime gate is on by default (D-088). These scripted conversations
@@ -308,7 +335,14 @@ fn run_exec_keeping_config(
         }
     }
     let mut child = command
-        .args(["exec", task, "--json", "--max-duration-secs", "45", "--telemetry"])
+        .args([
+            "exec",
+            task,
+            "--json",
+            "--max-duration-secs",
+            "45",
+            "--telemetry",
+        ])
         .arg(&telemetry)
         .args(extra_args)
         .env("PEACH_CONFIG", config.path())
@@ -358,7 +392,11 @@ fn project_with_a_test() -> tempfile::TempDir {
     let project = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(project.path().join("tests")).unwrap();
     std::fs::write(project.path().join("tests/test_math.py"), ORIGINAL_TEST).unwrap();
-    std::fs::write(project.path().join("math.py"), "def add(a, b):\n    return a - b\n").unwrap();
+    std::fs::write(
+        project.path().join("math.py"),
+        "def add(a, b):\n    return a - b\n",
+    )
+    .unwrap();
     project
 }
 
@@ -377,7 +415,11 @@ fn test_a_hallucinated_followup_does_not_end_the_run() {
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     assert_eq!(run.report["outcome"], "completed");
-    assert_eq!(model.requests().len(), 2, "the loop must continue after the followup call");
+    assert_eq!(
+        model.requests().len(),
+        2,
+        "the loop must continue after the followup call"
+    );
 }
 
 #[test]
@@ -393,7 +435,11 @@ fn test_an_agent_with_followup_is_answered_instead_of_prompting() {
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     let requests = model.requests();
-    assert_eq!(requests.len(), 2, "the loop must continue after the followup call");
+    assert_eq!(
+        requests.len(),
+        2,
+        "the loop must continue after the followup call"
+    );
     assert!(
         requests[1].contains("No human is available to answer"),
         "the model must receive the unattended answer as the tool result"
@@ -431,7 +477,10 @@ fn test_a_write_to_a_protected_test_is_refused_at_dispatch() {
         std::fs::read_to_string(project.path().join("tests/test_math.py")).unwrap(),
         ORIGINAL_TEST
     );
-    assert_eq!(run.report["integrity"], serde_json::json!({"checked": 1, "violations": []}));
+    assert_eq!(
+        run.report["integrity"],
+        serde_json::json!({"checked": 1, "violations": []})
+    );
     let requests = model.requests();
     assert!(
         requests[1].contains("because it is a protected test file"),
@@ -457,7 +506,10 @@ fn test_retries_are_metered_and_the_telemetry_stream_is_complete() {
         Turn::Status(503),
         Turn::Empty(None),
         Turn::Empty(Some((14_000, 900))),
-        Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "say hi"})),
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": "echo hi", "description": "say hi"}),
+        ),
         Turn::Text("Done."),
     ]);
 
@@ -503,14 +555,27 @@ fn test_retries_are_metered_and_the_telemetry_stream_is_complete() {
 
     // T6.1: the first request's fixed cost, by source. D-039 measured tool
     // definitions as its largest part.
-    let composition = run.telemetry.iter().find(|event| event["type"] == "context_composition").unwrap();
+    let composition = run
+        .telemetry
+        .iter()
+        .find(|event| event["type"] == "context_composition")
+        .unwrap();
     let sources = &composition["tokens_by_source_estimated"];
     let tools = sources["tool_definitions"].as_u64().unwrap();
-    assert!(tools > sources["system_prompt"].as_u64().unwrap(), "{sources}");
-    assert!(tools > sources["user_prompt"].as_u64().unwrap(), "{sources}");
+    assert!(
+        tools > sources["system_prompt"].as_u64().unwrap(),
+        "{sources}"
+    );
+    assert!(
+        tools > sources["user_prompt"].as_u64().unwrap(),
+        "{sources}"
+    );
 
-    let retries: Vec<&serde_json::Value> =
-        run.telemetry.iter().filter(|event| event["type"] == "retry").collect();
+    let retries: Vec<&serde_json::Value> = run
+        .telemetry
+        .iter()
+        .filter(|event| event["type"] == "retry")
+        .collect();
     // 503: nothing to bill, so no usage claim either way.
     assert!(retries[0].get("usage_reported").is_none(), "{}", retries[0]);
     assert!(retries[0]["reason"].as_str().unwrap().contains("503"));
@@ -522,21 +587,34 @@ fn test_retries_are_metered_and_the_telemetry_stream_is_complete() {
     assert_eq!(retries[2]["input_tokens"], 14_000);
     assert_eq!(retries[2]["output_tokens"], 900);
 
-    let model_calls: Vec<&serde_json::Value> =
-        run.telemetry.iter().filter(|event| event["type"] == "model_call").collect();
+    let model_calls: Vec<&serde_json::Value> = run
+        .telemetry
+        .iter()
+        .filter(|event| event["type"] == "model_call")
+        .collect();
     assert_eq!(model_calls[0]["input_tokens"], 10);
     assert_eq!(model_calls[0]["finish_reason"], "tool_calls");
-    let tool = run.telemetry.iter().find(|event| event["type"] == "tool_call").unwrap();
+    let tool = run
+        .telemetry
+        .iter()
+        .find(|event| event["type"] == "tool_call")
+        .unwrap();
     assert_eq!(tool["success"], true);
     assert_eq!(tool["origin_call_id"], model_calls[0]["call_id"]);
-    assert_eq!(model_calls[0]["tool_call_ids"], serde_json::json!([tool["call_id"]]));
+    assert_eq!(
+        model_calls[0]["tool_call_ids"],
+        serde_json::json!([tool["call_id"]])
+    );
 }
 
 #[test]
 fn test_a_compaction_is_reported_in_telemetry() {
     let project = project_with_a_test();
     let echo = |text: &'static str| {
-        Turn::Tool("shell", serde_json::json!({"command": format!("echo {text}"), "description": "echo"}))
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": format!("echo {text}"), "description": "echo"}),
+        )
     };
     let model = ScriptedModel::start(vec![
         echo("one"),
@@ -550,7 +628,10 @@ fn test_a_compaction_is_reported_in_telemetry() {
         project.path(),
         &model,
         None,
-        &[("PEACH_COMPACT__MESSAGE_THRESHOLD", "6"), ("PEACH_COMPACT__RETENTION_WINDOW", "2")],
+        &[
+            ("PEACH_COMPACT__MESSAGE_THRESHOLD", "6"),
+            ("PEACH_COMPACT__RETENTION_WINDOW", "2"),
+        ],
     );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
@@ -562,11 +643,16 @@ fn test_a_compaction_is_reported_in_telemetry() {
     assert!(!compactions.is_empty(), "telemetry: {:?}", run.telemetry);
     assert_eq!(
         compactions.len() as u64,
-        run.report["metrics"]["compactions"]["count"].as_u64().unwrap(),
+        run.report["metrics"]["compactions"]["count"]
+            .as_u64()
+            .unwrap(),
         "one event per compaction the metrics counted"
     );
     let first = compactions[0];
-    assert!(first["messages_after"].as_u64() < first["messages_before"].as_u64(), "{first}");
+    assert!(
+        first["messages_after"].as_u64() < first["messages_before"].as_u64(),
+        "{first}"
+    );
 }
 
 fn git(repo: &Path, args: &[&str]) {
@@ -590,7 +676,10 @@ fn git_project_with_a_test() -> tempfile::TempDir {
 
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::Digest;
-    sha2::Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
+    sha2::Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// Every file in `dir`, recursively, as (relative path, bytes).
@@ -615,7 +704,10 @@ fn test_a_completed_run_writes_a_complete_redacted_evidence_bundle() {
     let task = format!("fix add; the staging key {key} is irrelevant");
     let model = ScriptedModel::start(vec![
         // Peach refuses to overwrite a file the model has not read.
-        Turn::Tool("read", serde_json::json!({"file_path": project.path().join("math.py")})),
+        Turn::Tool(
+            "read",
+            serde_json::json!({"file_path": project.path().join("math.py")}),
+        ),
         Turn::Tool(
             "write",
             serde_json::json!({
@@ -656,7 +748,9 @@ fn test_a_completed_run_writes_a_complete_redacted_evidence_bundle() {
         ],
         "telemetry went to --telemetry, which overrides the bundle default"
     );
-    let read = |name: &str| String::from_utf8(files.iter().find(|(n, _)| n == name).unwrap().1.clone()).unwrap();
+    let read = |name: &str| {
+        String::from_utf8(files.iter().find(|(n, _)| n == name).unwrap().1.clone()).unwrap()
+    };
 
     // The frozen prompt is the task as given, not with the harness notice.
     assert_eq!(read("prompt.txt"), task.replace(&key, "[REDACTED]"));
@@ -665,15 +759,24 @@ fn test_a_completed_run_writes_a_complete_redacted_evidence_bundle() {
         "diff: {:?}\nmath.py: {:?}\ntelemetry: {:?}",
         read("diff.patch"),
         std::fs::read_to_string(project.path().join("math.py")),
-        run.telemetry.iter().filter(|e| e["type"] == "tool_call").collect::<Vec<_>>()
+        run.telemetry
+            .iter()
+            .filter(|e| e["type"] == "tool_call")
+            .collect::<Vec<_>>()
     );
     let exec: serde_json::Value = serde_json::from_str(&read("exec.json")).unwrap();
     assert_eq!(exec["outcome"], "completed");
     // The harness found the project's tests itself and ran them.
     let tests: serde_json::Value = serde_json::from_str(&read("tests.json")).unwrap();
-    assert_eq!((tests["ran"].as_bool(), tests["source"].as_str()), (Some(true), Some("tests/test_*.py")));
+    assert_eq!(
+        (tests["ran"].as_bool(), tests["source"].as_str()),
+        (Some(true), Some("tests/test_*.py"))
+    );
     let transcript: serde_json::Value = serde_json::from_str(&read("transcript.json")).unwrap();
-    assert_eq!(transcript["conversation"]["id"], run.report["conversation_id"]);
+    assert_eq!(
+        transcript["conversation"]["id"],
+        run.report["conversation_id"]
+    );
 
     // The manifest checksums exactly the other files, as they are on disk.
     let manifest: serde_json::Value = serde_json::from_str(&read("manifest.json")).unwrap();
@@ -703,7 +806,10 @@ fn test_a_completed_run_writes_a_complete_redacted_evidence_bundle() {
         .status()
         .unwrap();
     assert!(status.success());
-    assert_eq!(std::fs::read_to_string(dir.join("report.md")).unwrap(), read("report.md"));
+    assert_eq!(
+        std::fs::read_to_string(dir.join("report.md")).unwrap(),
+        read("report.md")
+    );
 
     // The key reached the model (it was in the task) but not the bundle.
     for (name, bytes) in &files {
@@ -732,7 +838,14 @@ fn test_an_errored_run_still_writes_its_bundle() {
     let exec: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("exec.json")).unwrap()).unwrap();
     assert_eq!(exec["outcome"], "error");
-    for name in ["prompt.txt", "integrity.json", "diff.patch", "tests.json", "transcript.json", "manifest.json"] {
+    for name in [
+        "prompt.txt",
+        "integrity.json",
+        "diff.patch",
+        "tests.json",
+        "transcript.json",
+        "manifest.json",
+    ] {
         assert!(dir.join(name).exists(), "{name} missing on the error path");
     }
 }
@@ -753,7 +866,12 @@ fn test_deepseek_thinking_mode_runs_with_full_accounting() {
                 arguments: serde_json::json!({"file_path": project.path().join("math.py")}),
                 text: "",
             },
-            Turn::DeepSeek { reasoning: "Done reading.", tool: "", arguments: serde_json::json!({}), text: "Done." },
+            Turn::DeepSeek {
+                reasoning: "Done reading.",
+                tool: "",
+                arguments: serde_json::json!({}),
+                text: "Done.",
+            },
         ],
     );
     let dir = evidence.path().join("bundle");
@@ -784,11 +902,18 @@ fn test_deepseek_thinking_mode_runs_with_full_accounting() {
         .iter()
         .find(|message| message["role"] == "assistant")
         .expect("assistant turn replayed");
-    assert_eq!(assistant["reasoning_content"], "The subtraction is the bug; read the file first.");
+    assert_eq!(
+        assistant["reasoning_content"],
+        "The subtraction is the bug; read the file first."
+    );
     // The harness's protected-file notice reached DeepSeek too.
     assert!(requests[0].contains("PROTECTED TEST FILES"));
 
-    let model_call = run.telemetry.iter().find(|event| event["type"] == "model_call").unwrap();
+    let model_call = run
+        .telemetry
+        .iter()
+        .find(|event| event["type"] == "model_call")
+        .unwrap();
     assert_eq!(model_call["cached_tokens"], 600);
     let report: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("report.json")).unwrap()).unwrap();
@@ -801,7 +926,11 @@ fn test_deepseek_thinking_mode_runs_with_full_accounting() {
 fn calc_project() -> tempfile::TempDir {
     let project = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(project.path().join("tests")).unwrap();
-    std::fs::write(project.path().join("calc.py"), "def add(a, b):\n    return a - b\n").unwrap();
+    std::fs::write(
+        project.path().join("calc.py"),
+        "def add(a, b):\n    return a - b\n",
+    )
+    .unwrap();
     std::fs::write(project.path().join("tests/__init__.py"), "").unwrap();
     std::fs::write(
         project.path().join("tests/test_calc.py"),
@@ -818,7 +947,10 @@ const CALC_TESTS: &str = "python3 -m unittest discover -s tests -t . -v";
 
 fn fix_calc(project: &Path) -> Vec<Turn> {
     vec![
-        Turn::Tool("read", serde_json::json!({"file_path": project.join("calc.py")})),
+        Turn::Tool(
+            "read",
+            serde_json::json!({"file_path": project.join("calc.py")}),
+        ),
         Turn::Tool(
             "write",
             serde_json::json!({
@@ -836,7 +968,10 @@ fn test_an_unverified_finish_is_sent_back_to_run_the_tests() {
     let evidence = tempfile::tempdir().unwrap();
     let mut script = fix_calc(project.path());
     script.push(Turn::Text("Fixed."));
-    script.push(Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run tests"})));
+    script.push(Turn::Tool(
+        "shell",
+        serde_json::json!({"command": CALC_TESTS, "description": "run tests"}),
+    ));
     script.push(Turn::Text("Fixed and verified."));
     let model = ScriptedModel::start(script);
     let dir = evidence.path().join("bundle");
@@ -847,12 +982,21 @@ fn test_an_unverified_finish_is_sent_back_to_run_the_tests() {
         None,
         &[],
         "fix add",
-        &["--evidence-dir", dir.to_str().unwrap(), "--test-command", CALC_TESTS],
+        &[
+            "--evidence-dir",
+            dir.to_str().unwrap(),
+            "--test-command",
+            CALC_TESTS,
+        ],
     );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     let requests = model.requests();
-    assert_eq!(requests.len(), 5, "read, write, finish (sent back), test run, finish");
+    assert_eq!(
+        requests.len(),
+        5,
+        "read, write, finish (sent back), test run, finish"
+    );
     assert!(requests[3].contains("VERIFICATION REQUIRED"));
     assert!(requests[3].contains(CALC_TESTS));
     assert!(
@@ -865,12 +1009,18 @@ fn test_an_unverified_finish_is_sent_back_to_run_the_tests() {
         .iter()
         .filter(|event| event["type"] == "test_run")
         .map(|event| {
-            (event["origin"].as_str().unwrap().to_string(), event["failure_class"].as_str().unwrap().to_string())
+            (
+                event["origin"].as_str().unwrap().to_string(),
+                event["failure_class"].as_str().unwrap().to_string(),
+            )
         })
         .collect();
     assert_eq!(
         test_runs,
-        vec![("agent".to_string(), "passed".to_string()), ("harness_final".to_string(), "passed".to_string())]
+        vec![
+            ("agent".to_string(), "passed".to_string()),
+            ("harness_final".to_string(), "passed".to_string())
+        ]
     );
     let tests: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("tests.json")).unwrap()).unwrap();
@@ -884,35 +1034,58 @@ fn test_the_gate_gives_up_after_two_reminders_and_says_so() {
     let project = calc_project();
     let evidence = tempfile::tempdir().unwrap();
     let mut script = fix_calc(project.path());
-    script.extend([Turn::Text("Fixed."), Turn::Text("Still fixed."), Turn::Text("Really fixed.")]);
+    script.extend([
+        Turn::Text("Fixed."),
+        Turn::Text("Still fixed."),
+        Turn::Text("Really fixed."),
+    ]);
     let model = ScriptedModel::start(script);
     let dir = evidence.path().join("bundle");
 
     // No --test-command: detection must find the unittest suite on its own.
-    let run = run_exec_full(project.path(), &model, None, &[], "fix add", &["--evidence-dir", dir.to_str().unwrap()]);
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[],
+        "fix add",
+        &["--evidence-dir", dir.to_str().unwrap()],
+    );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     let requests = model.requests();
-    assert_eq!(requests.len(), 5, "two reminders, then the run is allowed to end");
+    assert_eq!(
+        requests.len(),
+        5,
+        "two reminders, then the run is allowed to end"
+    );
     assert!(requests[3].contains("before finishing (1 of 2)"));
     assert!(!requests[3].contains("before finishing (2 of 2)"));
     assert!(requests[4].contains("before finishing (2 of 2)"));
     assert!(
-        run.telemetry.iter().any(|event| event["type"] == "agent_state" && event["to"] == "verification_unconfirmed"),
+        run.telemetry.iter().any(
+            |event| event["type"] == "agent_state" && event["to"] == "verification_unconfirmed"
+        ),
         "telemetry: {:?}",
         run.telemetry
     );
     // The harness still checks: the fix was right, so its own run passes.
     let tests: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("tests.json")).unwrap()).unwrap();
-    assert_eq!((tests["class"].as_str(), tests["source"].as_str()), (Some("passed"), Some("tests/test_*.py")));
+    assert_eq!(
+        (tests["class"].as_str(), tests["source"].as_str()),
+        (Some("passed"), Some("tests/test_*.py"))
+    );
 }
 
 #[test]
 fn test_a_test_run_that_never_reached_the_code_gets_a_recovery_hint() {
     let project = calc_project();
     let model = ScriptedModel::start(vec![
-        Turn::Tool("read", serde_json::json!({"file_path": project.path().join("calc.py")})),
+        Turn::Tool(
+            "read",
+            serde_json::json!({"file_path": project.path().join("calc.py")}),
+        ),
         Turn::Tool(
             "write",
             serde_json::json!({
@@ -921,17 +1094,37 @@ fn test_a_test_run_that_never_reached_the_code_gets_a_recovery_hint() {
                 "overwrite": true,
             }),
         ),
-        Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run tests"})),
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": CALC_TESTS, "description": "run tests"}),
+        ),
         Turn::Text("Done."),
     ]);
 
-    let run = run_exec_full(project.path(), &model, None, &[], "fix add", &["--test-command", CALC_TESTS]);
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[],
+        "fix add",
+        &["--test-command", CALC_TESTS],
+    );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     let requests = model.requests();
-    assert!(requests[3].contains("RECOVERY HINT (harness): the code did not compile"), "no hint after the broken run");
-    assert!(!requests[2].contains("RECOVERY HINT"), "hints only follow a failed test run");
-    let test_run = run.telemetry.iter().find(|event| event["type"] == "test_run").unwrap();
+    assert!(
+        requests[3].contains("RECOVERY HINT (harness): the code did not compile"),
+        "no hint after the broken run"
+    );
+    assert!(
+        !requests[2].contains("RECOVERY HINT"),
+        "hints only follow a failed test run"
+    );
+    let test_run = run
+        .telemetry
+        .iter()
+        .find(|event| event["type"] == "test_run")
+        .unwrap();
     assert_eq!(test_run["failure_class"], "compile");
     assert!(
         run.telemetry
@@ -948,18 +1141,32 @@ fn test_line_numbers_flag_changes_only_the_default() {
     let file = project.path().join("calc.py");
     let model = ScriptedModel::start(vec![
         Turn::Tool("read", serde_json::json!({"file_path": file})),
-        Turn::Tool("read", serde_json::json!({"file_path": file, "show_line_numbers": true})),
+        Turn::Tool(
+            "read",
+            serde_json::json!({"file_path": file, "show_line_numbers": true}),
+        ),
         Turn::Text("Done."),
     ]);
 
-    let run = run_exec_with_env(project.path(), &model, None, &[("PEACH_HARNESS_LINE_NUMBERS_OFF", "1")]);
+    let run = run_exec_with_env(
+        project.path(),
+        &model,
+        None,
+        &[("PEACH_HARNESS_LINE_NUMBERS_OFF", "1")],
+    );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     let requests = model.requests();
     // The tool results are JSON-escaped inside the request body.
-    assert!(requests[1].contains("def add(a, b):\\n    return a - b"), "unnumbered read expected");
+    assert!(
+        requests[1].contains("def add(a, b):\\n    return a - b"),
+        "unnumbered read expected"
+    );
     assert!(!requests[1].contains("1:def add"));
-    assert!(requests[2].contains("1:def add"), "an explicit request for numbers is honoured");
+    assert!(
+        requests[2].contains("1:def add"),
+        "an explicit request for numbers is honoured"
+    );
 }
 
 #[test]
@@ -967,7 +1174,12 @@ fn test_compacted_tool_docs_shrink_every_request_and_drop_only_examples() {
     let run_first_request = |flag: &str| {
         let project = calc_project();
         let model = ScriptedModel::start(vec![Turn::Text("Done.")]);
-        let run = run_exec_with_env(project.path(), &model, None, &[("PEACH_HARNESS_COMPACT_TOOL_DOCS", flag)]);
+        let run = run_exec_with_env(
+            project.path(),
+            &model,
+            None,
+            &[("PEACH_HARNESS_COMPACT_TOOL_DOCS", flag)],
+        );
         assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
         model.requests()[0].clone()
     };
@@ -1003,17 +1215,26 @@ fn test_an_exhausted_daily_quota_fails_at_once_and_says_why() {
     // "Invalid Status Code: 429".
     const DAILY_QUOTA: &str = r#"{"error":{"code":429,"message":"You exceeded your current quota","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaMetric":"generativelanguage.googleapis.com/generate_content_free_tier_requests","quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier","quotaValue":"20"}]},{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"59s"}]}}"#;
     let project = project_with_a_test();
-    let model = ScriptedModel::start(vec![Turn::StatusBody(429, DAILY_QUOTA), Turn::Text("unreachable")]);
+    let model = ScriptedModel::start(vec![
+        Turn::StatusBody(429, DAILY_QUOTA),
+        Turn::Text("unreachable"),
+    ]);
     let started = std::time::Instant::now();
 
     let run = run_exec(project.path(), &model, None);
 
     assert_eq!(run.exit_code, Some(1), "report: {}", run.report);
-    assert_eq!(model.requests().len(), 1, "a daily quota must not be retried");
+    assert_eq!(
+        model.requests().len(),
+        1,
+        "a daily quota must not be retried"
+    );
     assert_eq!(run.report["metrics"]["retried_llm_calls"], 0);
     let error = run.report["error"].as_str().unwrap();
     assert!(
-        error.starts_with("provider quota exhausted (GenerateRequestsPerDayPerProjectPerModel-FreeTier)"),
+        error.starts_with(
+            "provider quota exhausted (GenerateRequestsPerDayPerProjectPerModel-FreeTier)"
+        ),
         "{error}"
     );
     assert!(started.elapsed() < Duration::from_secs(20));
@@ -1036,7 +1257,10 @@ fn test_parallel_reads_run_through_the_real_executor_and_keep_order() {
             "write",
             serde_json::json!({"file_path": calc, "content": "def add(a, b):\n    return a + b\n", "overwrite": true}),
         ),
-        Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run tests"})),
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": CALC_TESTS, "description": "run tests"}),
+        ),
         Turn::Text("Done."),
     ]);
 
@@ -1058,13 +1282,25 @@ fn test_parallel_reads_run_through_the_real_executor_and_keep_order() {
         .filter(|message| message["role"] == "tool")
         .map(|message| message["tool_call_id"].as_str().unwrap().to_string())
         .collect();
-    assert_eq!(tool_results, vec!["call_0", "call_1"], "results keep the model's order");
-    assert_eq!(std::fs::read_to_string(&calc).unwrap(), "def add(a, b):\n    return a + b\n");
+    assert_eq!(
+        tool_results,
+        vec!["call_0", "call_1"],
+        "results keep the model's order"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&calc).unwrap(),
+        "def add(a, b):\n    return a + b\n"
+    );
     let tools: Vec<(String, bool)> = run
         .telemetry
         .iter()
         .filter(|event| event["type"] == "tool_call")
-        .map(|event| (event["name"].as_str().unwrap().to_string(), event["success"].as_bool().unwrap()))
+        .map(|event| {
+            (
+                event["name"].as_str().unwrap().to_string(),
+                event["success"].as_bool().unwrap(),
+            )
+        })
         .collect();
     assert_eq!(
         tools,
@@ -1086,10 +1322,18 @@ fn test_misnamed_arguments_are_corrected_only_with_the_flag() {
         let project = calc_project();
         let target = project.path().join("notes.txt");
         let model = ScriptedModel::start(vec![
-            Turn::Tool("write", serde_json::json!({"filePath": target, "contents": "hello"})),
+            Turn::Tool(
+                "write",
+                serde_json::json!({"filePath": target, "contents": "hello"}),
+            ),
             Turn::Text("Done."),
         ]);
-        let run = run_exec_with_env(project.path(), &model, None, &[("PEACH_HARNESS_TOOL_CORRECTION", flag)]);
+        let run = run_exec_with_env(
+            project.path(),
+            &model,
+            None,
+            &[("PEACH_HARNESS_TOOL_CORRECTION", flag)],
+        );
         (std::fs::read_to_string(&target).ok(), run)
     };
 
@@ -1124,17 +1368,34 @@ fn test_an_edit_made_through_the_shell_also_needs_verifying() {
             serde_json::json!({"command": "sed -i.bak 's/a - b/a + b/' calc.py && rm calc.py.bak", "description": "fix"}),
         ),
         Turn::Text("Fixed."),
-        Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run tests"})),
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": CALC_TESTS, "description": "run tests"}),
+        ),
         Turn::Text("Fixed and verified."),
     ]);
 
-    let run = run_exec_full(project.path(), &model, None, &[], "fix add", &["--test-command", CALC_TESTS]);
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[],
+        "fix add",
+        &["--test-command", CALC_TESTS],
+    );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     let requests = model.requests();
-    assert_eq!(requests.len(), 4, "sed edit, finish (sent back), test run, finish");
+    assert_eq!(
+        requests.len(),
+        4,
+        "sed edit, finish (sent back), test run, finish"
+    );
     assert!(requests[2].contains("before finishing (1 of 2)"));
-    assert_eq!(std::fs::read_to_string(project.path().join("calc.py")).unwrap(), "def add(a, b):\n    return a + b\n");
+    assert_eq!(
+        std::fs::read_to_string(project.path().join("calc.py")).unwrap(),
+        "def add(a, b):\n    return a + b\n"
+    );
 }
 
 #[test]
@@ -1146,9 +1407,12 @@ fn test_an_unattended_run_makes_no_title_request() {
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     assert_eq!(model.requests().len(), 1);
-    assert_eq!(*model.side_requests.lock().unwrap(), 0, "no side request (title generation) in exec");
+    assert_eq!(
+        *model.side_requests.lock().unwrap(),
+        0,
+        "no side request (title generation) in exec"
+    );
 }
-
 
 /// Config registering `fast` as a second provider serving `fast-model`, and
 /// routing the `sage` role to it (MM.3, D-049).
@@ -1190,15 +1454,29 @@ fn test_a_routed_subagent_runs_on_its_role_model_and_the_main_agent_does_not() {
     let fast = ScriptedModel::start_as("scripted_fast", vec![Turn::Text("add is in calc.py")]);
     let main = ScriptedModel::start(vec![delegate_to_sage(), Turn::Text("Done.")]);
 
-    let run = run_exec_configured(project.path(), &main, None, &[], "fix add", &[], &sage_routed_to(&fast));
+    let run = run_exec_configured(
+        project.path(),
+        &main,
+        None,
+        &[],
+        "fix add",
+        &[],
+        &sage_routed_to(&fast),
+    );
 
     let model_of = |body: &String| {
-        serde_json::from_str::<serde_json::Value>(body).unwrap()["model"].as_str().unwrap_or("").to_string()
+        serde_json::from_str::<serde_json::Value>(body).unwrap()["model"]
+            .as_str()
+            .unwrap_or("")
+            .to_string()
     };
     let actual = (
         run.exit_code,
         fast.requests().iter().map(model_of).collect::<Vec<_>>(),
-        main.requests().iter().map(model_of).collect::<std::collections::BTreeSet<_>>(),
+        main.requests()
+            .iter()
+            .map(model_of)
+            .collect::<std::collections::BTreeSet<_>>(),
     );
     let expected = (
         Some(0),
@@ -1213,11 +1491,24 @@ fn test_a_failing_role_model_does_not_end_the_run() {
     let project = project_with_a_test();
     let fast = ScriptedModel::start_as(
         "scripted_fast",
-        vec![Turn::Status(400), Turn::Status(400), Turn::Status(400), Turn::Status(400)],
+        vec![
+            Turn::Status(400),
+            Turn::Status(400),
+            Turn::Status(400),
+            Turn::Status(400),
+        ],
     );
     let main = ScriptedModel::start(vec![delegate_to_sage(), Turn::Text("Done.")]);
 
-    let run = run_exec_configured(project.path(), &main, None, &[], "fix add", &[], &sage_routed_to(&fast));
+    let run = run_exec_configured(
+        project.path(),
+        &main,
+        None,
+        &[],
+        "fix add",
+        &[],
+        &sage_routed_to(&fast),
+    );
 
     let second = main.requests().get(1).cloned().unwrap_or_default();
     let delegated_result = serde_json::from_str::<serde_json::Value>(&second).unwrap()["messages"]
@@ -1235,15 +1526,17 @@ fn test_a_failing_role_model_does_not_end_the_run() {
         "the main agent was not told the role model failed: {delegated_result}"
     );
     assert!(
-        run.telemetry.iter().any(|event| event["type"] == "recovery"
-            && event["action"] == "subagent_model_failed"),
+        run.telemetry
+            .iter()
+            .any(|event| event["type"] == "recovery" && event["action"] == "subagent_model_failed"),
         "no recovery event: {:?}",
         run.telemetry
     );
 }
 
 /// A permissions file that asks before every shell command.
-const CONFIRM_EVERY_COMMAND: &str = "policies:\n  - permission: confirm\n    rule:\n      command: \"*\"\n";
+const CONFIRM_EVERY_COMMAND: &str =
+    "policies:\n  - permission: confirm\n    rule:\n      command: \"*\"\n";
 
 /// Runs `peach exec` under a pseudo-terminal (`script`), as a judge's shell
 /// would, since a prompt only waits when a terminal is attached (D-048).
@@ -1259,7 +1552,11 @@ fn run_exec_under_tty(
     let config = tempfile::tempdir().unwrap();
     let telemetry = config.path().join("telemetry.jsonl");
     let transcript = config.path().join("tty.log");
-    std::fs::write(config.path().join(".peach.toml"), scripted_config_toml(model, "")).unwrap();
+    std::fs::write(
+        config.path().join(".peach.toml"),
+        scripted_config_toml(model, ""),
+    )
+    .unwrap();
     let mut command = Command::new("script");
     if let Some(permissions) = permissions {
         std::fs::write(config.path().join("permissions.yaml"), permissions).unwrap();
@@ -1269,7 +1566,14 @@ fn run_exec_under_tty(
         .arg("-q")
         .arg(&transcript)
         .arg(env!("CARGO_BIN_EXE_peach"))
-        .args(["exec", "fix add", "--json", "--max-duration-secs", "20", "--telemetry"])
+        .args([
+            "exec",
+            "fix add",
+            "--json",
+            "--max-duration-secs",
+            "20",
+            "--telemetry",
+        ])
         .arg(&telemetry)
         .envs(extra_env.iter().copied())
         .env("PEACH_CONFIG", config.path())
@@ -1293,7 +1597,10 @@ fn run_exec_under_tty(
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap()["event"].clone())
         .collect();
-    (std::fs::read_to_string(&transcript).unwrap_or_default(), events)
+    (
+        std::fs::read_to_string(&transcript).unwrap_or_default(),
+        events,
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -1301,11 +1608,15 @@ fn run_exec_under_tty(
 fn test_a_confirm_permission_is_refused_not_asked_in_an_unattended_run() {
     let project = project_with_a_test();
     let model = ScriptedModel::start(vec![
-        Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "say hi"})),
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": "echo hi", "description": "say hi"}),
+        ),
         Turn::Text("Done."),
     ]);
 
-    let (transcript, telemetry) = run_exec_under_tty(project.path(), &model, Some(CONFIRM_EVERY_COMMAND), &[]);
+    let (transcript, telemetry) =
+        run_exec_under_tty(project.path(), &model, Some(CONFIRM_EVERY_COMMAND), &[]);
 
     assert!(
         !transcript.contains("How would you like to proceed"),
@@ -1313,20 +1624,28 @@ fn test_a_confirm_permission_is_refused_not_asked_in_an_unattended_run() {
     );
     assert_eq!(tty_outcome(&transcript), "completed");
     assert!(
-        telemetry.iter().any(|event| event["type"] == "prompt_suppressed"
-            && event["prompt_kind"] == "permission"),
+        telemetry
+            .iter()
+            .any(|event| event["type"] == "prompt_suppressed"
+                && event["prompt_kind"] == "permission"),
         "no prompt_suppressed(permission) event: {telemetry:?}"
     );
     let told = model.requests().get(1).cloned().unwrap_or_default();
-    assert!(told.contains("no person is present"), "the model was not told why: {told}");
+    assert!(
+        told.contains("no person is present"),
+        "the model was not told why: {told}"
+    );
 }
 
 /// The `outcome` of the JSON line peach printed last in a TTY transcript. A
 /// pty merges stderr in, so the JSON can share a line with a spinner frame.
 #[cfg(target_os = "macos")]
 fn tty_outcome(transcript: &str) -> String {
-    let json = &transcript[transcript.rfind("{\"outcome\"").unwrap_or_else(|| panic!("no outcome JSON in transcript:\n{transcript}"))..];
-    let report: serde_json::Value = serde_json::from_str(json.lines().next().unwrap().trim()).unwrap();
+    let json = &transcript[transcript
+        .rfind("{\"outcome\"")
+        .unwrap_or_else(|| panic!("no outcome JSON in transcript:\n{transcript}"))..];
+    let report: serde_json::Value =
+        serde_json::from_str(json.lines().next().unwrap().trim()).unwrap();
     report["outcome"].as_str().unwrap_or_default().to_string()
 }
 
@@ -1337,9 +1656,17 @@ fn test_the_request_limit_ends_the_run_instead_of_asking_to_continue() {
     let read = || Turn::Tool("read", serde_json::json!({"file_path": "calc.py"}));
     let model = ScriptedModel::start((0..10).map(|_| read()).collect());
 
-    let (transcript, _) = run_exec_under_tty(project.path(), &model, None, &[("PEACH_MAX_REQUESTS_PER_TURN", "2")]);
+    let (transcript, _) = run_exec_under_tty(
+        project.path(),
+        &model,
+        None,
+        &[("PEACH_MAX_REQUESTS_PER_TURN", "2")],
+    );
 
-    assert!(!transcript.contains("continue anyway"), "the continue prompt was shown:\n{transcript}");
+    assert!(
+        !transcript.contains("continue anyway"),
+        "the continue prompt was shown:\n{transcript}"
+    );
     assert_eq!(tty_outcome(&transcript), "request_limit");
 }
 
@@ -1379,8 +1706,14 @@ fn test_a_changed_test_script_in_package_json_is_flagged_and_announced() {
 /// request body, as a model recovering truncated output would.
 fn read_the_dump_file(body: &str) -> Turn {
     let unescaped = body.replace("\\/", "/");
-    let start = unescaped.find("Full output: read ").expect("no recovery notice in the request") + 18;
-    let path: String = unescaped[start..].chars().take_while(|c| !c.is_whitespace() && *c != '"').collect();
+    let start = unescaped
+        .find("Full output: read ")
+        .expect("no recovery notice in the request")
+        + 18;
+    let path: String = unescaped[start..]
+        .chars()
+        .take_while(|c| !c.is_whitespace() && *c != '"')
+        .collect();
     Turn::Tool("read", serde_json::json!({"file_path": path}))
 }
 
@@ -1388,7 +1721,10 @@ fn read_the_dump_file(body: &str) -> Turn {
 fn test_reading_a_truncated_output_back_counts_as_an_offload_read() {
     let project = project_with_a_test();
     let model = ScriptedModel::start(vec![
-        Turn::Tool("shell", serde_json::json!({"command": "seq 1 500", "description": "count"})),
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": "seq 1 500", "description": "count"}),
+        ),
         Turn::FromRequest(read_the_dump_file),
         Turn::Text("Done."),
     ]);
@@ -1397,7 +1733,11 @@ fn test_reading_a_truncated_output_back_counts_as_an_offload_read() {
 
     let read_back = model.requests().get(2).cloned().unwrap_or_default();
     assert!(read_back.contains("250"), "the dump file was not read back");
-    assert_eq!(run.report["metrics"]["recovery"]["offload_read"], 1, "report: {}", run.report);
+    assert_eq!(
+        run.report["metrics"]["recovery"]["offload_read"], 1,
+        "report: {}",
+        run.report
+    );
 }
 
 /// Runs a task that compacts (tiny message threshold) and whose user prompt
@@ -1405,13 +1745,32 @@ fn test_reading_a_truncated_output_back_counts_as_an_offload_read() {
 fn compacting_run(extra_env: &[(&str, &str)]) -> Vec<String> {
     let project = project_with_a_test();
     let echo = |text: &'static str| {
-        Turn::Tool("shell", serde_json::json!({"command": format!("echo {text}"), "description": "echo"}))
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": format!("echo {text}"), "description": "echo"}),
+        )
     };
-    let model = ScriptedModel::start(vec![echo("one"), echo("two"), echo("three"), echo("four"), Turn::Text("Done.")]);
-    let mut env = vec![("PEACH_COMPACT__MESSAGE_THRESHOLD", "6"), ("PEACH_COMPACT__RETENTION_WINDOW", "2")];
+    let model = ScriptedModel::start(vec![
+        echo("one"),
+        echo("two"),
+        echo("three"),
+        echo("four"),
+        Turn::Text("Done."),
+    ]);
+    let mut env = vec![
+        ("PEACH_COMPACT__MESSAGE_THRESHOLD", "6"),
+        ("PEACH_COMPACT__RETENTION_WINDOW", "2"),
+    ];
     env.extend_from_slice(extra_env);
 
-    let run = run_exec_full(project.path(), &model, None, &env, "fix add; you must not rename add", &[]);
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &env,
+        "fix add; you must not rename add",
+        &[],
+    );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     model.requests()
@@ -1423,33 +1782,63 @@ fn test_the_handoff_note_survives_compaction_only_with_the_flag() {
     let without = compacting_run(&[]);
 
     let has_note = |requests: &[String]| requests.iter().any(|body| body.contains("HANDOFF NOTE"));
-    assert!(has_note(&with_flag), "no handoff note after compaction with the flag");
-    assert!(!has_note(&without), "a handoff note appeared without the flag");
     assert!(
-        !without.iter().any(|body| body.contains("RECOVERABLE RESULTS")),
+        has_note(&with_flag),
+        "no handoff note after compaction with the flag"
+    );
+    assert!(
+        !has_note(&without),
+        "a handoff note appeared without the flag"
+    );
+    assert!(
+        !without
+            .iter()
+            .any(|body| body.contains("RECOVERABLE RESULTS")),
         "recall handles appeared without their flag"
     );
     let last = with_flag.last().unwrap();
-    assert!(last.contains("you must not rename add"), "the user's constraint was not kept verbatim");
+    assert!(
+        last.contains("you must not rename add"),
+        "the user's constraint was not kept verbatim"
+    );
 }
 
 #[test]
 fn test_a_run_that_compacts_leaves_its_full_history_in_the_event_log() {
     let project = project_with_a_test();
     let echo = |text: &'static str| {
-        Turn::Tool("shell", serde_json::json!({"command": format!("echo {text}"), "description": "echo"}))
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": format!("echo {text}"), "description": "echo"}),
+        )
     };
-    let model = ScriptedModel::start(vec![echo("one"), echo("two"), echo("three"), echo("four"), Turn::Text("Done.")]);
-    let env = [("PEACH_COMPACT__MESSAGE_THRESHOLD", "6"), ("PEACH_COMPACT__RETENTION_WINDOW", "2")];
+    let model = ScriptedModel::start(vec![
+        echo("one"),
+        echo("two"),
+        echo("three"),
+        echo("four"),
+        Turn::Text("Done."),
+    ]);
+    let env = [
+        ("PEACH_COMPACT__MESSAGE_THRESHOLD", "6"),
+        ("PEACH_COMPACT__RETENTION_WINDOW", "2"),
+    ];
 
-    let (run, config) = run_exec_keeping_config(project.path(), &model, None, &env, "fix add", &[], "");
+    let (run, config) =
+        run_exec_keeping_config(project.path(), &model, None, &env, "fix add", &[], "");
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     let query = |sql: &str| {
-        let out = Command::new("sqlite3").arg(config.path().join(".peach.db")).arg(sql).output().unwrap();
+        let out = Command::new("sqlite3")
+            .arg(config.path().join(".peach.db"))
+            .arg(sql)
+            .output()
+            .unwrap();
         String::from_utf8(out.stdout).unwrap().trim().to_string()
     };
-    let compactions: u64 = query("SELECT COUNT(*) FROM thread_events WHERE kind = 'compaction'").parse().unwrap();
+    let compactions: u64 = query("SELECT COUNT(*) FROM thread_events WHERE kind = 'compaction'")
+        .parse()
+        .unwrap();
     // Every call and result, including the ones summarised away from the
     // working view, is in the log once as a message event (D-065).
     let logged = |needle: &str| -> u64 {
@@ -1459,7 +1848,11 @@ fn test_a_run_that_compacts_leaves_its_full_history_in_the_event_log() {
     };
     assert!(compactions >= 1, "no compaction event");
     for word in ["one", "two", "three", "four"] {
-        assert_eq!(logged(&format!("command=\\\"echo {word}")), 1, "echo {word}'s result");
+        assert_eq!(
+            logged(&format!("command=\\\"echo {word}")),
+            1,
+            "echo {word}'s result"
+        );
     }
     assert_eq!(logged("\"content\":\"Done.\""), 1, "the final answer");
 }
@@ -1467,9 +1860,17 @@ fn test_a_run_that_compacts_leaves_its_full_history_in_the_event_log() {
 /// Reads the first recall handle named in the request's summary.
 fn read_the_first_recall_handle(body: &str) -> Turn {
     let unescaped = body.replace("\\\\/", "/");
-    let marker = unescaped.find("peach_recall_").expect("no recall handle in the request");
-    let start = unescaped[..marker].rfind(' ').expect("handle path has no leading space") + 1;
-    let path: String = unescaped[start..].chars().take_while(|c| !c.is_whitespace() && *c != '"').collect();
+    let marker = unescaped
+        .find("peach_recall_")
+        .expect("no recall handle in the request");
+    let start = unescaped[..marker]
+        .rfind(' ')
+        .expect("handle path has no leading space")
+        + 1;
+    let path: String = unescaped[start..]
+        .chars()
+        .take_while(|c| !c.is_whitespace() && *c != '"')
+        .collect();
     Turn::Tool("read", serde_json::json!({"file_path": path}))
 }
 
@@ -1477,7 +1878,10 @@ fn read_the_first_recall_handle(body: &str) -> Turn {
 fn test_a_result_summarised_away_is_recalled_from_its_handle() {
     let project = project_with_a_test();
     let echo = |text: &'static str| {
-        Turn::Tool("shell", serde_json::json!({"command": format!("echo {text}"), "description": "echo"}))
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": format!("echo {text}"), "description": "echo"}),
+        )
     };
     let model = ScriptedModel::start(vec![
         echo("MARKER_ONE"),
@@ -1499,26 +1903,43 @@ fn test_a_result_summarised_away_is_recalled_from_its_handle() {
     let before_recall = &requests[requests.len() - 2];
     let after_recall = requests.last().unwrap();
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    assert!(before_recall.contains("RECOVERABLE RESULTS"), "no handles in the summary");
+    assert!(
+        before_recall.contains("RECOVERABLE RESULTS"),
+        "no handles in the summary"
+    );
     assert!(
         after_recall.matches("MARKER_ONE").count() > before_recall.matches("MARKER_ONE").count(),
         "the recalled result did not bring the original output back"
     );
-    assert!(run.report["metrics"]["recovery"]["offload_read"].as_u64().unwrap() >= 1, "report: {}", run.report);
+    assert!(
+        run.report["metrics"]["recovery"]["offload_read"]
+            .as_u64()
+            .unwrap()
+            >= 1,
+        "report: {}",
+        run.report
+    );
 }
 
 #[test]
 fn test_the_project_memory_file_reaches_the_model() {
     let project = project_with_a_test();
     std::fs::create_dir_all(project.path().join(".peach")).unwrap();
-    std::fs::write(project.path().join(".peach/memory.md"), "MEMORY_MARKER: money is stored in cents.").unwrap();
+    std::fs::write(
+        project.path().join(".peach/memory.md"),
+        "MEMORY_MARKER: money is stored in cents.",
+    )
+    .unwrap();
     let model = ScriptedModel::start(vec![Turn::Text("Done.")]);
 
     let run = run_exec(project.path(), &model, None);
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     let first = model.requests().first().cloned().unwrap_or_default();
-    assert!(first.contains("MEMORY_MARKER: money is stored in cents."), "memory not in the first request");
+    assert!(
+        first.contains("MEMORY_MARKER: money is stored in cents."),
+        "memory not in the first request"
+    );
 }
 
 /// Registers `fallback-model` on the scripted provider (MM.4).
@@ -1535,11 +1956,24 @@ fn failover_run(script: Vec<Turn>, extra_env: &[(&str, &str)]) -> (Run, Vec<Stri
     let model = ScriptedModel::start(script);
     let mut env = vec![("PEACH_HARNESS_FALLBACK_MODELS", "fallback-model")];
     env.extend_from_slice(extra_env);
-    let run = run_exec_configured(project.path(), &model, None, &env, "fix add", &[], FALLBACK_MODEL_TOML);
+    let run = run_exec_configured(
+        project.path(),
+        &model,
+        None,
+        &env,
+        "fix add",
+        &[],
+        FALLBACK_MODEL_TOML,
+    );
     let models = model
         .requests()
         .iter()
-        .map(|body| serde_json::from_str::<serde_json::Value>(body).unwrap()["model"].as_str().unwrap_or("").to_string())
+        .map(|body| {
+            serde_json::from_str::<serde_json::Value>(body).unwrap()["model"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+        })
         .collect();
     (run, models)
 }
@@ -1548,15 +1982,28 @@ fn failover_run(script: Vec<Turn>, extra_env: &[(&str, &str)]) -> (Run, Vec<Stri
 fn test_an_exhausted_quota_fails_over_to_the_next_model_and_finishes() {
     const NO_CREDIT: &str = r#"{"error":{"message":"This request requires more credits","code":402,"metadata":{"limit_source":"openrouter_credits"}}}"#;
 
-    let (run, models) = failover_run(vec![Turn::StatusBody(402, NO_CREDIT), Turn::Text("Done.")], &[]);
+    let (run, models) = failover_run(
+        vec![Turn::StatusBody(402, NO_CREDIT), Turn::Text("Done.")],
+        &[],
+    );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    assert_eq!(models, vec!["scripted-model".to_string(), "fallback-model".to_string()]);
-    assert_eq!(run.report["metrics"]["failed_llm_calls"], 1, "report: {}", run.report);
+    assert_eq!(
+        models,
+        vec!["scripted-model".to_string(), "fallback-model".to_string()]
+    );
+    assert_eq!(
+        run.report["metrics"]["failed_llm_calls"], 1,
+        "report: {}",
+        run.report
+    );
     assert!(
         run.telemetry.iter().any(|event| event["type"] == "recovery"
             && event["action"] == "model_failover"
-            && event["trigger"].as_str().unwrap_or("").contains("continuing on fallback-model")),
+            && event["trigger"]
+                .as_str()
+                .unwrap_or("")
+                .contains("continuing on fallback-model")),
         "no failover event: {:?}",
         run.telemetry
     );
@@ -1566,13 +2013,24 @@ fn test_an_exhausted_quota_fails_over_to_the_next_model_and_finishes() {
 fn test_an_outage_that_outlasts_the_retries_fails_over_too() {
     let (run, models) = failover_run(
         // max_attempts = 2 is two retries: three attempts, all 503, then the fallback.
-        vec![Turn::Status(503), Turn::Status(503), Turn::Status(503), Turn::Text("Done.")],
+        vec![
+            Turn::Status(503),
+            Turn::Status(503),
+            Turn::Status(503),
+            Turn::Text("Done."),
+        ],
         &[("PEACH_RETRY__MAX_ATTEMPTS", "2")],
     );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    let expected: Vec<String> =
-        ["scripted-model", "scripted-model", "scripted-model", "fallback-model"].map(String::from).to_vec();
+    let expected: Vec<String> = [
+        "scripted-model",
+        "scripted-model",
+        "scripted-model",
+        "fallback-model",
+    ]
+    .map(String::from)
+    .to_vec();
     assert_eq!(models, expected);
 }
 
@@ -1590,14 +2048,21 @@ fn project_with_a_noisy_build() -> tempfile::TempDir {
     let script = "#!/bin/sh\nfor i in $(seq 1 300); do echo \"   Compiling crate$i v0.$i.1\"; done\necho 'error[E0308]: mismatched types'\necho 'error: could not compile `ledger`'\nexit 1\n";
     let path = project.path().join("make");
     std::fs::write(&path, script).unwrap();
-    std::process::Command::new("chmod").arg("+x").arg(&path).status().unwrap();
+    std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(&path)
+        .status()
+        .unwrap();
     project
 }
 
 fn noisy_build_run(extra_env: &[(&str, &str)]) -> (Run, Vec<String>) {
     let project = project_with_a_noisy_build();
     let model = ScriptedModel::start(vec![
-        Turn::Tool("shell", serde_json::json!({"command": "./make", "description": "build"})),
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": "./make", "description": "build"}),
+        ),
         Turn::FromRequest(read_the_dump_file),
         Turn::Text("Done."),
     ]);
@@ -1610,18 +2075,37 @@ fn test_noisy_build_output_is_compressed_loudly_and_recoverable_with_the_flag() 
     let (run, requests) = noisy_build_run(&[("PEACH_HARNESS_NOISE_COMPRESSION", "1")]);
 
     let seen = &requests[1];
-    assert!(seen.contains("error[E0308]: mismatched types"), "the error was lost");
-    assert!(seen.contains("similar or passing lines not shown. Full output: read"), "no recovery sentence");
-    assert!(!seen.contains("Compiling crate150 "), "the noise was not collapsed");
-    assert!(requests[2].contains("Compiling crate150 "), "reading the dump did not bring the full output back");
-    assert_eq!(run.report["metrics"]["recovery"]["offload_read"], 1, "report: {}", run.report);
+    assert!(
+        seen.contains("error[E0308]: mismatched types"),
+        "the error was lost"
+    );
+    assert!(
+        seen.contains("similar or passing lines not shown. Full output: read"),
+        "no recovery sentence"
+    );
+    assert!(
+        !seen.contains("Compiling crate150 "),
+        "the noise was not collapsed"
+    );
+    assert!(
+        requests[2].contains("Compiling crate150 "),
+        "reading the dump did not bring the full output back"
+    );
+    assert_eq!(
+        run.report["metrics"]["recovery"]["offload_read"], 1,
+        "report: {}",
+        run.report
+    );
 }
 
 #[test]
 fn test_noisy_build_output_is_untouched_without_the_flag() {
     let project = project_with_a_noisy_build();
     let model = ScriptedModel::start(vec![
-        Turn::Tool("shell", serde_json::json!({"command": "./make", "description": "build"})),
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": "./make", "description": "build"}),
+        ),
         Turn::Text("Done."),
     ]);
 
@@ -1633,20 +2117,38 @@ fn test_noisy_build_output_is_untouched_without_the_flag() {
 /// Reads the handle named in the first offload stub of a request.
 fn read_the_offloaded_result(body: &str) -> Turn {
     let unescaped = body.replace("\\\\/", "/");
-    let start = unescaped.find("Full result: read ").expect("no offload stub in the request") + 18;
-    let path: String = unescaped[start..].chars().take_while(|c| !c.is_whitespace() && *c != '"').collect();
+    let start = unescaped
+        .find("Full result: read ")
+        .expect("no offload stub in the request")
+        + 18;
+    let path: String = unescaped[start..]
+        .chars()
+        .take_while(|c| !c.is_whitespace() && *c != '"')
+        .collect();
     Turn::Tool("read", serde_json::json!({"file_path": path}))
 }
 
 #[test]
 fn test_offload_moves_old_bulk_out_of_context_and_keeps_it_readable() {
     let project = project_with_a_test();
-    let big: String = (0..400).map(|i| format!("line {i:04}: the quick brown fox jumps over\n")).collect();
+    let big: String = (0..400)
+        .map(|i| format!("line {i:04}: the quick brown fox jumps over\n"))
+        .collect();
     std::fs::write(project.path().join("big.txt"), &big).unwrap();
     let read = || Turn::Tool("read", serde_json::json!({"file_path": "big.txt"}));
-    let echo = || Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "echo"}));
-    let model =
-        ScriptedModel::start(vec![read(), echo(), echo(), Turn::FromRequest(read_the_offloaded_result), Turn::Text("Done.")]);
+    let echo = || {
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": "echo hi", "description": "echo"}),
+        )
+    };
+    let model = ScriptedModel::start(vec![
+        read(),
+        echo(),
+        echo(),
+        Turn::FromRequest(read_the_offloaded_result),
+        Turn::Text("Done."),
+    ]);
     let env = [
         ("PEACH_HARNESS_OFFLOAD", "1"),
         ("PEACH_COMPACT__TOKEN_THRESHOLD", "7000"),
@@ -1656,23 +2158,50 @@ fn test_offload_moves_old_bulk_out_of_context_and_keeps_it_readable() {
     let run = run_exec_with_env(project.path(), &model, None, &env);
 
     let requests = model.requests();
-    let stubbed = requests.iter().position(|body| body.contains("[offloaded by the harness:")).expect("no stub reached the model");
+    let stubbed = requests
+        .iter()
+        .position(|body| body.contains("[offloaded by the harness:"))
+        .expect("no stub reached the model");
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    assert!(!requests[stubbed].contains("line 0200: the quick brown fox"), "the bulk is still in context");
-    assert!(!requests.iter().any(|b| b.contains("summary frames")), "the lossy summary ran although offload sufficed");
-    assert!(requests.last().unwrap().contains("line 0200: the quick brown fox"), "reading the handle did not restore it");
-    assert_eq!(run.report["metrics"]["recovery"]["offload_read"], 1, "report: {}", run.report);
+    assert!(
+        !requests[stubbed].contains("line 0200: the quick brown fox"),
+        "the bulk is still in context"
+    );
+    assert!(
+        !requests.iter().any(|b| b.contains("summary frames")),
+        "the lossy summary ran although offload sufficed"
+    );
+    assert!(
+        requests
+            .last()
+            .unwrap()
+            .contains("line 0200: the quick brown fox"),
+        "reading the handle did not restore it"
+    );
+    assert_eq!(
+        run.report["metrics"]["recovery"]["offload_read"], 1,
+        "report: {}",
+        run.report
+    );
 }
 
 #[test]
 fn test_a_read_superseded_by_a_reread_becomes_a_stub_without_a_summary() {
     let project = project_with_a_test();
-    let big: String = (0..400).map(|i| format!("line {i:04}: the quick brown fox jumps over\n")).collect();
+    let big: String = (0..400)
+        .map(|i| format!("line {i:04}: the quick brown fox jumps over\n"))
+        .collect();
     std::fs::write(project.path().join("big.txt"), &big).unwrap();
     let read = || Turn::Tool("read", serde_json::json!({"file_path": "big.txt"}));
-    let echo = || Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "echo"}));
+    let echo = || {
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": "echo hi", "description": "echo"}),
+        )
+    };
     let model = ScriptedModel::start(vec![read(), read(), echo(), echo(), Turn::Text("Done.")]);
-    // Two 16 KB reads cross it; once S0 stubs the first, the rest is under 3/4 of it.
+    // Two 16 KB reads cross it; once S0 stubs the first, the rest is under 3/4
+    // of it.
     let threshold = "11500".to_string();
     let env = [
         ("PEACH_HARNESS_SUPERSEDE", "1"),
@@ -1685,11 +2214,22 @@ fn test_a_read_superseded_by_a_reread_becomes_a_stub_without_a_summary() {
     let requests = model.requests();
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     assert!(
-        requests.iter().any(|body| body.contains("big.txt was read again later")),
+        requests
+            .iter()
+            .any(|body| body.contains("big.txt was read again later")),
         "no supersede stub reached the model"
     );
-    assert!(!requests.iter().any(|b| b.contains("summary frames")), "the lossy summary ran although S0 sufficed");
-    assert!(requests.last().unwrap().contains("line 0200: the quick brown fox"), "the newest read was lost");
+    assert!(
+        !requests.iter().any(|b| b.contains("summary frames")),
+        "the lossy summary ran although S0 sufficed"
+    );
+    assert!(
+        requests
+            .last()
+            .unwrap()
+            .contains("line 0200: the quick brown fox"),
+        "the newest read was lost"
+    );
 }
 
 #[test]
@@ -1697,10 +2237,20 @@ fn test_the_soft_trigger_compacts_reversibly_before_the_hard_one_is_reached() {
     let (run, requests) = soft_trigger_run(true);
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    assert!(requests.iter().any(|b| b.contains("big.txt was read again later")), "no soft compaction reached the model");
-    assert!(!requests.iter().any(|b| b.contains("summary frames")), "the soft trigger ran the lossy summary");
     assert!(
-        run.telemetry.iter().any(|event| event["type"] == "context_compaction"),
+        requests
+            .iter()
+            .any(|b| b.contains("big.txt was read again later")),
+        "no soft compaction reached the model"
+    );
+    assert!(
+        !requests.iter().any(|b| b.contains("summary frames")),
+        "the soft trigger ran the lossy summary"
+    );
+    assert!(
+        run.telemetry
+            .iter()
+            .any(|event| event["type"] == "context_compaction"),
         "the soft compaction is not in telemetry"
     );
 }
@@ -1710,19 +2260,38 @@ fn test_without_the_soft_trigger_the_same_run_does_not_compact() {
     let (run, requests) = soft_trigger_run(false);
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    assert!(!requests.iter().any(|b| b.contains("[offloaded by the harness:")));
-    assert!(!run.telemetry.iter().any(|event| event["type"] == "context_compaction"), "the hard trigger fired");
+    assert!(
+        !requests
+            .iter()
+            .any(|b| b.contains("[offloaded by the harness:"))
+    );
+    assert!(
+        !run.telemetry
+            .iter()
+            .any(|event| event["type"] == "context_compaction"),
+        "the hard trigger fired"
+    );
 }
 
 /// Two 16 KB reads: above the soft trigger (3/4 of 15,000), below the hard one.
 fn soft_trigger_run(soft: bool) -> (Run, Vec<String>) {
     let project = project_with_a_test();
-    let big: String = (0..400).map(|i| format!("line {i:04}: the quick brown fox jumps over\n")).collect();
+    let big: String = (0..400)
+        .map(|i| format!("line {i:04}: the quick brown fox jumps over\n"))
+        .collect();
     std::fs::write(project.path().join("big.txt"), &big).unwrap();
     let read = || Turn::Tool("read", serde_json::json!({"file_path": "big.txt"}));
-    let echo = || Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "echo"}));
+    let echo = || {
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": "echo hi", "description": "echo"}),
+        )
+    };
     let model = ScriptedModel::start(vec![read(), read(), echo(), echo(), Turn::Text("Done.")]);
-    let mut env = vec![("PEACH_COMPACT__TOKEN_THRESHOLD", "15000"), ("PEACH_COMPACT__RETENTION_WINDOW", "2")];
+    let mut env = vec![
+        ("PEACH_COMPACT__TOKEN_THRESHOLD", "15000"),
+        ("PEACH_COMPACT__RETENTION_WINDOW", "2"),
+    ];
     if soft {
         env.push(("PEACH_HARNESS_SOFT_COMPACTION", "1"));
     }
@@ -1734,9 +2303,16 @@ fn soft_trigger_run(soft: bool) -> (Run, Vec<String>) {
 #[test]
 fn test_the_score_stage_cuts_an_unreferenced_old_read_without_a_summary() {
     let project = project_with_a_test();
-    let big: String = (0..400).map(|i| format!("line {i:04}: the quick brown fox jumps over\n")).collect();
+    let big: String = (0..400)
+        .map(|i| format!("line {i:04}: the quick brown fox jumps over\n"))
+        .collect();
     std::fs::write(project.path().join("unused.txt"), &big).unwrap();
-    let echo = || Turn::Tool("shell", serde_json::json!({"command": "echo hi", "description": "echo"}));
+    let echo = || {
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": "echo hi", "description": "echo"}),
+        )
+    };
     let model = ScriptedModel::start(vec![
         Turn::Tool("read", serde_json::json!({"file_path": "unused.txt"})),
         echo(),
@@ -1744,7 +2320,8 @@ fn test_the_score_stage_cuts_an_unreferenced_old_read_without_a_summary() {
         echo(),
         Turn::Text("Done."),
     ]);
-    // A 16 KB read crosses it; once S2 cuts that read, the rest is under 3/4 of it.
+    // A 16 KB read crosses it; once S2 cuts that read, the rest is under 3/4 of
+    // it.
     let threshold = "6500".to_string();
     let env = [
         ("PEACH_HARNESS_SCORE_STAGE", "1"),
@@ -1756,33 +2333,74 @@ fn test_the_score_stage_cuts_an_unreferenced_old_read_without_a_summary() {
 
     let requests = model.requests();
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    assert!(requests.iter().any(|b| b.contains("relevance scoring") || b.contains("scored as no longer relevant")), "S2 cut nothing");
-    assert!(!requests.iter().any(|b| b.contains("summary frames")), "the lossy summary ran although S2 sufficed");
+    assert!(
+        requests
+            .iter()
+            .any(|b| b.contains("relevance scoring") || b.contains("scored as no longer relevant")),
+        "S2 cut nothing"
+    );
+    assert!(
+        !requests.iter().any(|b| b.contains("summary frames")),
+        "the lossy summary ran although S2 sufficed"
+    );
 }
 
-/// The generated report of a run with an evidence bundle, and the model ids it called.
+/// The generated report of a run with an evidence bundle, and the model ids it
+/// called.
 fn report_of_failover_run(script: Vec<Turn>) -> (serde_json::Value, Vec<String>) {
     let project = project_with_a_test();
     let evidence = tempfile::tempdir().unwrap();
     let bundle = evidence.path().join("bundle");
     let model = ScriptedModel::start(script);
     let env = [("PEACH_HARNESS_FALLBACK_MODELS", "fallback-model")];
-    let args = ["--evidence-dir", bundle.to_str().unwrap(), "--test-command", "python3 -m unittest discover -s tests -t ."];
+    let args = [
+        "--evidence-dir",
+        bundle.to_str().unwrap(),
+        "--test-command",
+        "python3 -m unittest discover -s tests -t .",
+    ];
 
-    let (run, config) = run_exec_keeping_config(project.path(), &model, None, &env, "fix add", &args, FALLBACK_MODEL_TOML);
+    let (run, config) = run_exec_keeping_config(
+        project.path(),
+        &model,
+        None,
+        &env,
+        "fix add",
+        &args,
+        FALLBACK_MODEL_TOML,
+    );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    // The helper's --telemetry overrides the bundle's own file; put it where a judge's bundle
-    // has it and rebuild the report the way a judge would (`peach report`).
-    std::fs::copy(config.path().join("telemetry.jsonl"), bundle.join("telemetry.jsonl")).unwrap();
-    let rebuilt = Command::new(env!("CARGO_BIN_EXE_peach")).arg("report").arg(&bundle).output().unwrap();
-    assert!(rebuilt.status.success(), "peach report failed: {}", String::from_utf8(rebuilt.stderr.clone()).unwrap_or_default());
+    // The helper's --telemetry overrides the bundle's own file; put it where a
+    // judge's bundle has it and rebuild the report the way a judge would
+    // (`peach report`).
+    std::fs::copy(
+        config.path().join("telemetry.jsonl"),
+        bundle.join("telemetry.jsonl"),
+    )
+    .unwrap();
+    let rebuilt = Command::new(env!("CARGO_BIN_EXE_peach"))
+        .arg("report")
+        .arg(&bundle)
+        .output()
+        .unwrap();
+    assert!(
+        rebuilt.status.success(),
+        "peach report failed: {}",
+        String::from_utf8(rebuilt.stderr.clone()).unwrap_or_default()
+    );
     let report: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(bundle.join("report.json")).unwrap()).unwrap();
+        serde_json::from_str(&std::fs::read_to_string(bundle.join("report.json")).unwrap())
+            .unwrap();
     let models = model
         .requests()
         .iter()
-        .map(|body| serde_json::from_str::<serde_json::Value>(body).unwrap()["model"].as_str().unwrap_or("").to_string())
+        .map(|body| {
+            serde_json::from_str::<serde_json::Value>(body).unwrap()["model"]
+                .as_str()
+                .unwrap_or("")
+                .to_string()
+        })
         .collect();
     (report, models)
 }
@@ -1792,15 +2410,32 @@ fn test_a_failed_over_run_is_scored_exactly_like_one_that_was_not() {
     const NO_CREDIT: &str = r#"{"error":{"message":"This request requires more credits","code":402,"metadata":{"limit_source":"openrouter_credits"}}}"#;
 
     let (plain, plain_models) = report_of_failover_run(vec![Turn::Text("Done.")]);
-    let (failed_over, failover_models) = report_of_failover_run(vec![Turn::StatusBody(402, NO_CREDIT), Turn::Text("Done.")]);
+    let (failed_over, failover_models) =
+        report_of_failover_run(vec![Turn::StatusBody(402, NO_CREDIT), Turn::Text("Done.")]);
 
-    let score = |r: &serde_json::Value| (r["outcome"].clone(), r["testing"]["class"].clone(), r["testing"]["passed"].clone());
-    assert_eq!(score(&failed_over), score(&plain), "scoring must not depend on which model answered");
+    let score = |r: &serde_json::Value| {
+        (
+            r["outcome"].clone(),
+            r["testing"]["class"].clone(),
+            r["testing"]["passed"].clone(),
+        )
+    };
+    assert_eq!(
+        score(&failed_over),
+        score(&plain),
+        "scoring must not depend on which model answered"
+    );
     assert_eq!(plain["error_recovery"]["model_failover_count"], 0);
     assert_eq!(failed_over["error_recovery"]["model_failover_count"], 1);
-    assert_eq!(failed_over["error_recovery"]["recoveries_by_attribution"], serde_json::json!({"harness": 1}));
+    assert_eq!(
+        failed_over["error_recovery"]["recoveries_by_attribution"],
+        serde_json::json!({"harness": 1})
+    );
     assert_eq!(plain_models, vec!["scripted-model".to_string()]);
-    assert_eq!(failover_models, vec!["scripted-model".to_string(), "fallback-model".to_string()]);
+    assert_eq!(
+        failover_models,
+        vec!["scripted-model".to_string(), "fallback-model".to_string()]
+    );
 }
 
 #[test]
@@ -1808,17 +2443,38 @@ fn test_the_doom_loop_ladder_ends_an_exec_run_with_its_own_outcome() {
     // R-LOOP-5 (D-082): four identical calls with the flag on end the run with
     // exit 6 and a named outcome, not a hang or a generic error.
     let project = project_with_a_test();
-    let same = || Turn::Tool("shell", serde_json::json!({"command": "echo same", "description": "same"}));
-    let model = ScriptedModel::start(vec![same(), same(), same(), same(), Turn::Text("unreachable")]);
+    let same = || {
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": "echo same", "description": "same"}),
+        )
+    };
+    let model = ScriptedModel::start(vec![
+        same(),
+        same(),
+        same(),
+        same(),
+        Turn::Text("unreachable"),
+    ]);
 
-    let run = run_exec_with_env(project.path(), &model, None, &[("PEACH_HARNESS_DOOM_LOOP_ESCALATION", "1")]);
+    let run = run_exec_with_env(
+        project.path(),
+        &model,
+        None,
+        &[("PEACH_HARNESS_DOOM_LOOP_ESCALATION", "1")],
+    );
 
     assert_eq!(run.exit_code, Some(6), "report: {}", run.report);
     assert_eq!(run.report["outcome"], "doom_loop_escalation");
-    assert_eq!(model.requests().len(), 4, "the run must stop after the fourth identical call");
+    assert_eq!(
+        model.requests().len(),
+        4,
+        "the run must stop after the fourth identical call"
+    );
 }
 
-// harness: R-HACK-10 (D-083) — the runtime verification gate, from the handoff brief.
+// harness: R-HACK-10 (D-083) — the runtime verification gate, from the handoff
+// brief.
 #[test]
 fn test_a_failing_hard_gate_run_is_sent_back_and_the_run_continues() {
     // The model claims done on the *unfixed* bug (still `a - b`); the harness
@@ -1826,7 +2482,10 @@ fn test_a_failing_hard_gate_run_is_sent_back_and_the_run_continues() {
     // end the run on the model's say-so.
     let project = calc_project();
     let model = ScriptedModel::start(vec![
-        Turn::Tool("read", serde_json::json!({"file_path": project.path().join("calc.py")})),
+        Turn::Tool(
+            "read",
+            serde_json::json!({"file_path": project.path().join("calc.py")}),
+        ),
         Turn::Text("Done."), // premature — calc.py is still broken
         Turn::Tool(
             "write",
@@ -1849,12 +2508,21 @@ fn test_a_failing_hard_gate_run_is_sent_back_and_the_run_continues() {
         None,
         &[("PEACH_RUNTIME_VERIFY_GATE", "true")],
         "fix add",
-        &["--test-command", CALC_TESTS, "--evidence-dir", bundle.to_str().unwrap()],
+        &[
+            "--test-command",
+            CALC_TESTS,
+            "--evidence-dir",
+            bundle.to_str().unwrap(),
+        ],
     );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
     let requests = model.requests();
-    assert_eq!(requests.len(), 4, "read, premature finish (sent back), write, real finish");
+    assert_eq!(
+        requests.len(),
+        4,
+        "read, premature finish (sent back), write, real finish"
+    );
     assert!(
         requests[2].contains("RUNTIME VERIFICATION GATE") && requests[2].contains("test_assertion"),
         "the real failure must reach the model: {}",
@@ -1865,17 +2533,25 @@ fn test_a_failing_hard_gate_run_is_sent_back_and_the_run_continues() {
         .telemetry
         .iter()
         .filter(|event| event["type"] == "test_run")
-        .map(|event| (event["origin"].as_str().unwrap(), event["failure_class"].as_str().unwrap()))
+        .map(|event| {
+            (
+                event["origin"].as_str().unwrap(),
+                event["failure_class"].as_str().unwrap(),
+            )
+        })
         .collect();
     assert_eq!(
         gate_runs,
         vec![
             ("harness_runtime_gate", "test_assertion"), // the harness's own failing run
             ("harness_runtime_gate", "passed"),         // the harness's own passing run
-            ("harness_final", "passed"),                 // the true post-run evidence run
+            ("harness_final", "passed"),                // the true post-run evidence run
         ]
     );
-    assert_eq!(std::fs::read_to_string(project.path().join("calc.py")).unwrap(), "def add(a, b):\n    return a + b\n");
+    assert_eq!(
+        std::fs::read_to_string(project.path().join("calc.py")).unwrap(),
+        "def add(a, b):\n    return a + b\n"
+    );
 }
 
 #[test]
@@ -1887,10 +2563,19 @@ fn test_the_hard_gate_fails_open_with_no_test_command_configured() {
     std::fs::write(project.path().join("notes.txt"), "todo\n").unwrap();
     let model = ScriptedModel::start(vec![Turn::Text("Done.")]);
 
-    let run = run_exec_with_env(project.path(), &model, None, &[("PEACH_RUNTIME_VERIFY_GATE", "true")]);
+    let run = run_exec_with_env(
+        project.path(),
+        &model,
+        None,
+        &[("PEACH_RUNTIME_VERIFY_GATE", "true")],
+    );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    assert_eq!(model.requests().len(), 1, "no test command configured: the gate must do nothing");
+    assert_eq!(
+        model.requests().len(),
+        1,
+        "no test command configured: the gate must do nothing"
+    );
     assert_eq!(run.report["outcome"], "completed");
 }
 
@@ -1911,7 +2596,11 @@ fn test_the_hard_gate_is_inert_when_the_flag_is_off() {
     );
 
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    assert_eq!(model.requests().len(), 1, "gate off: no hard gate interference");
+    assert_eq!(
+        model.requests().len(),
+        1,
+        "gate off: no hard gate interference"
+    );
     assert_eq!(run.report["outcome"], "completed");
 }
 
@@ -1920,7 +2609,11 @@ fn test_the_hard_gate_is_on_by_default() {
     // D-088: shipped on after A/Bs on two model families. With nothing set, a
     // premature "Done." on unfixed code is sent back with the real test output.
     let project = calc_project();
-    let model = ScriptedModel::start(vec![Turn::Text("Done."), Turn::Text("Done."), Turn::Text("Done.")]);
+    let model = ScriptedModel::start(vec![
+        Turn::Text("Done."),
+        Turn::Text("Done."),
+        Turn::Text("Done."),
+    ]);
 
     run_exec_full(
         project.path(),
@@ -1931,7 +2624,10 @@ fn test_the_hard_gate_is_on_by_default() {
         &["--test-command", CALC_TESTS],
     );
 
-    assert!(model.requests().len() > 1, "the default run accepted an unverified stop");
+    assert!(
+        model.requests().len() > 1,
+        "the default run accepted an unverified stop"
+    );
 }
 
 #[test]
@@ -1943,7 +2639,10 @@ fn test_compact_tool_docs_are_the_default() {
     run_exec(project.path(), &model, None);
 
     let body: serde_json::Value = serde_json::from_str(&model.requests()[0]).unwrap();
-    assert!(!body["tools"].to_string().contains("<example"), "tool examples are still sent by default");
+    assert!(
+        !body["tools"].to_string().contains("<example"),
+        "tool examples are still sent by default"
+    );
 }
 
 #[test]
@@ -1952,10 +2651,16 @@ fn test_a_note_comes_back_verbatim_after_compaction_and_is_logged() {
     // has replaced its write_note result, the harness shows it again.
     let project = project_with_a_test();
     let echo = |text: &'static str| {
-        Turn::Tool("shell", serde_json::json!({"command": format!("echo {text}"), "description": "echo"}))
+        Turn::Tool(
+            "shell",
+            serde_json::json!({"command": format!("echo {text}"), "description": "echo"}),
+        )
     };
     let model = ScriptedModel::start(vec![
-        Turn::Tool("write_note", serde_json::json!({"note": "NOTE_MARKER: add() must return a + b"})),
+        Turn::Tool(
+            "write_note",
+            serde_json::json!({"note": "NOTE_MARKER: add() must return a + b"}),
+        ),
         echo("two"),
         echo("three"),
         echo("four"),
@@ -1968,20 +2673,34 @@ fn test_a_note_comes_back_verbatim_after_compaction_and_is_logged() {
         ("PEACH_HARNESS_WRITE_NOTE", "1"),
     ];
 
-    let (run, config) = run_exec_keeping_config(project.path(), &model, None, &env, "fix add", &[], "");
+    let (run, config) =
+        run_exec_keeping_config(project.path(), &model, None, &env, "fix add", &[], "");
 
     let requests = model.requests();
     assert_eq!(run.exit_code, Some(0), "report: {}", run.report);
-    assert!(requests[0].contains("\"write_note\""), "the tool is not offered with the flag on");
+    assert!(
+        requests[0].contains("\"write_note\""),
+        "the tool is not offered with the flag on"
+    );
     let last = requests.last().unwrap();
-    assert!(last.contains("SCRATCHPAD"), "no scratchpad reminder after compaction");
-    assert!(last.contains("[note 1] NOTE_MARKER: add() must return a + b"), "the note is not verbatim");
+    assert!(
+        last.contains("SCRATCHPAD"),
+        "no scratchpad reminder after compaction"
+    );
+    assert!(
+        last.contains("[note 1] NOTE_MARKER: add() must return a + b"),
+        "the note is not verbatim"
+    );
     let out = Command::new("sqlite3")
         .arg(config.path().join(".peach.db"))
         .arg("SELECT COUNT(*) FROM thread_events WHERE kind = 'note'")
         .output()
         .unwrap();
-    assert_eq!(String::from_utf8(out.stdout).unwrap().trim(), "1", "the note is not in the event log");
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap().trim(),
+        "1",
+        "the note is not in the event log"
+    );
 }
 
 #[test]
@@ -2001,17 +2720,28 @@ fn test_reasoning_escalates_on_a_failed_fix_attempt_not_on_reproduction() {
     // Registered as `nvidia` so the request carries `reasoning_effort` exactly
     // as it would for the NIM profile.
     let project = calc_project();
-    let run_tests = || Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run the tests"}));
-    let model = ScriptedModel::start_as("nvidia", vec![
-        run_tests(),
-        Turn::Tool("read", serde_json::json!({"file_path": project.path().join("calc.py")})),
+    let run_tests = || {
         Turn::Tool(
-            "write",
-            serde_json::json!({"file_path": project.path().join("calc.py"), "content": "def add(a, b):\n    return a * b\n", "overwrite": true}),
-        ),
-        run_tests(),
-        Turn::Text("Done."),
-    ]);
+            "shell",
+            serde_json::json!({"command": CALC_TESTS, "description": "run the tests"}),
+        )
+    };
+    let model = ScriptedModel::start_as(
+        "nvidia",
+        vec![
+            run_tests(),
+            Turn::Tool(
+                "read",
+                serde_json::json!({"file_path": project.path().join("calc.py")}),
+            ),
+            Turn::Tool(
+                "write",
+                serde_json::json!({"file_path": project.path().join("calc.py"), "content": "def add(a, b):\n    return a * b\n", "overwrite": true}),
+            ),
+            run_tests(),
+            Turn::Text("Done."),
+        ],
+    );
 
     let run = run_exec_full(
         project.path(),
@@ -2027,10 +2757,15 @@ fn test_reasoning_escalates_on_a_failed_fix_attempt_not_on_reproduction() {
         .iter()
         .map(|body| {
             let body: serde_json::Value = serde_json::from_str(body).unwrap();
-            body["reasoning_effort"].as_str().or(body["reasoning"]["effort"].as_str()).unwrap_or("none").to_string()
+            body["reasoning_effort"]
+                .as_str()
+                .or(body["reasoning"]["effort"].as_str())
+                .unwrap_or("none")
+                .to_string()
         })
         .collect();
-    // reproduce (fails, no edit) → still low; read, wrong fix → tests fail → high.
+    // reproduce (fails, no edit) → still low; read, wrong fix → tests fail →
+    // high.
     let trace: Vec<String> = run
         .telemetry
         .iter()
@@ -2039,10 +2774,19 @@ fn test_reasoning_escalates_on_a_failed_fix_attempt_not_on_reproduction() {
         .collect();
     // Later requests are the runtime gate sending the still-wrong fix back:
     // they stay high, since escalation never reverts.
-    assert_eq!(efforts[..5], ["low", "low", "low", "low", "high"], "trace: {trace:?}");
-    assert!(efforts[5..].iter().all(|e| e == "high"), "de-escalated: {efforts:?}");
+    assert_eq!(
+        efforts[..5],
+        ["low", "low", "low", "low", "high"],
+        "trace: {trace:?}"
+    );
     assert!(
-        run.telemetry.iter().any(|e| e["action"] == "reasoning_escalated"),
+        efforts[5..].iter().all(|e| e == "high"),
+        "de-escalated: {efforts:?}"
+    );
+    assert!(
+        run.telemetry
+            .iter()
+            .any(|e| e["action"] == "reasoning_escalated"),
         "no escalation event"
     );
 }
@@ -2055,5 +2799,8 @@ fn test_reasoning_effort_is_untouched_without_the_flag() {
     run_exec(project.path(), &model, None);
 
     let body: serde_json::Value = serde_json::from_str(&model.requests()[0]).unwrap();
-    assert_eq!(body["reasoning_effort"], "medium", "the profile default must reach the request unchanged");
+    assert_eq!(
+        body["reasoning_effort"], "medium",
+        "the profile default must reach the request unchanged"
+    );
 }
