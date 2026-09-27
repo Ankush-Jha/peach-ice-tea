@@ -12,6 +12,17 @@
 What we built, and why, is in [`documentation/ARCHITECTURE.md`](documentation/ARCHITECTURE.md) and
 `docs/harness/DECISIONS.md`.
 
+[What the harness adds](#what-the-harness-adds) ·
+[How one run works](#how-one-run-works) ·
+[Setup](#setup) ·
+[Running a task](#running-a-task) ·
+[Evaluating locally](#evaluating-locally) ·
+[Layout](#layout-hackathon-32) ·
+[Configuration](#configuration) ·
+[Design decisions](#major-design-decisions) ·
+[Limitations](#known-limitations) ·
+[Provenance](#provenance)
+
 ## What the harness adds
 
 | Area | What it does | Where |
@@ -22,7 +33,10 @@ What we built, and why, is in [`documentation/ARCHITECTURE.md`](documentation/AR
 | Telemetry | JSONL events with provider-reported tokens, retries (with billed usage), tool/model correlation, compaction, tests, integrity; redacted before disk | `crates/peach_harness/src/telemetry/`, `crates/peach_app/src/hooks/telemetry.rs` |
 | Evidence + report | Prompt, transcript, telemetry, integrity, diff, tests, `exec.json`, `report.json`/`report.md` and a checksum manifest on every exit path | `crates/peach_harness/src/{evidence,report}.rs` |
 | Provider robustness | Gemini thinking level, DeepSeek cache accounting, fail-fast on quotas that cannot recover | `crates/peach_repo/src/provider/`, `crates/peach_domain/src/provider_quota.rs` |
-| Local web UI | `make ui`: run a task, watch it live, browse evidence and A/B reports from a browser; loopback-only | `harness/ui/` (D-092) |
+| Degenerate-reply retry | A reply with no text, no tool call, and only a repeated symbol as reasoning is retried, not accepted as "done" — caught a real model returning `!` × 32 and being scored as success (D-096) | `crates/peach_app/src/` (flag: `PEACH_HARNESS_DEGENERATE_RETRY`, on by default) |
+| Difficulty-driven reasoning | Every run starts at low reasoning effort; escalates once, to high (optionally a stronger model), only on a signal the task is hard — a failing test run, the verify gate catching a stop, repeated tool errors, or a long call count | `crates/peach_app/src/reasoning_budget.rs` (flag: `PEACH_HARNESS_REASONING_SCHEDULE`, off pending its A/B; D-097) |
+| Pluggable external scorer | The compaction stage that decides what old tool output to keep can call an outside command in a documented protocol, so a JEV-style scorer plugs in without the harness depending on it; a dropped result goes to a readable file, never deleted | `docs/harness/SCORER_PROTOCOL.md` (D-098) |
+| Local web UI | `make ui`: a React app — run a task, watch it live with a scrubbable trace/waterfall replay, browse evidence and A/B reports | `harness/ui/app/` (D-092, rewritten D-101/D-102) |
 
 ## How one run works
 
@@ -106,9 +120,13 @@ OPENROUTER_API_KEY=... harness/peach-ice-tea --profile openrouter --evidence-dir
 The last stdout line is the JSON outcome. Exit codes: 0 completed, 1 error, 2 tool-failure limit, 3 request
 limit, 4 time budget, 5 interrupted, 6 doom-loop escalation (flagged, D-082). `peach report <evidence-dir>` regenerates the report offline.
 
-**`make ui`** starts a small local web UI (D-092) as an alternative to the command line: start a task, watch
-it run live against the same `harness/run-task` entry point `make run` uses, and browse past evidence bundles
-and benchmark reports. Loopback-only; provider keys never reach the browser.
+**`make ui`** starts a local web UI (React app, `harness/ui/app/`; D-092, rewritten D-101/D-102) as an
+alternative to the command line: start a task, watch it run live — with a scrubbable trace/waterfall replay
+of the telemetry, not just a plain list — against the same `harness/run-task` entry point `make run` uses, and
+browse past evidence bundles and benchmark reports. Loopback-only; provider keys never reach the browser. The
+first `make ui` runs `npm install`/`npm run build` in `harness/ui/app` automatically; `make ui-build` forces a
+rebuild after editing its source, `make ui-dev` runs Vite's own dev server with hot reload. None of this is
+required for `make run`, which never needs Node beyond `make setup`'s own use of it.
 
 ## Evaluating locally
 
