@@ -1,0 +1,70 @@
+{
+  "meta": {
+    "label": "compact-tool-docs-gemini",
+    "profile": "gemini",
+    "role": "evaluation",
+    "suite": "py-bugfix",
+    "seeds": 1,
+    "base": {
+      "PEACH_HARNESS_COMPACT_TOOL_DOCS": "0"
+    },
+    "cand": {
+      "PEACH_HARNESS_COMPACT_TOOL_DOCS": "1"
+    },
+    "timestamp": "2026-09-27T03:22:06.384Z"
+  },
+  "base": {
+    "runs": 1,
+    "successes": 0,
+    "success_rate": 0,
+    "success_ci95": [
+      0,
+      0.7934567085261071
+    ],
+    "integrity_violations": 0,
+    "mean_input_tokens": 0,
+    "mean_output_tokens": 0,
+    "mean_llm_calls": 0,
+    "mean_wall_ms": 896
+  },
+  "cand": {
+    "runs": 1,
+    "successes": 0,
+    "success_rate": 0,
+    "success_ci95": [
+      0,
+      0.7934567085261071
+    ],
+    "integrity_violations": 0,
+    "mean_input_tokens": 0,
+    "mean_output_tokens": 0,
+    "mean_llm_calls": 0,
+    "mean_wall_ms": 791
+  },
+  "runs": [
+    {
+      "fixture": "py-bugfix",
+      "arm": "base",
+      "seed": 1,
+      "success": false,
+      "integrity_clean": true,
+      "outcome": "error",
+      "llm_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_ms": 896
+    },
+    {
+      "fixture": "py-bugfix",
+      "arm": "cand",
+      "seed": 1,
+      "success": false,
+      "integrity_clean": true,
+      "outcome": "error",
+      "llm_calls": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "wall_ms": 791
+    }
+  ]
+}

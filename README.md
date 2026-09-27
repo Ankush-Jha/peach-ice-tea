@@ -9,11 +9,8 @@
   one frozen prompt, one unattended run, and an evidence bundle judges can check without taking our word for anything.
 </p>
 
-**Provenance:** Peach Ice Tea is built on a fork of an open-source (Apache-2.0) Rust coding agent
-(Rust), forked from upstream `304bf3b` (D-008). The upstream README is kept at
-[`documentation/UPSTREAM_README.md`](documentation/UPSTREAM_README.md). The crates keep their `peach_*`
-names so upstream merges stay possible (D-004). What we built, and why, is in
-[`documentation/ARCHITECTURE.md`](documentation/ARCHITECTURE.md) and `docs/harness/DECISIONS.md`.
+What we built, and why, is in [`documentation/ARCHITECTURE.md`](documentation/ARCHITECTURE.md) and
+`docs/harness/DECISIONS.md`.
 
 ## What the harness adds
 
@@ -166,3 +163,11 @@ changes stay behind default-off flags until an A/B supports them (D-039, D-041, 
 - Live-model evidence so far is limited (D-032, D-040, D-043, D-051).
 - `make run` is one-shot: it takes one issue and exits. If the organisers want a harness that stays resident and
   takes several issues in one session, that is new scope (MAKEFILE_EVAL.md).
+
+## Provenance
+
+Peach Ice Tea is built on a fork of an open-source (Apache-2.0) Rust coding agent, forked
+from upstream `304bf3b` (D-008; eligibility recorded in D-024). The upstream README is kept at
+[`documentation/UPSTREAM_README.md`](documentation/UPSTREAM_README.md). The crates keep their `peach_*`
+names so upstream merges stay possible (D-004). See [`LICENSE`](LICENSE) for the original license and
+copyright.

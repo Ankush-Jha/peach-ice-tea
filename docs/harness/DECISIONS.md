@@ -1850,6 +1850,46 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
 - **Reading:** same pattern as T1.2/T2.1/T2.6's GLM arms — no case for shipping. Second family not yet run;
   leaving unticked rather than closing outright, consistent with T2.1/T2.6's treatment in D-093.
 
+## D-095 — Peach Ice Tea UI redesign: dark/glass theme, a live status orb, and surfacing agent_state (2026-09-27)
+- **What changed and why.** The dashboard (`harness/ui/index.html`, D-092) rendered `run_start`, `model_call`,
+  `tool_call`, `test_run`, `recovery`, `context_compaction`, `retry`, `integrity`, `error`, `prompt_suppressed`
+  and `run_end` in its timeline but silently dropped `agent_state` (`describe()`'s `default` case, comment:
+  "folded into the stats" — it wasn't folded anywhere) and never surfaced `agent_id` or `reasoning_tokens`,
+  both already present on every envelope. `agent_state`'s `to: "running"` transition per `agent_id`
+  (`crates/peach_app/src/hooks/telemetry.rs`) is the actual "a (sub-)agent started" signal, and it was invisible
+  in the UI — the concrete gap behind "doesn't show what we're doing, launching agents, or thinking." This is a
+  UI-only, additive fix: no telemetry schema or Rust changes, since `server.ts` already streams the full envelope
+  verbatim (verified by reading `harness/ui/server.ts`).
+- **Not SPEC/TASKS-tracked.** Per `HACKATHON.md` §13/§18, judged evidence is the transcript, telemetry and
+  standard report — not this demo dashboard — so this sits outside the `TASKS.md`/`SPEC.md` requirement-ID
+  pipeline `CLAUDE.md` prescribes for harness changes. Recorded here anyway for traceability.
+- **What shipped:**
+  - `agent_state` now renders ("Agent launched" on a new `agent_id`'s first `to: "running"`, "Agent finished ·
+    N call(s)" on `to: "ended"`, and a tagged line for anything else — e.g. `runtime_verify_gate_exhausted`,
+    `verification_unconfirmed`). Every timeline row gets a left-border coloured by a hash of its `agent_id`, so a
+    sub-agent's tool calls are visually distinguishable from the main loop's without reading IDs.
+  - New "Agents" chip row (Run view) and two new stat tiles (thinking tokens, from `reasoning_tokens`; agent
+    count) — all client-side aggregation of fields the envelope already carried.
+  - A small WebGL fragment-shader "orb" (`createOrb()`), rendered full-viewport behind the glass panels: colour
+    and turbulence encode idle/thinking/tool-call/model-call/error/success, with one orbiting satellite per live
+    `agent_id` (colour-matched to its timeline rows and chip). A text status pill in the sidebar ("idle" /
+    "thinking" / "running" / "done" / "failed") gives the same state in words — "thinking" specifically fires
+    after ~1.3s with no telemetry while a run is active, i.e. the model is mid-call with nothing to show yet.
+  - Visual reskin to a black/glass theme (violet/cyan accents) per the request; the old light-theme toggle
+    (`localStorage`-backed `data-theme`) was removed rather than kept as a second theme to maintain.
+  - **Fail-open (principle 5):** `createOrb()` returns `null` on any WebGL failure and the caller removes the
+    canvas — the CSS radial-gradient vignette (`body::before`) still renders, so a GPU/driver problem degrades
+    the page, it doesn't break it.
+  - **No new dependencies, no external requests.** Everything is inline in the one HTML file (matching the
+    existing zero-build architecture) — no CDN fonts/scripts, consistent with `HACKATHON.md` §31 ("unauthorized
+    external services") and the server's loopback-only design (D-092).
+- **Verification:** `harness/ui/lib.test.ts` 5/5 unaffected (no lib.ts changes). Extracted and syntax-checked the
+  inlined `<script>` (`node --check`). Started the UI server on a scratch port and confirmed `GET /` and
+  `/api/status` serve correctly. Did not install a headless browser to screenshot it — no such tooling exists in
+  this repo and adding one (e.g. Playwright + Chromium) for a one-off visual check isn't worth the new
+  dependency; the GLSL uses only well-supported WebGL1 patterns (dynamic-index uniform arrays in a loop, a
+  standard technique for e.g. skinning shaders).
+
 ## D-096 — A degenerate reply is retried, not accepted as the agent's answer (2026-09-27)
 - **Found by reading live runs.** The team asked why simple tasks "think so long". Across every recorded run:
   - **NIM Kimi K3:** 36 of its 121 model calls (30%) returned exactly 32 tokens of reasoning, `!` × 32, with no
@@ -1917,6 +1957,7 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
   broken scorer all keep everything.
 - A Jev adapter is the only missing piece, and it lives outside this repo.
 
+
 ## D-099 — The runtime gate on the real OpenRouter path: no cost to the default model (2026-09-27)
 - **Why:** D-088 shipped the gate on two families, both from the NIM pool. The default model on the evaluation
   path (`nemotron-3-ultra` through OpenRouter) had not been measured with it.
@@ -1956,3 +1997,79 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
   **zero** times (D-096's scan), so for them the fix is a no-op by construction. The runtime gate's measurements on
   those models (D-088, D-099) still hold.
 - **Decision:** stays on by default; `PEACH_HARNESS_DEGENERATE_RETRY=0` reverts.
+
+## D-101 — Peach Ice Tea UI rewritten as a React app, on request (2026-09-27)
+- **Follow-up to D-095/D-102.** After the vanilla-JS redesigns, the ask changed explicitly: use a real
+  component ecosystem, React, and design every page carefully — being fully self-contained/zero-build no longer
+  mattered to the person asking. D-095/D-102 still apply to *why* the two specific Framer marketplace URLs and
+  the pasted shadcn snippet weren't pulled in verbatim (an unpinned third-party GitHub bundle for one, someone
+  else's real site content for the other, a licensed snippet for the third) — none of that is about React itself,
+  which this decision adopts.
+- **What changed:** `harness/ui/index.html` (the single static file from D-092/D-095/D-102) is retired
+  (`git rm`, recoverable from history). In its place, `harness/ui/app/` is a Vite + React 19 + TypeScript +
+  Tailwind v4 app, styled with shadcn-style primitives (`components/ui/*` — hand-written to this project's own
+  tokens, not copied from anyone's specific site) and real, legitimate, versioned packages: `lucide-react` for
+  icons, `motion` (the actual published Framer Motion successor, not a marketplace bundle) available for
+  animation. `harness/ui/server.ts` and `lib.ts` are **unchanged in behaviour** — still the same JSON+SSE
+  backend — except `server.ts` now serves `app/dist/`'s build output (`serveAsset`, path-checked with the
+  existing `within()`) instead of reading the old file straight off disk, with a plain-text "run this build
+  command" fallback page when `dist/` doesn't exist yet.
+- **Every page's logic was ported, not just its look:** `buildSpans`/`layoutSpans` (sub-agent nesting for the
+  trace waterfall), `describe()` (the telemetry → timeline-row mapping, including the `agent_state`/
+  `reasoning_tokens` surfacing from D-095), the markdown and diff renderers, and the scrubbable playhead
+  transport from D-102 all moved into `src/lib/*` and `src/components/**` as TypeScript/React, not rewritten
+  from scratch — the intent was a better-looking version of the same functionality, not new behaviour.
+- **Theme carried forward unchanged:** flat black tokens, no gradients, no glow `box-shadow`s — that preference
+  (stated right before this request) applies regardless of framework, so `index.css`'s `@theme` block uses the
+  same flat hex values as the vanilla version's last CSS, just expressed as Tailwind design tokens.
+- **`make ui` still works as one command** — it now runs `npm install`/`npm run build` in `harness/ui/app`
+  automatically the first time (or whenever `dist/index.html` is missing) before starting the same
+  `server.ts`. Added `make ui-build` (force a rebuild after editing `app/src/**`) and `make ui-dev` (Vite's
+  own dev server with HMR, proxying `/api` to a `make ui` already running) — neither is required for a judge
+  or a fresh checkout, both are developer convenience.
+- **Verification:** `npx tsc --noEmit` clean; `npx vite build` succeeds (295 KB JS / 21 KB CSS, gzipped
+  ~91 KB/5 KB); `harness/ui/lib.test.ts` still 5/5 (untouched). Booted `server.ts` on a scratch port and
+  confirmed `GET /` serves the real built `index.html` (not the fallback), its referenced `/assets/*.js`
+  returns 200, and `/api/status` still 200. Did not add a headless-browser screenshot step — same call as
+  D-095/D-102, not worth a new dependency for a one-off visual check; a person should still open it once
+  before treating this as done.
+
+## D-102 — Peach Ice Tea UI: a scrubbable trace/waterfall replay, and checked (not assumed) two Framer components (2026-09-27)
+- **Follow-up to D-095.** Feedback on D-095's redesign was that the timeline itself still read as "basic and
+  static" — a plain list, even with the orb and agent chips around it. The user pointed at a Framer marketplace
+  "DepthGlobe" component, a Framer "Stack" component, and a pasted shadcn `agent-trace.tsx` (a React/Tailwind
+  scrubbable span-waterfall) as the bar to hit, and said the project's "self-contained, no external services"
+  stance (D-095) could flex if that's what it took.
+- **Checked the two Framer URLs by fetching them, rather than assuming either way:**
+  - `DepthGlobe-prod-5cOY4e.js` resolves to a real react-three-fiber globe, but it imports Three.js,
+    react-three-fiber and binary globe-data files from `cdn.jsdelivr.net/gh/framer-university/components/...` —
+    jsdelivr's `/gh/` shorthand serves an **unpinned, unaudited third-party GitHub repo's default branch live**.
+    That's a supply-chain risk on its own terms, independent of the self-contained preference being relaxed, so
+    it's not something to wire into a dev tool regardless.
+  - `Stack-1-KFYs.js` turned out not to be a generic template at all: it's a raw Framer Studio export of a real,
+    unrelated site's actual component, with that site's real production copy baked into the code. Reproducing it
+    would mean copying another site's content, not adopting a reusable pattern — declined on that basis, not an
+    architecture one.
+  - Neither is embedded. `agent-trace.tsx` (React/Tailwind/shadcn, needs `lucide-react` + `motion` + a build step)
+    wasn't adopted either — `harness/ui` is one static HTML file with zero build tooling by design (D-092), and
+    that pasted component's code isn't reproduced verbatim regardless (licensed marketplace source).
+- **What shipped instead: the same underlying pattern, built natively.** `harness/ui/index.html` gained
+  `buildSpans()`/`layoutSpans()` (telemetry envelopes → nested spans, a sub-agent's `agent_state`
+  running→ended pair becomes a parent span its tool/model calls nest under, exactly the "sub-agent's children
+  read as inside it" shape the reference demonstrated) and `renderTraceReplay()` — a real time axis, ruler,
+  ghost+fill bars, and a draggable/keyboard-operable playhead with play/pause and a clock, all vanilla JS/CSS,
+  no new dependencies. Icons are small original inline SVGs (not lucide's glyphs). This replaces the old
+  `<ul class="timeline">` list in **History**'s bundle viewer, where the complete telemetry file is available
+  up front and a full scrub-replay is the natural fit.
+- **The live Run view got a lighter, different treatment on purpose**, not the same scrub component: telemetry
+  in this schema only reports a call's `duration_ms` after it finishes (no live in-progress delta), and the
+  live feed's total keeps growing — true absolute-time positioning would mean relayouting every prior row on
+  every new event. Instead each row gets a proportional "weight" bar (width relative to the largest call seen
+  so far this run) that grows in with a CSS keyframe on insert, appended once and never rebuilt. Simpler, no
+  layout thrash, and it still answers "was that a big or a small call" at a glance.
+- **Verification:** `harness/ui/lib.test.ts` 5/5 (unaffected — no lib.ts changes). Extracted and syntax-checked
+  the inlined `<script>` (`node --check`) after each edit round, including the one where a `.replace()` hack
+  from an abandoned approach was caught and fixed before shipping. Checked for dangling `$("...")` id lookups
+  and duplicate top-level declarations (none). Started the UI server on a scratch port, confirmed `GET /` and
+  `/api/status` still 200. No headless-browser screenshot, same reasoning as D-095: not worth a new dependency
+  for a one-off visual check.
