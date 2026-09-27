@@ -2095,3 +2095,22 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
 - **Note on `2026-09-27-compact-tool-docs-gemini.*` (committed in `37a4f2d27`): it is not a result.** Both arms
   failed with Gemini's daily quota exhausted and 0 model calls (the Gemini free tier resets at 07:00 UTC). A rerun
   after the reset writes to the same path.
+
+## D-104 — Reasoning schedule, first family: Kimi keeps 6/6 with 84% fewer reasoning tokens (interim; flag stays off)
+- **A/B** (`2026-09-27-reasoning-schedule-nim-kimi.md`): 6 fixtures × 1 seed, the frozen D-103 binary (escalation
+  only on a failed fix attempt), one run at a time.
+
+  | Metric | Base | Candidate |
+  |---|---|---|
+  | Success | 6/6 | **6/6** |
+  | Reasoning tokens | 2,259 | **369 (−84%)** |
+  | Output tokens | | −44% |
+  | Input tokens | | −21% |
+  | Model calls | 5.7 | 5.0 (−12%) |
+  | Wall time | 252 s | 85 s (−66%) |
+
+  Part of the wall-time drop is NIM variance: base `integrity-trap` took 663 s.
+- **No run escalated.** Every fixture was solved on the first fix attempt, so low effort was enough throughout.
+  That is the case the team raised: simple tasks were paying for thinking they did not need.
+- **Decision (interim):** principle 6 needs a second family. The DeepSeek arm (`reasoning-schedule-nim-deepseek`)
+  is running; the flag stays off until it reports.
