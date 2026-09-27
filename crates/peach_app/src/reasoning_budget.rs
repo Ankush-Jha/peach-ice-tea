@@ -4,7 +4,8 @@
 //! Every run starts cheap: `low` effort, and optionally a cheaper model. Most
 //! hackathon-sized fixes (read, patch, run the tests) never need more. The
 //! run escalates once, and for good, when the task itself shows it is hard:
-//! the agent's tests fail on the code, the runtime gate had to send a stop
+//! a fix attempt fails its tests (a reproduction run before any edit does
+//! not count), the runtime gate had to send a stop
 //! back, tools keep failing, or the task runs long without a green run. It
 //! then uses `high` effort, and the stronger model if one is named. The
 //! evidence comes from what the harness already observes, never from asking
@@ -45,7 +46,8 @@ pub fn escalation_model() -> Option<ModelId> {
 /// What the harness has observed about the task's difficulty so far.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Difficulty {
-    /// Agent test runs that failed on the code (not the environment).
+    /// Fix attempts that failed: agent test runs after an edit that failed on
+    /// the code (not the environment). A reproduction run doesn't count (D-101).
     pub failed_test_runs: u32,
     /// Times the runtime gate had to check a stop.
     pub gate_runs: u32,
@@ -68,7 +70,7 @@ impl Difficulty {
     /// Why the task now counts as hard, or `None` while it still looks simple.
     pub fn escalation_reason(&self) -> Option<String> {
         if self.failed_test_runs > 0 {
-            Some(format!("{} failing test run(s)", self.failed_test_runs))
+            Some(format!("{} failed fix attempt(s)", self.failed_test_runs))
         } else if self.gate_runs > 0 {
             Some("the runtime gate had to check a stop".to_string())
         } else if self.tool_errors >= TOOL_ERRORS_BEFORE_ESCALATION {

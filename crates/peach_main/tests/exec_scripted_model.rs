@@ -1995,14 +1995,21 @@ fn test_write_note_is_not_offered_by_default() {
 }
 
 #[test]
-fn test_reasoning_starts_low_and_escalates_after_a_failing_test_run() {
-    // D-097 (R-LOOP-3): a task costs little thought until it proves hard.
+fn test_reasoning_escalates_on_a_failed_fix_attempt_not_on_reproduction() {
+    // D-097/D-101 (R-LOOP-3): a task costs little thought until a fix attempt
+    // fails. Reproducing the failure first is expected and does not count.
     // Registered as `nvidia` so the request carries `reasoning_effort` exactly
     // as it would for the NIM profile.
     let project = calc_project();
+    let run_tests = || Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run the tests"}));
     let model = ScriptedModel::start_as("nvidia", vec![
+        run_tests(),
         Turn::Tool("read", serde_json::json!({"file_path": project.path().join("calc.py")})),
-        Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run the tests"})),
+        Turn::Tool(
+            "write",
+            serde_json::json!({"file_path": project.path().join("calc.py"), "content": "def add(a, b):\n    return a * b\n", "overwrite": true}),
+        ),
+        run_tests(),
         Turn::Text("Done."),
     ]);
 
@@ -2023,7 +2030,17 @@ fn test_reasoning_starts_low_and_escalates_after_a_failing_test_run() {
             body["reasoning_effort"].as_str().or(body["reasoning"]["effort"].as_str()).unwrap_or("none").to_string()
         })
         .collect();
-    assert_eq!(efforts, vec!["low", "low", "high"], "report: {}", run.report);
+    // reproduce (fails, no edit) → still low; read, wrong fix → tests fail → high.
+    let trace: Vec<String> = run
+        .telemetry
+        .iter()
+        .filter(|e| e["type"] == "tool_call" || e["type"] == "test_run")
+        .map(|e| format!("{}{}{}", e["name"], e["failure_class"], e["success"]))
+        .collect();
+    // Later requests are the runtime gate sending the still-wrong fix back:
+    // they stay high, since escalation never reverts.
+    assert_eq!(efforts[..5], ["low", "low", "low", "low", "high"], "trace: {trace:?}");
+    assert!(efforts[5..].iter().all(|e| e == "high"), "de-escalated: {efforts:?}");
     assert!(
         run.telemetry.iter().any(|e| e["action"] == "reasoning_escalated"),
         "no escalation event"

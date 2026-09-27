@@ -85,7 +85,8 @@ pub fn record_shell(command: &str, exit_code: Option<i32>, output: &str, duratio
     {
         state.edited_since_green = false;
     }
-    if matches!(classification.class, FailureClass::TestAssertion | FailureClass::Compile | FailureClass::Timeout) {
+    let edited = STATE.lock().is_ok_and(|state| state.edited);
+    if is_failed_fix_attempt(classification.class, edited) {
         FAILED_AGENT_RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
     emit_test_run(command, exit_code, &classification, duration_ms, "agent");
@@ -298,10 +299,18 @@ fn run_test_command(root: &Path, test: &TestCommand, timeout: Duration, origin: 
 /// (principle 5: an environment that can never pass must not hang the run).
 pub const MAX_RUNTIME_GATE_ATTEMPTS: u32 = 2;
 
-/// Agent test runs that failed on the code itself (assertion, compile,
-/// timeout), never on the environment: the evidence that a task is harder
-/// than it looked (R-LOOP-3, D-097).
+/// Fix attempts that failed: agent test runs after an edit that failed on the
+/// code itself (assertion, compile, timeout), never on the environment. The
+/// evidence that a task is harder than it looked (R-LOOP-3, D-097, D-101).
 static FAILED_AGENT_RUNS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Whether a test run is evidence of difficulty: it failed on the code, after
+/// the agent had edited something. A failing run before any edit is the agent
+/// reproducing the bug, which is expected on every bug fix and says nothing
+/// about how hard the fix is (D-101).
+fn is_failed_fix_attempt(class: FailureClass, edited: bool) -> bool {
+    edited && matches!(class, FailureClass::TestAssertion | FailureClass::Compile | FailureClass::Timeout)
+}
 
 /// How hard the task has proven so far: `(agent test runs that failed on the
 /// code, runtime-gate runs)`. A gate run happens only when the model stopped
@@ -371,6 +380,19 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn test_only_a_failed_fix_attempt_counts_as_difficulty() {
+        let actual = [
+            is_failed_fix_attempt(FailureClass::TestAssertion, false),
+            is_failed_fix_attempt(FailureClass::TestAssertion, true),
+            is_failed_fix_attempt(FailureClass::Compile, true),
+            is_failed_fix_attempt(FailureClass::Environment, true),
+            is_failed_fix_attempt(FailureClass::Passed, true),
+        ];
+
+        assert_eq!(actual, [false, true, true, false, false]);
+    }
 
     #[test]
     fn test_hinted_failures_are_attributed_to_whoever_caused_them() {

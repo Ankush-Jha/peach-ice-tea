@@ -2073,3 +2073,25 @@ Source: `docs/harness/AGENT_HANDOFF_BRIEF.md`, an audit pass supplied by the tea
   and duplicate top-level declarations (none). Started the UI server on a scratch port, confirmed `GET /` and
   `/api/status` still 200. No headless-browser screenshot, same reasoning as D-095: not worth a new dependency
   for a one-off visual check.
+
+## D-103 — Reasoning schedule: a reproduction run is not difficulty (D-097 fix) (2026-09-27)
+- **Found by the Dots A/B** (`2026-09-27-reasoning-schedule-openrouter-dots-{a,b}.md`, 3 fixtures, OpenRouter, both
+  free accounts): 3/3 → 3/3, reasoning share 27% → 26%, reasoning tokens −9%, calls −11%, model time −10%.
+  - The traces show why the change was so small. In 2 of the 3 runs the schedule escalated on the agent's **first
+    test run, before any edit**: the agent correctly reproducing the bug.
+  - Every bug fix starts that way, so D-097's "any failing test run" escalated almost every run immediately, and
+    the fix itself was written at high effort. The run with no reproduction step (`node-feature`) never escalated.
+- **Fix:** only a **failed fix attempt** counts: an agent test run that fails on the code *after* the agent has
+  edited something. Environment failures still never count. `is_failed_fix_attempt` has a unit test, and the
+  end-to-end test now checks both halves:
+  - reproduce → still `low`;
+  - read, wrong fix, tests fail → `high`;
+  - the runtime gate's follow-ups stay `high` (no de-escalation).
+- **The first A/Bs are superseded:**
+  - The GLM and Gemma runs (`reasoning-schedule-nim-{glm,gemma}`) were invalid. The NIM endpoints averaged 250–470 s
+    per call, and every run hit the runner's 600 s cap in both arms. They were not committed.
+  - A Kimi run on the old signal was stopped before finishing.
+  - A/Bs on the fixed signal are rerunning; the flag stays off until they finish.
+- **Note on `2026-09-27-compact-tool-docs-gemini.*` (committed in `37a4f2d27`): it is not a result.** Both arms
+  failed with Gemini's daily quota exhausted and 0 model calls (the Gemini free tier resets at 07:00 UTC). A rerun
+  after the reset writes to the same path.
