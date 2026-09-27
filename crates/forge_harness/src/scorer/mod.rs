@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 
+pub mod external;
 pub mod heuristic;
 pub mod plan;
 

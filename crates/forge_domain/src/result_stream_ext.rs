@@ -276,11 +276,25 @@ impl ResultStreamExt<anyhow::Error> for crate::BoxStream<ChatCompletionMessage, 
             return Err(crate::Error::Refusal.into());
         }
 
-        // Check for empty completion - map to retryable error for retry
-        if content.trim().is_empty()
+        // harness: D-096 — a reply with no text and no tool call whose only
+        // reasoning is one character repeated (NIM's Kimi K3 returns exactly
+        // `!` × 32 with a valid `end_turn` in 30% of its calls) is garbage,
+        // not a decision to stop. Accepting it ended runs as "completed"
+        // unverified, or spent a reminder round-trip; retry it instead.
+        let degenerate = std::env::var("FORGE_HARNESS_DEGENERATE_RETRY").map_or(true, |v| v != "0")
+            && content.trim().is_empty()
             && tool_calls.is_empty()
-            && finish_reason.is_none()
-            && thought_signature.is_none()
+            && is_degenerate_reasoning(
+                std::iter::once(reasoning.as_str())
+                    .chain(total_reasoning_details.iter().filter_map(|d| d.text.as_deref())),
+            );
+
+        // Check for empty completion - map to retryable error for retry
+        if degenerate
+            || (content.trim().is_empty()
+                && tool_calls.is_empty()
+                && finish_reason.is_none()
+                && thought_signature.is_none())
         {
             return Err(crate::Error::EmptyCompletion { usage: Box::new(usage) }
                 .into_retryable()
@@ -298,6 +312,21 @@ impl ResultStreamExt<anyhow::Error> for crate::BoxStream<ChatCompletionMessage, 
             finish_reason,
             phase,
         })
+    }
+}
+
+/// Whether a reply's reasoning is degenerate: at least 8 characters that are
+/// all the same non-alphanumeric character (D-096). Real reasoning, however
+/// short, has words in it.
+///
+/// # Arguments
+/// * `parts` - The reasoning text of the reply, in any number of pieces.
+fn is_degenerate_reasoning<'a>(parts: impl Iterator<Item = &'a str>) -> bool {
+    let text: String = parts.collect::<String>().split_whitespace().collect();
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => text.chars().count() >= 8 && !first.is_alphanumeric() && chars.all(|c| c == first),
+        None => false,
     }
 }
 
@@ -1291,6 +1320,47 @@ mod tests {
         let actual = fixture.into_full(false).await.unwrap_err();
 
         assert_eq!(crate::Error::billed_usage(&actual), Some(usage));
+    }
+
+    #[test]
+    fn test_only_a_repeated_symbol_counts_as_degenerate_reasoning() {
+        let cases = [
+            (vec!["!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"], true),
+            (vec!["!!!!", "!!!! !!!!"], true),
+            (vec!["Run the tests to verify."], false),
+            (vec!["!!!"], false),
+            (vec!["aaaaaaaaaa"], false),
+            (vec![""], false),
+        ];
+
+        let actual: Vec<bool> = cases.iter().map(|(parts, _)| is_degenerate_reasoning(parts.iter().copied())).collect();
+
+        let expected: Vec<bool> = cases.iter().map(|(_, e)| *e).collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
+    async fn test_a_degenerate_reasoning_only_stop_is_retried_not_accepted() {
+        let messages = vec![Ok(ChatCompletionMessage::default()
+            .reasoning(Content::part("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"))
+            .finish_reason(FinishReason::Stop))];
+        let fixture: BoxStream<ChatCompletionMessage, anyhow::Error> = Box::pin(tokio_stream::iter(messages));
+
+        let actual = fixture.into_full(false).await.unwrap_err();
+
+        assert!(actual.to_string().contains("Empty completion"), "{actual}");
+    }
+
+    #[tokio::test]
+    async fn test_a_real_reasoning_only_stop_is_still_accepted() {
+        let messages = vec![Ok(ChatCompletionMessage::default()
+            .reasoning(Content::part("Nothing left to do."))
+            .finish_reason(FinishReason::Stop))];
+        let fixture: BoxStream<ChatCompletionMessage, anyhow::Error> = Box::pin(tokio_stream::iter(messages));
+
+        let actual = fixture.into_full(false).await;
+
+        assert!(actual.is_ok());
     }
 
     #[tokio::test]

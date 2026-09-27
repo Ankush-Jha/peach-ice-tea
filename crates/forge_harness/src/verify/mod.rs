@@ -85,6 +85,9 @@ pub fn record_shell(command: &str, exit_code: Option<i32>, output: &str, duratio
     {
         state.edited_since_green = false;
     }
+    if matches!(classification.class, FailureClass::TestAssertion | FailureClass::Compile | FailureClass::Timeout) {
+        FAILED_AGENT_RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
     emit_test_run(command, exit_code, &classification, duration_ms, "agent");
 
     let unattended = crate::runtime::get().is_some_and(|runtime| runtime.is_non_interactive());
@@ -294,6 +297,19 @@ fn run_test_command(root: &Path, test: &TestCommand, timeout: Duration, origin: 
 /// voluntary stop before giving up and letting the run end regardless
 /// (principle 5: an environment that can never pass must not hang the run).
 pub const MAX_RUNTIME_GATE_ATTEMPTS: u32 = 2;
+
+/// Agent test runs that failed on the code itself (assertion, compile,
+/// timeout), never on the environment: the evidence that a task is harder
+/// than it looked (R-LOOP-3, D-097).
+static FAILED_AGENT_RUNS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// How hard the task has proven so far: `(agent test runs that failed on the
+/// code, runtime-gate runs)`. A gate run happens only when the model stopped
+/// and the harness had to check, so any is a sign of difficulty.
+pub fn difficulty_signals() -> (u32, u32) {
+    let gate = *RUNTIME_GATE_ATTEMPTS.lock().unwrap_or_else(|e| e.into_inner());
+    (FAILED_AGENT_RUNS.load(std::sync::atomic::Ordering::Relaxed), gate)
+}
 static RUNTIME_GATE_ATTEMPTS: std::sync::Mutex<u32> = std::sync::Mutex::new(0);
 
 /// Records one runtime-gate attempt. Returns `(attempt_number, exhausted)`.
