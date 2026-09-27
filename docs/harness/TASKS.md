@@ -157,7 +157,8 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
       → non-interactive half done as TH.1 (followup answered, prompts refused; D-031, D-048, D-053); the prompt-variant half
         is `[A/B]` and waits on budget (D-069).
 - [ ] **T2.5** `R-LOOP-3` progressive reasoning schedule behind config; ship on only if A/B wins. **[A/B]**
-      → deferred: `[A/B]`; reasoning controls differ across the free models, so it waits for the bake-off's winner (D-069, D-071).
+      → built as a difficulty-driven ladder behind `FORGE_HARNESS_REASONING_SCHEDULE=1` (D-097): low effort until the
+        task proves hard, then high, optionally on `FORGE_HARNESS_ESCALATE_MODEL`. A/B running on GLM 5.3 and Gemma 4.
 - [ ] **T2.6** `R-TOOL-3` pre-dispatch correction layer + correction counters. **[A/B]**
       → built behind `FORGE_HARNESS_TOOL_CORRECTION=1` (default off): unambiguous key renames, `recovery` events,
       real-binary test (D-042). GLM: success flat, cost worse (D-093). Ultra still running. Unticked pending the
@@ -188,6 +189,8 @@ Tiers 0–1 done (D-081, D-082, D-083); Tier 2's offline item done (D-084). What
 - [ ] **T3.9** `R-CTX-4` LlmScorer (port of save-token-jev core) + `R-CTX-5` fail-open gate. **[A/B]**
       → S2 stage wired with the heuristic scorer behind `FORGE_HARNESS_SCORE_STAGE` (fail-open gate via `build_plan`);
         `LlmScorer` deferred: a model request per compaction does not fit the free tier (D-069, D-077).
+        `ExternalScorer` done (D-098): any command speaking save-token-jev's answer shape, so a Jev adapter plugs in
+        (`docs/harness/SCORER_PROTOCOL.md`).
 - [x] **T3.10** `R-CTX-6` handoff note in S3.
       → deterministic note atop the S3 summary behind `FORGE_HARNESS_HANDOFF_NOTE` (default off; D-063). First A/B
       (Muse Glimmer) confounded: base hit the request-limit ceiling on every fixture, and two candidate runs ran

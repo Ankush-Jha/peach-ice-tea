@@ -1993,3 +1993,50 @@ fn test_write_note_is_not_offered_by_default() {
 
     assert!(!model.requests()[0].contains("\"write_note\""));
 }
+
+#[test]
+fn test_reasoning_starts_low_and_escalates_after_a_failing_test_run() {
+    // D-097 (R-LOOP-3): a task costs little thought until it proves hard.
+    // Registered as `nvidia` so the request carries `reasoning_effort` exactly
+    // as it would for the NIM profile.
+    let project = calc_project();
+    let model = ScriptedModel::start_as("nvidia", vec![
+        Turn::Tool("read", serde_json::json!({"file_path": project.path().join("calc.py")})),
+        Turn::Tool("shell", serde_json::json!({"command": CALC_TESTS, "description": "run the tests"})),
+        Turn::Text("Done."),
+    ]);
+
+    let run = run_exec_full(
+        project.path(),
+        &model,
+        None,
+        &[("FORGE_HARNESS_REASONING_SCHEDULE", "1")],
+        "fix add",
+        &["--test-command", CALC_TESTS],
+    );
+
+    let efforts: Vec<String> = model
+        .requests()
+        .iter()
+        .map(|body| {
+            let body: serde_json::Value = serde_json::from_str(body).unwrap();
+            body["reasoning_effort"].as_str().or(body["reasoning"]["effort"].as_str()).unwrap_or("none").to_string()
+        })
+        .collect();
+    assert_eq!(efforts, vec!["low", "low", "high"], "report: {}", run.report);
+    assert!(
+        run.telemetry.iter().any(|e| e["action"] == "reasoning_escalated"),
+        "no escalation event"
+    );
+}
+
+#[test]
+fn test_reasoning_effort_is_untouched_without_the_flag() {
+    let project = calc_project();
+    let model = ScriptedModel::start_as("nvidia", vec![Turn::Text("Done.")]);
+
+    run_exec(project.path(), &model, None);
+
+    let body: serde_json::Value = serde_json::from_str(&model.requests()[0]).unwrap();
+    assert_eq!(body["reasoning_effort"], "medium", "the profile default must reach the request unchanged");
+}
