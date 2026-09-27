@@ -29,11 +29,15 @@ What we built, and why, is in [`documentation/ARCHITECTURE.md`](documentation/AR
 |---|---|---|
 | Test integrity | Refuses edits to protected tests at dispatch (tools and shell), verifies them after the run, and restores anything changed | `crates/peach_harness/src/integrity/` |
 | One-shot autonomy | Never waits for a person; wall-clock budget; SIGTERM/SIGINT still write the evidence | `crates/peach_main/src/harness_exec.rs` |
-| Verified completion | Test detection and classification, a gate against stopping on unverified edits, recovery hints, the harness's own final test run | `crates/peach_harness/src/verify/` |
+| Verified completion | Test detection and classification; a runtime gate that runs the real tests when the model tries to stop and sends failures back (on by default: Kimi 0/6 → 5/6, no cost to a model that already verifies, D-088/D-099); recovery hints; the harness's own final test run | `crates/peach_harness/src/verify/` |
+| Staged compaction | Cheapest stage first: supersede stale results (S0), offload large ones to recall handles readable with `read` (S1), drop by relevance score (S2), lossy summary only as a last resort (S3); an append-only event log replays the pre-compaction context | `crates/peach_app/src/compaction_pipeline/`, `crates/peach_repo/src/thread_event/` (D-062..D-077) |
+| Model failover | An exhausted quota or an outage that outlasts retries switches to the next model in `PEACH_HARNESS_FALLBACK_MODELS` instead of ending the run; a malformed request does not fail over | `crates/peach_app/src/model_failover.rs` (opt-in, D-072/D-081) |
+| Doom-loop escalation | An identical repeated call is warned, then withheld, then pauses the run (exit 6); upstream's cycle nudge is kept alongside | `crates/peach_app/src/doom_loop_escalation.rs` (flag: `PEACH_HARNESS_DOOM_LOOP_ESCALATION`, off; D-082) |
+| Compact tool docs | Tool descriptions without worked examples: −6.6% / −17.6% input tokens with no success loss on two families | `crates/peach_harness/src/tool_docs.rs` (on by default, D-085) |
 | Telemetry | JSONL events with provider-reported tokens, retries (with billed usage), tool/model correlation, compaction, tests, integrity; redacted before disk | `crates/peach_harness/src/telemetry/`, `crates/peach_app/src/hooks/telemetry.rs` |
 | Evidence + report | Prompt, transcript, telemetry, integrity, diff, tests, `exec.json`, `report.json`/`report.md` and a checksum manifest on every exit path | `crates/peach_harness/src/{evidence,report}.rs` |
 | Provider robustness | Gemini thinking level, DeepSeek cache accounting, fail-fast on quotas that cannot recover | `crates/peach_repo/src/provider/`, `crates/peach_domain/src/provider_quota.rs` |
-| Degenerate-reply retry | A reply with no text, no tool call, and only a repeated symbol as reasoning is retried, not accepted as "done" — caught a real model returning `!` × 32 and being scored as success (D-096) | `crates/peach_app/src/` (flag: `PEACH_HARNESS_DEGENERATE_RETRY`, on by default) |
+| Degenerate-reply retry | A reply with no text, no tool call, and only a repeated symbol as reasoning is retried, not accepted as "done" — caught a real model returning `!` × 32 and being scored as success (D-096) | `crates/peach_domain/src/result_stream_ext.rs` (flag: `PEACH_HARNESS_DEGENERATE_RETRY`, on by default; Kimi 2/6 → 6/6, D-100) |
 | Difficulty-driven reasoning | Every run starts at low reasoning effort; escalates once, to high (optionally a stronger model), only on a signal the task is hard — a failing test run, the verify gate catching a stop, repeated tool errors, or a long call count | `crates/peach_app/src/reasoning_budget.rs` (flag: `PEACH_HARNESS_REASONING_SCHEDULE`, off pending its A/B; D-097) |
 | Pluggable external scorer | The compaction stage that decides what old tool output to keep can call an outside command in a documented protocol, so a JEV-style scorer plugs in without the harness depending on it; a dropped result goes to a readable file, never deleted | `docs/harness/SCORER_PROTOCOL.md` (D-098) |
 | Local web UI | `make ui`: a React app — run a task, watch it live with a scrubbable trace/waterfall replay, browse evidence and A/B reports | `harness/ui/app/` (D-092, rewritten D-101/D-102) |
@@ -169,16 +173,31 @@ Enforce in the runtime, not in the prompt (D-019, D-031, D-037). Write evidence 
 changes stay behind default-off flags until an A/B supports them (D-039, D-041, D-042). The full log is
 `docs/harness/DECISIONS.md`.
 
+Where the A/Bs have landed so far:
+
+| Change | Verdict | Evidence |
+|---|---|---|
+| Runtime verification gate | On | Kimi 0/6 → 5/6, Muse 6/6 → 6/6; no extra calls for the default model (D-088, D-099) |
+| Degenerate-reply retry | On | Kimi 2/6 → 6/6; the pattern never occurs on 14 other models (D-100) |
+| Compact tool docs | On | Input tokens down on two families, success unchanged (D-085) |
+| Line numbers off in reads | Off, closed | Success flat, cost up on two families (D-093) |
+| Noise compression | Off, closed | No benefit on GLM (D-094) |
+| `write_note` scratchpad | Off | The model never used the tool (D-091) |
+| Doom-loop escalation, reasoning schedule, parallel reads, tool correction, handoff note | Off, pending | A/Bs incomplete or confounded (D-082, D-093, D-097) |
+
 ## Known limitations
 
 - The organizers' telemetry and report schemas are not published yet; the adapters are stubs (D-020).
-- Edits made through shell commands don't arm the verify gate; only tool edits do (D-037).
+- Shell edits are detected by a conservative command screen (redirects, `sed -i`, `mv`, `rm`, …); a write it
+  doesn't recognise, such as one inside a script, doesn't arm the verify gate (D-045). Whenever a test command is known,
+  the runtime gate still runs the tests at every stop.
 - The title-generation model call is not metered.
 - SIGKILL cannot be caught. A run killed that way keeps only what was written as it went: the prompt, streamed
   telemetry, a provisional `manifest.json` reading `incomplete`, and `integrity.baseline.json` with each test's
   pre-run hash and the location of its copy. There is no transcript, report or restore (D-038, D-056).
-- No A/B has run on two model families yet (free tier only, D-069), so the flagged features stay off.
-- Live-model evidence so far is limited (D-032, D-040, D-043, D-051).
+- A/Bs run on free tiers (D-069) at one or two seeds, so confidence intervals are wide; the verdicts above rest
+  on large effects with a visible mechanism, not on narrow intervals. The graded model at evaluation time may
+  not be one we measured.
 - `make run` is one-shot: it takes one issue and exits. If the organisers want a harness that stays resident and
   takes several issues in one session, that is new scope (MAKEFILE_EVAL.md).
 
